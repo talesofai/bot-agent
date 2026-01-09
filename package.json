@@ -1,0 +1,34 @@
+{
+  "name": "opencode-bot-agent",
+  "version": "1.0.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build ./src/index.ts --outdir ./dist --target node",
+    "start": "bun run dist/index.js",
+    "test": "bun test",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@saltify/milky-node-sdk": "^1.0.0",
+    "chokidar": "^3.5.3",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.25.0",
+    "openai": "^4.70.0",
+    "pino": "^8.17.2",
+    "ws": "^8.16.0",
+    "yaml": "^2.3.4",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/ws": "^8.5.10",
+    "bun-types": "latest",
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.0",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.2"
+  }
+}

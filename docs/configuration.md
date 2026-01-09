@@ -144,7 +144,7 @@ logging:
 /data/groups/{group_id}/
 ├── agent.md          # 群 Agent 人设（覆盖默认）
 ├── config.yaml       # 群配置（可选）
-├── skills/           # 自定义技能
+├── skills/           # 群技能（同名覆盖默认技能，新增为扩展）
 │   ├── draw.md
 │   └── roleplay.md
 ├── context/          # 对话上下文
@@ -153,6 +153,11 @@ logging:
 └── assets/           # 群资源
     └── images/
 ```
+
+### 继承与覆盖规则
+
+- 默认 Agent 设计来自 `DEFAULT_AGENT_CONFIG`（默认指向 `configs/default-agent.md`）。
+- 通用技能（规划）与群目录下的 `skills/` 合并加载，同名文件覆盖默认技能，新增文件直接生效。
 
 ### 群配置 config.yaml
 

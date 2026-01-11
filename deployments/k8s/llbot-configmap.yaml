@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llbot-config
+  namespace: opencode-bot-agent
+data:
+  default_config.json: |
+    {
+      "webui": {
+        "enable": true,
+        "port": 3080
+      },
+      "milky": {
+        "enable": true,
+        "reportSelfMessage": false,
+        "http": {
+          "port": 3000,
+          "prefix": "",
+          "accessToken": ""
+        },
+        "webhook": {
+          "urls": [],
+          "accessToken": ""
+        }
+      },
+      "satori": {
+        "enable": false,
+        "port": 5600,
+        "token": ""
+      },
+      "ob11": {
+        "enable": false,
+        "connect": [
+          {
+            "type": "ws",
+            "enable": false,
+            "port": 3001,
+            "heartInterval": 60000,
+            "token": "",
+            "reportSelfMessage": false,
+            "reportOfflineMessage": false,
+            "messageFormat": "array",
+            "debug": false
+          },
+          {
+            "type": "ws-reverse",
+            "enable": false,
+            "url": "",
+            "heartInterval": 60000,
+            "token": "",
+            "reportSelfMessage": false,
+            "reportOfflineMessage": false,
+            "messageFormat": "array",
+            "debug": false
+          },
+          {
+            "type": "http",
+            "enable": false,
+            "port": 3000,
+            "token": "",
+            "reportSelfMessage": false,
+            "reportOfflineMessage": false,
+            "messageFormat": "array",
+            "debug": false
+          },
+          {
+            "type": "http-post",
+            "enable": false,
+            "url": "",
+            "enableHeart": false,
+            "heartInterval": 60000,
+            "token": "",
+            "reportSelfMessage": false,
+            "reportOfflineMessage": false,
+            "messageFormat": "array",
+            "debug": false
+          }
+        ]
+      },
+      "enableLocalFile2Url": true,
+      "log": true,
+      "autoDeleteFile": false,
+      "autoDeleteFileSecond": 60,
+      "musicSignUrl": "https://llob.linyuchen.net/sign/music",
+      "msgCacheExpire": 120,
+      "onlyLocalhost": true,
+      "ffmpeg": ""
+    }
+  llbot-entrypoint.sh: |
+    #!/bin/sh
+    set -e
+
+    CONFIG_DIR="/config"
+    SRC_CONFIG="${CONFIG_DIR}/default_config.json"
+    DEST_CONFIG="/app/llbot/default_config.json"
+    TOKEN_FILE="/app/llbot/data/webui_token.txt"
+
+    if [ -f "$SRC_CONFIG" ]; then
+      cp "$SRC_CONFIG" "$DEST_CONFIG"
+    fi
+
+    if [ -n "${WEBUI_TOKEN:-}" ]; then
+      mkdir -p "/app/llbot/data"
+      printf "%s" "$WEBUI_TOKEN" > "$TOKEN_FILE"
+    fi
+
+    exec /startup.sh

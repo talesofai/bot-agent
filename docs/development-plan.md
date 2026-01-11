@@ -194,7 +194,7 @@ interface UnifiedMessage {
 | 任务               | 负责人 | 状态 |
 | ------------------ | ------ | ---- |
 | Dockerfile         |        | ⬜   |
-| docker-compose.yml |        | ⬜   |
+| deployments/docker/docker-compose.yml |        | ⬜   |
 | K8s Deployment     |        | ⬜   |
 | K8s Service        |        | ⬜   |
 | K8s PVC            |        | ⬜   |

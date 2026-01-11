@@ -25,6 +25,7 @@
 | [开发指南](docs/development.md)             | 开发者文档         |
 | [API 参考](docs/api-reference.md)           | API 接口文档       |
 | [Agent 自定义](docs/agent-customization.md) | 群 Agent 配置指南  |
+| [Secret 管理](docs/secrets.md)              | 机密管理与规范     |
 
 ## 🏗️ 技术栈（规划）
 
@@ -51,6 +52,7 @@ opencode-bot-agent/
 ├── configs/               # 配置文件
 ├── deployments/           # 部署配置
 │   ├── docker/           # Docker 相关
+│   └── k8s/              # Kubernetes 相关
 ├── docs/                  # 文档
 └── data/                  # 运行时数据（群目录）
     └── groups/
@@ -60,6 +62,11 @@ opencode-bot-agent/
 ```
 
 默认 Agent 设计来自 `configs/default-agent.md`。通用技能（规划）与群内 `skills/` 合并加载，同名覆盖，新增补充。
+
+## 🧩 部署目录
+
+Kubernetes 资源统一放在 `deployments/k8s/`，并使用统一前缀 `llbot-*.yaml`。
+Docker Compose 文件位于 `deployments/docker/docker-compose.yml`。
 
 ## 📝 License
 

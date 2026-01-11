@@ -43,13 +43,14 @@ PR 评论触发示例：
 
 ```bash
 cp configs/example.env configs/.env
-docker-compose up -d luckylillia
+./scripts/init-secrets.sh
+docker compose -f deployments/docker/docker-compose.yml up -d
 ```
 
 查看日志：
 
 ```bash
-docker-compose logs -f luckylillia
+docker compose -f deployments/docker/docker-compose.yml logs -f luckylillia
 ```
 
 ## 项目结构

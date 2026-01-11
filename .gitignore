@@ -22,3 +22,9 @@ tmp
 .idea
 
 /example/
+/configs/secrets/.env
+/configs/secrets/.env.*
+!/configs/secrets/.env.example
+/deployments/k8s/llbot-secret.yaml
+/data/
+/.github-agent-data

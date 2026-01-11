@@ -255,4 +255,4 @@ API 使用 Bearer Token 认证：
 Authorization: Bearer <token>
 ```
 
-Token 通过环境变量 `API_TOKEN` 配置。如果未配置，API 不需要认证（仅用于开发环境）。
+Token 通过环境变量 `API_TOKEN` 配置（放入 `configs/secrets/.env`）。如果未配置，API 不需要认证（仅用于开发环境）。

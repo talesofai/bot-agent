@@ -252,7 +252,7 @@ permissions:
 
 ```bash
 # Bot Agent 实现并启用后
-docker-compose logs -f opencode-bot-agent | grep "group_id=123456789"
+docker compose -f deployments/docker/docker-compose.yml logs -f opencode-bot-agent | grep "group_id=123456789"
 ```
 
 ### 测试配置

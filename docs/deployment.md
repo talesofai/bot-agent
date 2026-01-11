@@ -17,33 +17,61 @@
 
 ```
 /opt/opencode-bot-agent/
-├── docker-compose.yml
+├── deployments/
+│   └── docker/
+│       └── docker-compose.yml
 ├── configs/
 │   └── .env
 └── data/
-    ├── luckylillia/    # LuckyLilliaBot 数据
+    ├── llbot/          # LuckyLilliaBot (LLBot) 数据
     └── groups/         # 群数据
 ```
 
 ### docker-compose.yml
 
-当前仅启用 LuckyLilliaBot，Bot Agent 以注释方式保留占位。
+当前仅启用 LuckyLilliaBot（LLBot Docker 版），Bot Agent 以注释方式保留占位。
 
 ```yaml
 version: "3.8"
 
 services:
+  pmhq:
+    image: linyuchen/pmhq:latest
+    container_name: luckylillia-pmhq
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - ENABLE_HEADLESS=false
+      - AUTO_LOGIN_QQ=
+    volumes:
+      - ./data/llbot/qq:/root/.config/QQ
+      - ./data/llbot/data:/app/llbot/data
+
   luckylillia:
-    image: ghcr.io/llonebot/luckylilliabot:${LUCKYLILLIA_IMAGE_TAG:-latest}
+    image: linyuchen/llbot:latest
     container_name: luckylillia
     restart: unless-stopped
+    env_file:
+      - ./configs/.env
+      - ./configs/secrets/.env
+    environment:
+      - ENABLE_WEBUI=true
+      - WEBUI_PORT=3080
+    entrypoint:
+      - /bin/sh
+      - /config/llbot-entrypoint.sh
     ports:
       - "3000:3000"
+      - "3080:3080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./data/luckylillia:/app/data
-    environment:
-      - MILKY_ENABLE=true
-      - MILKY_PORT=3000
+      - ./data/llbot/data:/app/llbot/data
+      - ./data/llbot/qq:/root/.config/QQ
+      - ./data/llbot/default_config.json:/config/default_config.json:ro
+      - ./scripts/llbot-entrypoint.sh:/config/llbot-entrypoint.sh:ro
+    depends_on:
+      - pmhq
 
   # opencode-bot-agent:
   #   image: ghcr.io/talesofai/opencode-bot-agent:latest # 规划中的镜像
@@ -60,21 +88,59 @@ services:
   #     - MILKY_URL=http://luckylillia:3000
 ```
 
-可通过设置环境变量 `LUCKYLILLIA_IMAGE_TAG` 固定 LuckyLilliaBot 镜像版本。
+当前使用公开镜像 `linyuchen/pmhq` 与 `linyuchen/llbot`，如需固定版本可在 compose 中替换 tag。
 
 ### 启动命令
 
 ```bash
 cd /opt/opencode-bot-agent
-docker-compose up -d luckylillia
+docker compose -f deployments/docker/docker-compose.yml up -d
 ```
 
 ## Kubernetes 部署（规划）
 
+当前仓库已提供 `deployments/k8s/` 目录，可直接应用基础资源：
+
+- `deployments/k8s/llbot-namespace.yaml`
+- `deployments/k8s/llbot-pvc.yaml`
+- `deployments/k8s/llbot-configmap.yaml`
+- `deployments/k8s/pmhq-deployment.yaml`
+- `deployments/k8s/llbot-deployment.yaml`
+- `deployments/k8s/llbot-service.yaml`
+
+## Secret 管理（推荐）
+
+本仓库为 public，任何 secret 都不应提交。统一使用 `configs/secrets/.env` 与 `deployments/k8s/llbot-secret.yaml`：
+
+### Docker / 本地
+
+```bash
+./scripts/init-secrets.sh
+```
+
+设置 `WEBUI_TOKEN` 等敏感项后，直接启动：
+
+```bash
+docker compose -f deployments/docker/docker-compose.yml up -d
+```
+
+### Kubernetes
+
+复制示例并创建真实 Secret：
+
+```bash
+./scripts/generate-k8s-secret.sh
+kubectl apply -f deployments/k8s/llbot-secret.yaml
+```
+
+`deployments/k8s/llbot-secret.yaml` 已被 `.gitignore` 排除，避免误提交。
+
+完整说明见 [Secret 管理指南](secrets.md)。
+
 ### 命名空间
 
 ```yaml
-# k8s/namespace.yaml（示例，需自行创建）
+# deployments/k8s/llbot-namespace.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -84,21 +150,25 @@ metadata:
 ### Secret（API Keys）
 
 ```yaml
-# k8s/secret.yaml（示例，需自行创建）
+# deployments/k8s/llbot-secret.yaml（由 scripts/generate-k8s-secret.sh 生成）
 apiVersion: v1
 kind: Secret
 metadata:
-  name: opencode-bot-agent-secrets
+  name: llbot-secrets
   namespace: opencode-bot-agent
 type: Opaque
 stringData:
-  OPENAI_API_KEY: "sk-xxx"
+  WEBUI_TOKEN: "change-me"
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  GEMINI_API_KEY: ""
+  API_TOKEN: ""
 ```
 
 ### PersistentVolumeClaim
 
 ```yaml
-# k8s/pvc.yaml（示例，需自行创建）
+# deployments/k8s/llbot-pvc.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -112,10 +182,10 @@ spec:
       storage: 10Gi
 ```
 
-### LuckyLilliaBot Deployment
+### LLBot Deployment
 
 ```yaml
-# k8s/luckylillia.yaml（示例，需自行创建）
+# deployments/k8s/llbot-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -133,38 +203,15 @@ spec:
     spec:
       containers:
         - name: luckylillia
-          image: ghcr.io/llonebot/luckylilliabot:latest
-          ports:
-            - containerPort: 3000
-          env:
-            - name: MILKY_ENABLE
-              value: "true"
-          volumeMounts:
-            - name: data
-              mountPath: /app/data
-              subPath: luckylillia
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: opencode-bot-agent-data
+          image: linyuchen/llbot:latest
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: luckylillia
-  namespace: opencode-bot-agent
-spec:
-  selector:
-    app: luckylillia
-  ports:
-    - port: 3000
-      targetPort: 3000
+见 `deployments/k8s/llbot-service.yaml`。
 ```
 
 ### Bot Agent Deployment
 
 ```yaml
-# k8s/opencode-bot-agent.yaml（示例，需自行创建）
+# deployments/k8s/opencode-bot-agent.yaml（示例，需自行创建）
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -204,10 +251,16 @@ spec:
 ### 部署命令
 
 ```bash
-kubectl apply -f k8s/
+kubectl apply -f deployments/k8s/llbot-namespace.yaml
+kubectl apply -f deployments/k8s/llbot-pvc.yaml
+kubectl apply -f deployments/k8s/llbot-secret.yaml
+kubectl apply -f deployments/k8s/llbot-configmap.yaml
+kubectl apply -f deployments/k8s/pmhq-deployment.yaml
+kubectl apply -f deployments/k8s/llbot-deployment.yaml
+kubectl apply -f deployments/k8s/llbot-service.yaml
 ```
 
-如需使用上述示例，请先在本地创建 `k8s/` 目录并补齐文件。
+如果你的节点是 ARM 架构，请使用 amd64 节点运行或自行构建对应架构镜像。
 
 ## QQ 登录
 
@@ -220,7 +273,7 @@ LuckyLilliaBot 需要扫码登录。在 K8s 环境中：
 kubectl logs -f deployment/luckylillia -n opencode-bot-agent
 
 # 或者端口转发，访问 WebUI
-kubectl port-forward svc/luckylillia 3000:3000 -n opencode-bot-agent
+kubectl port-forward svc/luckylillia 3080:3080 -n opencode-bot-agent
 ```
 
 ### Session 持久化

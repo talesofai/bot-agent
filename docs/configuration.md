@@ -12,22 +12,32 @@ Bot Agent 支持三种配置方式（优先级从高到低）：
 
 ## 环境变量
 
-### AI 模型配置
+### AI 模型配置（敏感）
 
 ```env
-# OpenAI（推荐）
+# OpenAI
 OPENAI_API_KEY=sk-xxx
-OPENAI_BASE_URL=https://api.openai.com/v1  # 可选，自定义 endpoint
 
 # Anthropic
 ANTHROPIC_API_KEY=sk-ant-xxx
 
 # Google Gemini
 GEMINI_API_KEY=xxx
+```
+
+上述敏感项应放入 `configs/secrets/.env`。
+
+### AI 模型配置（非敏感）
+
+```env
+# 可选，自定义 endpoint
+OPENAI_BASE_URL=https://api.openai.com/v1
 
 # 模型选择
-OPENCODE_MODEL=claude-sonnet-4-20250514  # 默认使用的模型
+OPENCODE_MODEL=claude-sonnet-4-20250514
 ```
+
+上述非敏感项放入 `configs/.env`。
 
 ### 连接配置
 

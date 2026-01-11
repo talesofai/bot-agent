@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: luckylillia
+  namespace: opencode-bot-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: luckylillia
+  template:
+    metadata:
+      labels:
+        app: luckylillia
+    spec:
+      containers:
+        - name: luckylillia
+          image: linyuchen/llbot:latest
+          command:
+            - /bin/sh
+            - /config/llbot-entrypoint.sh
+          env:
+            - name: ENABLE_WEBUI
+              value: "true"
+            - name: WEBUI_PORT
+              value: "3080"
+            - name: WEBUI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: WEBUI_TOKEN
+          ports:
+            - containerPort: 3000
+            - containerPort: 3080
+          volumeMounts:
+            - name: data
+              mountPath: /app/llbot/data
+              subPath: llbot-data
+            - name: data
+              mountPath: /root/.config/QQ
+              subPath: qq
+            - name: llbot-config
+              mountPath: /config
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: opencode-bot-agent-data
+        - name: llbot-config
+          configMap:
+            name: llbot-config
+            defaultMode: 0755

@@ -17,36 +17,49 @@ cd opencode-bot-agent
 
 ## 步骤 2：配置环境变量
 
-复制示例配置：
+复制非敏感配置并初始化 Secret：
 
 ```bash
 cp configs/example.env configs/.env
+./scripts/init-secrets.sh
 ```
 
 编辑 `configs/.env`：
 
 ```env
-# AI 模型配置（任选其一）
-OPENAI_API_KEY=sk-xxx
-# ANTHROPIC_API_KEY=sk-ant-xxx
-# GEMINI_API_KEY=xxx
-
 # 可选：自定义模型
 # OPENCODE_MODEL=claude-sonnet-4-20250514
 ```
 
+编辑 `configs/secrets/.env`（只保留敏感项）：
+
+```env
+WEBUI_TOKEN=change-me
+OPENAI_API_KEY=sk-xxx
+# ANTHROPIC_API_KEY=sk-ant-xxx
+# GEMINI_API_KEY=xxx
+```
+
+更多说明见 [Secret 管理指南](secrets.md)。
+
 ## 步骤 3：启动 LuckyLilliaBot
 
 ```bash
-docker-compose up -d luckylillia
+docker compose -f deployments/docker/docker-compose.yml up -d
 ```
 
 ## 步骤 4：扫码登录
 
-查看 LuckyLilliaBot 日志获取登录二维码：
+打开 WebUI 进行登录（默认 Token 为 `change-me`）：
+
+```
+http://localhost:3080
+```
+
+如果需要查看 LuckyLilliaBot 日志获取二维码：
 
 ```bash
-docker-compose logs luckylillia
+docker compose -f deployments/docker/docker-compose.yml logs luckylillia
 ```
 
 使用 QQ 扫码登录。登录成功后，session 会被持久化。
@@ -54,6 +67,12 @@ docker-compose logs luckylillia
 ## 步骤 5：测试
 
 在 QQ 群中 @机器人 发送消息，确认机器人在线。AI 回复功能待 Bot Agent 实现后可用。
+
+可选：验证本地连通性（WebUI + Milky）：
+
+```bash
+WEBUI_TOKEN=your-token ./scripts/verify-local.sh
+```
 
 ## 下一步
 
@@ -75,5 +94,5 @@ docker-compose logs luckylillia
 
 ```bash
 # 只看 LuckyLilliaBot
-docker-compose logs -f luckylillia
+docker compose -f deployments/docker/docker-compose.yml logs -f luckylillia
 ```

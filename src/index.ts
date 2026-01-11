@@ -1,10 +1,10 @@
-import { serve } from "bun";
+import { config } from "./config.js";
+import { logger } from "./logger.js";
 
-console.log("Hello via Bun!");
-
-// Simple placeholder server - keeping fastify in dependencies for later robust usage,
-// but for now verifying Bun runtime.
-console.log("Environment check:", {
-  NODE_ENV: process.env.NODE_ENV,
-  BUN_VERSION: Bun.version
-});
+logger.info(
+  {
+    env: config.NODE_ENV ?? "development",
+    bunVersion: Bun.version,
+  },
+  "Bot agent starting",
+);

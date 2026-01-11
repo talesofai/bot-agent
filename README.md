@@ -41,7 +41,7 @@
 
 当前实现尚未落地，快速开始仅覆盖环境准备和 LuckyLilliaBot 验证流程。详见 [快速开始文档](docs/getting-started.md)。
 
-**注意**：本项目使用 [Bun](https://bun.sh) 作为运行时和包管理器。
+**注意**：本项目仅使用 [Bun](https://bun.sh) 作为运行时和包管理器，不支持 npm/pnpm/yarn。
 
 ## 📁 项目结构
 

@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-01-12
+
+### Added
+
+- 配置加载模块（`src/config.ts`）
+- 基础日志模块（`src/logger.ts`）
+- 核心接口类型（`src/types/platform.ts`）
+- ESLint 配置（`eslint.config.js`）与 TypeScript ESLint 依赖
+
 ## [0.0.1] - 2026-01-12
 
 ### Added

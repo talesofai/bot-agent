@@ -6,7 +6,7 @@
 
 ### 前置要求
 
-- **Bun** (v1.0+) - 作为运行时和包管理器
+- **Bun** (v1.0+) - 唯一运行时和包管理器，不使用 npm/pnpm/yarn
 - Docker 与 Docker Compose
 
 ### 克隆项目

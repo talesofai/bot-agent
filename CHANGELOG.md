@@ -15,6 +15,8 @@
 - 占位入口 `src/index.ts` 与基础脚本配置
 - 配置模板（`configs/config.yaml`、`configs/default-agent.md`、`configs/example.env`）
 - Claude Code 时间查询技能（`.claude/skills/time-lookup/SKILL.md`）
+- Claude Code 技能生成与优化技能（`.claude/skills/skill-authoring/SKILL.md`）
+- 技能模板与校验脚本（`.claude/skills/skill-authoring/assets/skill-template/SKILL.md`、`.claude/skills/skill-authoring/scripts/validate_skill.sh`）
 - Secret 初始化与轮换脚本
 - LuckyLilliaBot/Milky 的 Docker Compose 与 K8s 部署资源
 - 完整文档体系（架构、部署、配置、开发计划等）

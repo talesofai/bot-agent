@@ -7,14 +7,14 @@
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-01-12
+
 ### Added
 
-- 初始项目结构
-- LuckyLilliaBot + Milky 协议支持
-- opencode Agent 集成
-- 群隔离架构
-- 自定义 Agent 配置 (agent.md)
-- 技能系统 (skills/)
-- Docker Compose 部署
-- Kubernetes 部署配置
-- 完整文档系统
+- 初始项目结构与 Bun/TypeScript 脚手架
+- 占位入口 `src/index.ts` 与基础脚本配置
+- 配置模板（`configs/config.yaml`、`configs/default-agent.md`、`configs/example.env`）
+- Claude Code 时间查询技能（`.claude/skills/time-lookup/SKILL.md`）
+- Secret 初始化与轮换脚本
+- LuckyLilliaBot/Milky 的 Docker Compose 与 K8s 部署资源
+- 完整文档体系（架构、部署、配置、开发计划等）

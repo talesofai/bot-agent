@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-01-12
+
+### Added
+
+- 群存储模块（`src/store/group.ts`）
+  - GroupStore 类：群配置和数据持久化管理
+  - 群目录自动创建与结构管理
+  - config.yaml 配置加载（zod schema 验证）
+  - agent.md 人设加载（支持 frontmatter）
+  - skills/ 技能目录加载
+  - chokidar 热更新监听（防抖处理）
+- 群类型定义（`src/types/group.ts`）
+  - GroupConfig、GroupData、Skill 接口
+  - Zod schema 验证
+- 群存储单元测试（`src/store/__tests__/group.test.ts`）
+  - 12 个测试用例
+
 ## [0.0.3] - 2026-01-12
 
 ### Added

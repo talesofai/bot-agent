@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-01-12
+
+### Added
+
+- QQ 平台适配器（`src/adapters/qq/`）
+  - `adapter.ts`: 实现 `PlatformAdapter` 接口
+  - `connection.ts`: Milky WebSocket 连接管理，支持断线重连与指数退避
+  - `parser.ts`: Milky 事件解析为 `UnifiedMessage` 格式
+  - `sender.ts`: 文本与图片消息发送
+- QQ 适配器单元测试（`src/adapters/qq/__tests__/`）
+  - `parser.test.ts`: 消息解析测试
+  - `connection.test.ts`: 连接管理测试
+- 优雅关闭处理（SIGINT/SIGTERM）
+
+### Changed
+
+- 更新 `src/index.ts` 集成 QQ 适配器并注册消息处理器
+
 ## [0.0.2] - 2026-01-12
 
 ### Added

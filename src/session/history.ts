@@ -22,6 +22,9 @@ export class HistoryStore {
   ): Promise<HistoryEntry[]> {
     try {
       const content = await this.readTail(historyPath, options);
+      if (!content.trim()) {
+        return [];
+      }
       let entries = content
         .split("\n")
         .map((line) => line.trim())

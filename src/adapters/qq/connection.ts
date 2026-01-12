@@ -61,6 +61,10 @@ export class MilkyConnection extends EventEmitter {
 
   async connect(): Promise<void> {
     this.shouldReconnect = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.state === "connected") {
       return;
     }
@@ -228,6 +232,9 @@ export class MilkyConnection extends EventEmitter {
   };
 
   private openSocket(): void {
+    if (this.state === "connected") {
+      return;
+    }
     if (this.state === "connecting" || this.state === "reconnecting") {
       return;
     }

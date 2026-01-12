@@ -70,6 +70,9 @@ SESSION_WORKER_CONCURRENCY=1
 ```env
 # HTTP 端口
 HTTP_PORT=8080
+
+# 入口默认群 ID (未提供时使用消息 channelId)
+DEFAULT_GROUP_ID=
 ```
 
 ### 群管理配置

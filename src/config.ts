@@ -23,6 +23,7 @@ const envSchema = z
     REDIS_URL: z.string().default("redis://localhost:6379"),
     SERVICE_ROLE: z.enum(["all", "adapter", "worker"]).default("all"),
     HTTP_PORT: z.coerce.number().int().min(1).default(8080),
+    DEFAULT_GROUP_ID: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.PLATFORM === "qq" && !data.MILKY_URL) {

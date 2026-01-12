@@ -6,6 +6,7 @@ import { createAdapter } from "./adapters/index";
 import type { UnifiedMessage } from "./types/index";
 import { BullmqResponseQueue, BullmqSessionQueue } from "./queue";
 import { SessionManager, buildSessionId } from "./session";
+import { GroupStore } from "./store";
 import { ResponseWorker, ShellOpencodeRunner, SessionWorker } from "./worker";
 import { startHttpServer, type HttpServer } from "./http/server";
 
@@ -22,6 +23,9 @@ logger.info(
 
 const adapter = config.SERVICE_ROLE === "worker" ? null : createAdapter(config);
 const sessionManager = new SessionManager();
+const groupStore = new GroupStore();
+void groupStore.init();
+const groupCooldowns = new Map<string, number>();
 const sessionQueueName = "session-jobs";
 const responseQueueName = "session-responses";
 const sessionQueue = new BullmqSessionQueue({
@@ -81,9 +85,20 @@ startHttpServer({ logger })
 // Register message handler
 if (adapter) {
   adapter.onMessage(async (message: UnifiedMessage) => {
+    const groupId = config.DEFAULT_GROUP_ID ?? message.channelId;
+    const group = await groupStore.getGroup(groupId);
+    const groupConfig = group?.config;
+    if (!groupConfig || !groupConfig.enabled) {
+      return;
+    }
+    if (!shouldEnqueue(groupId, groupConfig, message)) {
+      return;
+    }
     const { key, content } = extractSessionKey(message.content);
+    const logContent =
+      groupConfig.triggerMode === "keyword" ? message.content : content;
     const contentHash = createHash("sha256")
-      .update(content)
+      .update(logContent)
       .digest("hex")
       .slice(0, 12);
     logger.info(
@@ -92,14 +107,14 @@ if (adapter) {
         channelId: message.channelId,
         userId: message.userId,
         contentHash,
-        contentLength: content.length,
+        contentLength: logContent.length,
         mentionsBot: message.mentionsBot,
       },
       "Message received",
     );
 
     await sessionQueue.enqueue({
-      groupId: message.channelId,
+      groupId,
       userId: message.userId,
       key,
       sessionId: buildSessionId(message.userId, key),
@@ -128,6 +143,7 @@ if (adapter) {
 const shutdown = async () => {
   logger.info("Shutting down...");
   try {
+    await groupStore.stopWatching();
     if (worker) {
       await worker.stop();
     }
@@ -163,6 +179,50 @@ if (adapter) {
       "Initial connection failed, reconnect will be attempted",
     );
   });
+}
+
+function shouldEnqueue(
+  groupId: string,
+  groupConfig: {
+    triggerMode: string;
+    keywords: string[];
+    cooldown: number;
+    adminUsers: string[];
+  },
+  message: UnifiedMessage,
+): boolean {
+  const triggerMatched =
+    groupConfig.triggerMode === "mention"
+      ? message.mentionsBot
+      : groupConfig.triggerMode === "keyword"
+        ? matchesKeywords(message.content, groupConfig.keywords)
+        : groupConfig.triggerMode === "all";
+
+  if (!triggerMatched) {
+    return false;
+  }
+  if (groupConfig.adminUsers.includes(message.userId)) {
+    return true;
+  }
+  if (groupConfig.cooldown > 0) {
+    const last = groupCooldowns.get(groupId);
+    const now = Date.now();
+    const cooldownMs = groupConfig.cooldown * 1000;
+    if (last && now - last < cooldownMs) {
+      return false;
+    }
+    groupCooldowns.set(groupId, now);
+  }
+
+  return true;
+}
+
+function matchesKeywords(content: string, keywords: string[]): boolean {
+  if (keywords.length === 0) {
+    return false;
+  }
+  const lowered = content.toLowerCase();
+  return keywords.some((keyword) => lowered.includes(keyword.toLowerCase()));
 }
 
 function extractSessionKey(input: string): { key: number; content: string } {

@@ -53,7 +53,7 @@ export function extractSessionKey(input: string): {
   key: number;
   content: string;
 } {
-  const match = input.match(/^\s*#(\d+)\s+/);
+  const match = input.match(/^\s*#(\d+)(?:\s+|$)/);
   if (!match) {
     return { key: 0, content: input };
   }

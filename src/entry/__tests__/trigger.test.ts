@@ -110,6 +110,13 @@ describe("extractSessionKey", () => {
     });
   });
 
+  test("parses #key without trailing content", () => {
+    expect(extractSessionKey("#3")).toEqual({
+      key: 3,
+      content: "",
+    });
+  });
+
   test("defaults to key 0 on invalid", () => {
     expect(extractSessionKey("#-1 hello")).toEqual({
       key: 0,

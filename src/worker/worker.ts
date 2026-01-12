@@ -260,20 +260,19 @@ export class SessionWorker {
     if (historyEntries.length === 0) {
       return false;
     }
-    const assistantIndex =
-      output === undefined
-        ? -1
-        : (historyEntries
-            .map((entry, index) => ({ entry, index }))
-            .filter(
-              ({ entry }) =>
-                entry.role === "assistant" && entry.content === output,
-            )
-            .map(({ index }) => index)
-            .pop() ?? -1);
-    const searchEnd =
-      assistantIndex >= 0 ? assistantIndex : historyEntries.length;
-    for (let i = searchEnd - 1; i >= 0; i -= 1) {
+    let assistantIndex = -1;
+    if (output !== undefined) {
+      for (let i = historyEntries.length - 1; i >= 0; i -= 1) {
+        const entry = historyEntries[i];
+        if (entry.role === "assistant" && entry.content === output) {
+          assistantIndex = i;
+          break;
+        }
+      }
+    }
+    const startIndex =
+      assistantIndex >= 0 ? assistantIndex - 1 : historyEntries.length - 1;
+    for (let i = startIndex; i >= 0; i -= 1) {
       const entry = historyEntries[i];
       if (entry.role === "user") {
         return entry.content === input;

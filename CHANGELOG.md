@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-01-13
+
+### Added
+
+- ShellOpencodeRunner 解析 JSON 输出并返回历史与响应内容
+
+### Changed
+
+- Opencode 启动参数统一为 `-p -c -f json`
+
 ## [0.0.11] - 2026-01-13
 
 ### Added

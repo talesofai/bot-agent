@@ -66,11 +66,23 @@ GET /api/v1/groups/{group_id}
 ```json
 {
   "id": "123456789",
-  "name": "测试群",
-  "enabled": true,
-  "triggerMode": "mention",
-  "agentConfig": "# Agent 配置\n...",
-  "skills": ["draw", "roleplay"]
+  "config": {
+    "enabled": true,
+    "triggerMode": "mention",
+    "keywords": ["小助手"],
+    "cooldown": 5,
+    "adminUsers": ["123456789"],
+    "maxSessions": 1,
+    "model": "claude-sonnet-4-20250514"
+  },
+  "agentPrompt": "# Agent 配置\n...",
+  "skills": {
+    "draw": {
+      "name": "draw",
+      "content": "...",
+      "enabled": true
+    }
+  }
 }
 ```
 
@@ -82,7 +94,11 @@ Content-Type: application/json
 
 {
   "enabled": true,
-  "triggerMode": "mention"
+  "triggerMode": "mention",
+  "keywords": ["小助手"],
+  "cooldown": 5,
+  "adminUsers": ["123456789"],
+  "maxSessions": 1
 }
 ```
 

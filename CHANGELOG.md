@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+## [0.0.11] - 2026-01-13
+
+### Added
+
+- Session 活跃索引（Redis ZSET）用于 TTL 清理
+
+### Changed
+
+- SessionWorker 使用简单的 Redis SetNX + TTL，移除心跳与锁续期状态机
+- QQ 解析流程先标准化为 Segment 数组再提取文本
+
 ## [0.0.10] - 2026-01-13
 
 ### Added

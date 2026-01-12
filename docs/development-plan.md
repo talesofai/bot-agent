@@ -251,7 +251,7 @@ interface UnifiedMessage {
 ├── skills/           # 技能
 │   ├── draw.md
 │   └── roleplay.md
-├── context/          # 上下文
+├── sessions/         # 会话
 └── assets/           # 资源
 ```
 

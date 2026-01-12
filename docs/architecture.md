@@ -49,7 +49,8 @@
 │  │ Group 123   │  │ Group 456   │  │ Group 789   │              │
 │  │ ├ agent.md  │  │ ├ agent.md  │  │ ├ agent.md  │              │
 │  │ ├ skills/   │  │ ├ skills/   │  │ ├ skills/   │              │
-│  │ └ context/  │  │ └ context/  │  │ └ context/  │              │
+│  │ ├ sessions/ │  │ ├ sessions/ │  │ ├ sessions/ │              │
+│  │ └ assets/   │  │ └ assets/   │  │ └ assets/   │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -112,8 +113,11 @@ opencode -p "用户消息内容" \
 ├── skills/           # 自定义技能
 │   ├── draw.md       # 绘画技能
 │   └── roleplay.md   # 角色扮演技能
-├── context/          # 对话上下文
-│   └── history.jsonl # 历史消息
+├── sessions/         # 用户会话
+│   └── {user}-{key}/
+│       ├── history.jsonl
+│       ├── meta.json
+│       └── workspace/
 ├── assets/           # 群资源
 └── config.yaml       # 群配置
 ```
@@ -136,10 +140,10 @@ opencode -p "用户消息内容" \
 ### Agent 调用流程
 
 ```
-1. Bot Agent 准备工作目录（切换到群目录）
+1. Bot Agent 准备会话工作目录（sessions/{user}-{key}/workspace）
 2. 加载 agent.md 作为 system prompt
 3. 调用 opencode 非交互模式
-4. opencode 读取群目录下的 skills/ 和 context/
+4. opencode 读取群目录下的 skills/ 和 sessions/ 历史记录
 5. 执行推理，可能调用 talesofai MCP 工具
 6. 返回 JSON 格式响应
 7. Bot Agent 解析响应，发送消息

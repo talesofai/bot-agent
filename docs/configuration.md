@@ -169,7 +169,6 @@ logging:
 ├── skills/           # 群技能（同名覆盖默认技能，新增为扩展）
 │   ├── draw.md
 │   └── roleplay.md
-├── context/          # 群上下文（预留）
 ├── sessions/         # 用户会话
 │   └── {user}-{key}/
 │       ├── history.jsonl

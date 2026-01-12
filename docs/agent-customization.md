@@ -20,7 +20,7 @@
 │   ├── draw.md       # 绘画技能
 │   ├── roleplay.md   # 角色扮演技能
 │   └── search.md     # 搜索技能
-├── context/          # 上下文（自动管理）
+├── sessions/         # 会话（自动管理）
 └── assets/           # 资源文件
 ```
 

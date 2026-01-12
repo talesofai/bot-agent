@@ -98,7 +98,7 @@ export class MilkyConnection extends EventEmitter {
     }
 
     this.echoCounter = this.nextEchoCounter();
-    const echo = `${Date.now()}-${this.echoCounter}`;
+    const echo = String(this.echoCounter);
     const payload = JSON.stringify({ action, params, echo });
 
     return new Promise((resolve, reject) => {

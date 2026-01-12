@@ -141,6 +141,7 @@ export class SessionWorker {
         maxEntries: this.historyMaxEntries,
         maxBytes: this.historyMaxBytes,
       });
+      const groupConfig = await this.sessionManager.getGroupConfig(groupId);
       const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
       const systemPrompt = buildSystemPrompt(agentPrompt);
       const prompt = buildOpencodePrompt({
@@ -148,7 +149,11 @@ export class SessionWorker {
         history,
         input: payload.input,
       });
-      const launchSpec = this.launcher.buildLaunchSpec(sessionInfo, prompt);
+      const launchSpec = this.launcher.buildLaunchSpec(
+        sessionInfo,
+        prompt,
+        groupConfig.model,
+      );
 
       // 5. Run
       const result = await this.runner.run({

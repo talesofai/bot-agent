@@ -12,9 +12,10 @@ export class OpencodeLauncher {
   buildLaunchSpec(
     sessionInfo: SessionInfo,
     prompt: string,
+    modelOverride?: string,
   ): OpencodeLaunchSpec {
     const groupPath = sessionInfo.groupPath;
-    const model = getConfig().OPENCODE_MODEL?.trim();
+    const model = modelOverride?.trim() || getConfig().OPENCODE_MODEL?.trim();
     const args = ["-p", prompt, "-c", groupPath, "-f", "json"];
     if (model) {
       args.push("-m", model);

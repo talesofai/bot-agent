@@ -170,7 +170,7 @@ export class SessionManager {
     await this.groupRepository.ensureGroupDir(groupId);
   }
 
-  private async getGroupConfig(groupId: string): Promise<GroupConfig> {
+  async getGroupConfig(groupId: string): Promise<GroupConfig> {
     const groupPath = this.sessionRepository.getGroupPath(groupId);
     return this.groupRepository.loadConfig(groupPath);
   }

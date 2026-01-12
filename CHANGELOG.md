@@ -25,6 +25,7 @@
 - History 追加仅在匹配内容时跳过，避免遗漏当前消息
 - GroupWatcher 监听删除事件，确保清理后重载
 - SessionRepository 使用统一的 sessionId 构造逻辑
+- GroupConfig 的 model 覆盖 OPENCODE_MODEL
 
 ### Changed
 

@@ -20,6 +20,7 @@
 - 日志不再记录用户原文内容，改为记录摘要哈希与长度
 - QQ 连接测试改用 mock-socket，减少自制 FakeWebSocket 偏差
 - UnifiedMessage 支持泛型 raw 类型，减少 unknown 漫延
+- Dockerfile 运行命令改为使用 `bun run start`
 
 ## [0.0.8] - 2026-01-13
 

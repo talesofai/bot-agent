@@ -37,4 +37,4 @@ RUN mkdir -p /data/groups
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "[ -f dist/index.js ] || { echo 'dist/index.js not found. Build the app first.' >&2; exit 1; }; bun run dist/index.js"]
+CMD ["bun", "run", "start"]

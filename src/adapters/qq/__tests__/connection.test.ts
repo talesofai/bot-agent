@@ -90,4 +90,38 @@ describe("MilkyConnection", () => {
     await connection.disconnect();
     expect(connection.isConnected()).toBe(false);
   });
+
+  test("should handle ArrayBuffer payloads", async () => {
+    const connection = new MilkyConnection({
+      url: "ws://localhost:3000",
+      logger: mockLogger,
+      onEvent: onEventMock,
+    });
+
+    const payload = JSON.stringify({ post_type: "message" });
+    const buffer = new TextEncoder().encode(payload).buffer;
+
+    await (connection as unknown as { handleMessage: (data: unknown) => Promise<void> }).handleMessage(
+      buffer
+    );
+
+    expect(onEventMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("should handle Uint8Array payloads", async () => {
+    const connection = new MilkyConnection({
+      url: "ws://localhost:3000",
+      logger: mockLogger,
+      onEvent: onEventMock,
+    });
+
+    const payload = JSON.stringify({ post_type: "message" });
+    const buffer = new TextEncoder().encode(payload);
+
+    await (connection as unknown as { handleMessage: (data: unknown) => Promise<void> }).handleMessage(
+      buffer
+    );
+
+    expect(onEventMock).toHaveBeenCalledTimes(1);
+  });
 });

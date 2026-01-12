@@ -3,7 +3,7 @@ import { access, readdir, rm, stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Logger } from "pino";
 
-import { config as appConfig } from "../config";
+import { getConfig } from "../config";
 import type { SessionMeta } from "../types/session";
 
 export interface SessionTtlCleanerOptions {
@@ -18,7 +18,7 @@ export class SessionTtlCleaner {
   private ttlMs: number;
 
   constructor(options: SessionTtlCleanerOptions) {
-    this.dataDir = options.dataDir ?? appConfig.GROUPS_DATA_DIR;
+    this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
     this.logger = options.logger.child({ component: "session-ttl-cleaner" });
     this.ttlMs = options.ttlMs ?? 30 * 24 * 60 * 60 * 1000;
   }

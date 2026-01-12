@@ -1,4 +1,4 @@
-import { config } from "./config";
+import { getConfig } from "./config";
 import { logger } from "./logger";
 import { createAdapter } from "./adapters/index";
 
@@ -6,6 +6,8 @@ import type { UnifiedMessage } from "./types/index";
 import { BullmqSessionQueue } from "./queue";
 import { SessionManager, buildSessionId } from "./session";
 import { NoopOpencodeRunner, SessionWorker } from "./worker";
+
+const config = getConfig();
 
 logger.info(
   {

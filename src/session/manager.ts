@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import { config as appConfig } from "../config";
+import { getConfig } from "../config";
 import { logger as defaultLogger } from "../logger";
 import { GroupFileRepository } from "../store/repository";
 import type { GroupConfig } from "../types/group";
@@ -31,7 +31,7 @@ export class SessionManager {
   private historyStore: HistoryStore;
 
   constructor(options: SessionManagerOptions = {}) {
-    this.dataDir = options.dataDir ?? appConfig.GROUPS_DATA_DIR;
+    this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "session-manager",
     });

@@ -57,4 +57,15 @@ function createConfig(): AppConfig {
   return envSchema.parse(process.env);
 }
 
-export const config = createConfig();
+let cachedConfig: AppConfig | null = null;
+
+export function getConfig(): AppConfig {
+  if (!cachedConfig) {
+    cachedConfig = createConfig();
+  }
+  return cachedConfig;
+}
+
+export function resetConfig(): void {
+  cachedConfig = null;
+}

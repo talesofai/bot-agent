@@ -2,7 +2,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { LRUCache } from "lru-cache";
 import type { Logger } from "pino";
 import type { GroupData } from "../types/group";
-import { config as appConfig } from "../config";
+import { getConfig } from "../config";
 import { logger as defaultLogger } from "../logger";
 import { GroupFileRepository } from "./repository";
 import { GroupWatcher } from "./watcher";
@@ -33,7 +33,7 @@ export class GroupStore {
   private watcher: GroupWatcher;
 
   constructor(options: GroupStoreOptions = {}) {
-    this.dataDir = options.dataDir ?? appConfig.GROUPS_DATA_DIR;
+    this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "group-store",
     });

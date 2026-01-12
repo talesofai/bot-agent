@@ -1,7 +1,8 @@
 import pino from "pino";
 
-import { config } from "./config";
+import { getConfig } from "./config";
 
+const config = getConfig();
 const logFormat = config.LOG_FORMAT?.toLowerCase() ?? "json";
 const transport =
   logFormat === "pretty"

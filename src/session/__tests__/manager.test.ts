@@ -28,6 +28,20 @@ describe("SessionManager", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
+  test("createSession rejects negative key", async () => {
+    const tempDir = makeTempDir();
+    const manager = new SessionManager({
+      dataDir: tempDir,
+      activityIndex: {
+        recordActivity: async (_key: SessionActivityKey) => {},
+      },
+    });
+    await expect(
+      manager.createSession("group-1", "user-1", { key: -1, maxSessions: 2 }),
+    ).rejects.toThrow("Session key must be a non-negative integer");
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
   test("appendHistory writes entries", async () => {
     const tempDir = makeTempDir();
     const manager = new SessionManager({

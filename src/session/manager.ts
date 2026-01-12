@@ -72,6 +72,9 @@ export class SessionManager {
     options: CreateSessionOptions = {},
   ): Promise<SessionInfo> {
     const key = options.key ?? 0;
+    if (!Number.isInteger(key) || key < 0) {
+      throw new Error("Session key must be a non-negative integer");
+    }
 
     await this.ensureGroupDir(groupId);
     const config = await this.getGroupConfig(groupId);

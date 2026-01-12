@@ -1,4 +1,4 @@
-import { readFile, appendFile } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import type { Logger } from "pino";
 import type { HistoryEntry } from "../types/session";
 
@@ -20,9 +20,8 @@ export class HistoryStore {
     historyPath: string,
     options: HistoryReadOptions = {},
   ): Promise<HistoryEntry[]> {
-    const maxBytes = options.maxBytes ?? this.maxBytes;
     try {
-      const content = await readFile(historyPath, "utf-8");
+      const content = await this.readTail(historyPath, options);
       let entries = content
         .split("\n")
         .map((line) => line.trim())
@@ -36,9 +35,6 @@ export class HistoryStore {
           }
         })
         .filter((entry): entry is HistoryEntry => entry !== null);
-      if (typeof maxBytes === "number" && maxBytes > 0 && entries.length > 0) {
-        entries = this.trimEntriesByBytes(entries, maxBytes);
-      }
       if (
         typeof options.maxEntries === "number" &&
         options.maxEntries > 0 &&
@@ -61,21 +57,33 @@ export class HistoryStore {
     await appendFile(historyPath, line, "utf-8");
   }
 
-  private trimEntriesByBytes(
-    entries: HistoryEntry[],
-    maxBytes: number,
-  ): HistoryEntry[] {
-    let total = 0;
-    const result: HistoryEntry[] = [];
-    for (let i = entries.length - 1; i >= 0; i -= 1) {
-      const line = JSON.stringify(entries[i]);
-      const lineBytes = Buffer.byteLength(line, "utf-8") + 1;
-      if (total + lineBytes > maxBytes) {
-        break;
-      }
-      total += lineBytes;
-      result.push(entries[i]);
+  private async readTail(
+    historyPath: string,
+    options: HistoryReadOptions,
+  ): Promise<string> {
+    const maxEntries = options.maxEntries;
+    if (typeof maxEntries === "number" && maxEntries > 0) {
+      return this.runTail(["-n", String(maxEntries), historyPath]);
     }
-    return result.reverse();
+    const maxBytes = options.maxBytes ?? this.maxBytes;
+    return this.runTail(["-c", String(maxBytes), historyPath]);
+  }
+
+  private async runTail(args: string[]): Promise<string> {
+    const child = Bun.spawn(["tail", ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    if (exitCode !== 0) {
+      const detail = stderr.trim() || stdout.trim() || "unknown error";
+      this.logger.warn({ detail }, "tail command failed");
+      return "";
+    }
+    return stdout;
   }
 }

@@ -130,6 +130,7 @@ export class GroupStore {
       return groupData;
     } catch (err) {
       this.logger.error({ err, groupId }, "Failed to load group");
+      this.groups.delete(groupId);
       return null;
     }
   }

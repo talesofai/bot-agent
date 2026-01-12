@@ -34,6 +34,7 @@
 - Session key 前缀支持仅包含编号的输入
 - 文档更新群配置示例字段与类型
 - Agent customization 文档同步群配置字段
+- GroupStore 读取异常时清理缓存
 
 ### Changed
 

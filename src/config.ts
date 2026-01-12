@@ -26,14 +26,19 @@ const envSchema = z
     DEFAULT_GROUP_ID: z.string().optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.PLATFORM === "qq" && !data.MILKY_URL) {
+    const requiresAdapterConfig = data.SERVICE_ROLE !== "worker";
+    if (requiresAdapterConfig && data.PLATFORM === "qq" && !data.MILKY_URL) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "MILKY_URL is required for QQ platform",
         path: ["MILKY_URL"],
       });
     }
-    if (data.PLATFORM === "discord" && !data.DISCORD_TOKEN) {
+    if (
+      requiresAdapterConfig &&
+      data.PLATFORM === "discord" &&
+      !data.DISCORD_TOKEN
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "DISCORD_TOKEN is required for Discord platform",

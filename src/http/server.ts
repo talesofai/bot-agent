@@ -10,9 +10,11 @@ export interface HttpServerOptions {
   port?: number;
 }
 
+export type HttpServer = Server;
+
 export async function startHttpServer(
   options: HttpServerOptions,
-): Promise<Server> {
+): Promise<HttpServer> {
   const config = getConfig();
   const startedAt = Date.now();
   const version = await resolveVersion();

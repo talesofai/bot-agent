@@ -7,7 +7,7 @@ import type { UnifiedMessage } from "./types/index";
 import { BullmqResponseQueue, BullmqSessionQueue } from "./queue";
 import { SessionManager, buildSessionId } from "./session";
 import { ResponseWorker, ShellOpencodeRunner, SessionWorker } from "./worker";
-import { startHttpServer } from "./http/server";
+import { startHttpServer, type HttpServer } from "./http/server";
 
 const config = getConfig();
 
@@ -69,7 +69,7 @@ if (responseWorker) {
   responseWorker.start();
 }
 
-let httpServer: Awaited<ReturnType<typeof startHttpServer>> | null = null;
+let httpServer: HttpServer | null = null;
 startHttpServer({ logger })
   .then((server) => {
     httpServer = server;

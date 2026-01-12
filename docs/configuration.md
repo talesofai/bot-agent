@@ -203,18 +203,14 @@ triggerMode: mention # 触发方式: mention, keyword, all
 keywords: # keyword 模式的触发词
   - "小助手"
   - "机器人"
-cooldown: 5s # 消息冷却时间
-maxContextMessages: 20 # 上下文消息数量限制
+cooldown: 5 # 消息冷却时间（秒）
+maxSessions: 1 # 每个用户最大会话数
+model: claude-sonnet-4-20250514 # 覆盖 OPENCODE_MODEL（可选）
 
 # 管理员配置
-admins:
+adminUsers:
   - 123456789 # QQ 号
   - 987654321
-
-# 权限配置
-permissions:
-  allowSkillEdit: admin # 谁可以编辑技能: admin, all, none
-  allowAgentEdit: admin # 谁可以编辑 agent.md
 ```
 
 ## 配置热更新（规划）

@@ -207,22 +207,17 @@ keywords: # keyword 模式的触发词
   - "机器人"
 
 # 冷却时间（防止刷屏）
-cooldown: 5s
+cooldown: 5
 
-# 上下文配置
-context:
-  maxMessages: 20 # 保留的历史消息数
-  expireTime: 30m # 上下文过期时间
+# 每个用户最大会话数
+maxSessions: 1
 
-# 管理员（可以编辑配置）
-admins:
+# 覆盖模型（可选）
+model: claude-sonnet-4-20250514
+
+# 管理员
+adminUsers:
   - 123456789
-
-# 权限控制
-permissions:
-  allowSkillEdit: admin # admin | all | none
-  allowAgentEdit: admin
-  allowConfigEdit: admin
 ```
 
 ## 管理指令

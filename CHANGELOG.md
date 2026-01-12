@@ -32,6 +32,8 @@
 - ResponseJobData 强制 channelType，避免隐式默认值
 - 队列 enqueue 移除多余的 payload 复制
 - Session key 前缀支持仅包含编号的输入
+- 文档更新群配置示例字段与类型
+- Agent customization 文档同步群配置字段
 
 ### Changed
 

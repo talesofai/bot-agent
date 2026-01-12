@@ -222,7 +222,7 @@ adminUsers:
 
 ## 管理指令
 
-群管理员可以使用以下指令：
+以下指令仍在规划中，当前版本尚未提供：
 
 | 指令                 | 说明          |
 | -------------------- | ------------- |
@@ -252,4 +252,4 @@ docker compose -f deployments/docker/docker-compose.yml logs -f opencode-bot-age
 
 ### 测试配置
 
-发送消息 `/test prompt "你好"` 可以测试 Agent 响应（仅管理员）。
+测试指令仍在规划中。

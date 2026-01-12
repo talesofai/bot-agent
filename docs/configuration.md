@@ -47,9 +47,7 @@ OPENCODE_MODEL=claude-sonnet-4-20250514
 # LuckyLilliaBot Milky API 地址
 MILKY_URL=http://localhost:3000
 
-# WebSocket 重连配置
-MILKY_RECONNECT_INTERVAL=5s
-MILKY_MAX_RECONNECT_ATTEMPTS=10
+# WebSocket 重连配置（当前使用内置默认值）
 ```
 
 ### 队列配置
@@ -60,9 +58,6 @@ REDIS_URL=redis://localhost:6379
 
 # 服务角色: all | adapter | worker
 SERVICE_ROLE=all
-
-# 队列 Worker 并发数 (可选, 默认: 1)
-SESSION_WORKER_CONCURRENCY=1
 ```
 
 ### HTTP 服务配置
@@ -80,12 +75,6 @@ DEFAULT_GROUP_ID=
 ```env
 # 群数据目录
 GROUPS_DATA_DIR=/data/groups
-
-# 默认 Agent 配置路径
-DEFAULT_AGENT_CONFIG=/app/configs/default-agent.md
-
-# 新群自动初始化
-AUTO_INIT_NEW_GROUPS=true
 ```
 
 ### 日志配置
@@ -94,7 +83,7 @@ AUTO_INIT_NEW_GROUPS=true
 # 日志级别: debug, info, warn, error
 LOG_LEVEL=info
 
-# 日志格式: json, text
+# 日志格式: json, pretty
 LOG_FORMAT=json
 ```
 
@@ -104,8 +93,6 @@ LOG_FORMAT=json
 # talesofai MCP Server 地址
 MCP_TALESOFAI_URL=http://mcp.talesofai.com
 
-# MCP 超时
-MCP_TIMEOUT=30s
 ```
 
 ## 配置文件

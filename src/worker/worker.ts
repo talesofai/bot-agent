@@ -204,7 +204,12 @@ export class SessionWorker {
   ): Promise<void> {
     const entries: HistoryEntry[] = [];
 
-    if (payload?.input) {
+    if (
+      payload?.input &&
+      !historyEntries?.some(
+        (entry) => entry.role === "user" && entry.content === payload.input,
+      )
+    ) {
       entries.push({
         role: "user",
         content: payload.input,

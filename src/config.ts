@@ -3,21 +3,38 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { z } from "zod";
 
-const envSchema = z.object({
-  NODE_ENV: z.string().optional(),
-  /** Platform to use: qq or discord */
-  PLATFORM: z.enum(["qq", "discord"]).default("qq"),
-  // QQ platform configuration
-  MILKY_URL: z.string().url().optional(),
-  // Discord platform configuration
-  DISCORD_TOKEN: z.string().optional(),
-  DISCORD_APPLICATION_ID: z.string().optional(),
-  GROUPS_DATA_DIR: z.string().default("/data/groups"),
-  OPENCODE_MODEL: z.string().default("claude-sonnet-4-20250514"),
-  LOG_LEVEL: z.string().default("info"),
-  LOG_FORMAT: z.string().default("json"),
-  MCP_TALESOFAI_URL: z.string().url().optional(),
-});
+const envSchema = z
+  .object({
+    NODE_ENV: z.string().optional(),
+    /** Platform to use: qq or discord */
+    PLATFORM: z.enum(["qq", "discord"]).default("qq"),
+    // QQ platform configuration
+    MILKY_URL: z.string().url().optional(),
+    // Discord platform configuration
+    DISCORD_TOKEN: z.string().optional(),
+    DISCORD_APPLICATION_ID: z.string().optional(),
+    GROUPS_DATA_DIR: z.string().default("/data/groups"),
+    OPENCODE_MODEL: z.string().default("claude-sonnet-4-20250514"),
+    LOG_LEVEL: z.string().default("info"),
+    LOG_FORMAT: z.string().default("json"),
+    MCP_TALESOFAI_URL: z.string().url().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.PLATFORM === "qq" && !data.MILKY_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "MILKY_URL is required for QQ platform",
+        path: ["MILKY_URL"],
+      });
+    }
+    if (data.PLATFORM === "discord" && !data.DISCORD_TOKEN) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "DISCORD_TOKEN is required for Discord platform",
+        path: ["DISCORD_TOKEN"],
+      });
+    }
+  });
 
 export type AppConfig = z.infer<typeof envSchema>;
 

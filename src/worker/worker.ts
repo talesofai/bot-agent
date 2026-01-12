@@ -217,9 +217,15 @@ export class SessionWorker {
       });
     }
 
+    const hasAssistantEntry = historyEntries?.some(
+      (entry) => entry.role === "assistant",
+    );
+
     if (historyEntries && historyEntries.length > 0) {
       entries.push(...historyEntries);
-    } else if (output) {
+    }
+
+    if (!hasAssistantEntry && output) {
       entries.push({
         role: "assistant",
         content: output,

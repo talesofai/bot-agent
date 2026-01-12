@@ -11,6 +11,7 @@
 
 - ShellOpencodeRunner 使用 `opencode` CLI 执行推理
 - 新增响应队列与 ResponseWorker，用于发送 AI 回复
+- 新增 `/health` 端点与 HTTP 服务配置
 
 ### Changed
 

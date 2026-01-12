@@ -35,6 +35,16 @@
 version: "3.8"
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: opencode-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+
   pmhq:
     image: linyuchen/pmhq:latest
     container_name: luckylillia-pmhq
@@ -88,7 +98,8 @@ services:
   #     - MILKY_URL=http://luckylillia:3000
 ```
 
-当前使用公开镜像 `linyuchen/pmhq` 与 `linyuchen/llbot`，如需固定版本可在 compose 中替换 tag。
+当前使用公开镜像 `linyuchen/pmhq` 与 `linyuchen/llbot`。
+注意：**Redis 是由于引入分布式任务队列（BullMQ）而必须的服务**，请确保它在 Agent 启动前已就绪。
 
 ### 启动命令
 

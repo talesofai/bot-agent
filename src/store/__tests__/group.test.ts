@@ -65,6 +65,7 @@ describe("GroupStore", () => {
       expect(existsSync(join(testDir, "789012", "skills"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "context"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "assets"))).toBe(true);
+      expect(existsSync(join(testDir, "789012", "sessions"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "agent.md"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "config.yaml"))).toBe(true);
     });
@@ -104,6 +105,22 @@ cooldown: 5
       expect(group!.config.triggerMode).toBe("keyword");
       expect(group!.config.keywords).toEqual(["bot", "help"]);
       expect(group!.config.cooldown).toBe(5);
+    });
+
+    test("should load allowMultipleSessions from config", async () => {
+      const groupPath = join(testDir, "multi-session");
+      mkdirSync(groupPath, { recursive: true });
+      writeFileSync(
+        join(groupPath, "config.yaml"),
+        `
+allowMultipleSessions: true
+`,
+      );
+
+      const group = await store.loadGroup("multi-session");
+
+      expect(group).not.toBeNull();
+      expect(group!.config.allowMultipleSessions).toBe(true);
     });
 
     test("should parse agent.md with frontmatter", async () => {

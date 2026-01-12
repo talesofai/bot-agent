@@ -20,6 +20,8 @@ const envSchema = z
     LOG_LEVEL: z.string().default("info"),
     LOG_FORMAT: z.string().default("json"),
     MCP_TALESOFAI_URL: z.string().url().optional(),
+    REDIS_URL: z.string().default("redis://localhost:6379"),
+    SERVICE_ROLE: z.enum(["all", "adapter", "worker"]).default("all"),
   })
   .superRefine((data, ctx) => {
     if (data.PLATFORM === "qq" && !data.MILKY_URL) {

@@ -52,6 +52,21 @@ MILKY_RECONNECT_INTERVAL=5s
 MILKY_MAX_RECONNECT_ATTEMPTS=10
 ```
 
+### 队列配置
+
+### 队列配置
+
+```env
+# Redis 连接地址 (BullMQ Backend)
+REDIS_URL=redis://localhost:6379
+
+# 服务角色: all | adapter | worker
+SERVICE_ROLE=all
+
+# 队列 Worker 并发数 (可选, 默认: 1)
+SESSION_WORKER_CONCURRENCY=1
+```
+
 ### 群管理配置
 
 ```env

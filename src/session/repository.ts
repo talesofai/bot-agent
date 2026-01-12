@@ -1,0 +1,81 @@
+import { constants } from "node:fs";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { Logger } from "pino";
+
+import type { SessionMeta, SessionPaths } from "../types/session";
+
+export interface SessionRepositoryOptions {
+  dataDir: string;
+  logger: Logger;
+}
+
+export class SessionRepository {
+  private dataDir: string;
+  private logger: Logger;
+
+  constructor(options: SessionRepositoryOptions) {
+    this.dataDir = options.dataDir;
+    this.logger = options.logger.child({ component: "session-repository" });
+  }
+
+  getGroupPath(groupId: string): string {
+    return join(this.dataDir, groupId);
+  }
+
+  getSessionId(userId: string, key: number): string {
+    return `${userId}-${key}`;
+  }
+
+  getSessionPaths(groupId: string, sessionId: string): SessionPaths {
+    const groupPath = this.getGroupPath(groupId);
+    const sessionsPath = join(groupPath, "sessions");
+    const sessionPath = join(sessionsPath, sessionId);
+    return {
+      groupPath,
+      sessionsPath,
+      sessionPath,
+      metaPath: join(sessionPath, "meta.json"),
+      historyPath: join(sessionPath, "history.jsonl"),
+      workspacePath: join(sessionPath, "workspace"),
+      inputPath: join(sessionPath, "workspace", "input"),
+      outputPath: join(sessionPath, "workspace", "output"),
+      runtimeLockPath: join(sessionPath, ".runtime.lock"),
+    };
+  }
+
+  async ensureSessionDir(paths: SessionPaths): Promise<void> {
+    await mkdir(paths.sessionsPath, { recursive: true });
+    await mkdir(paths.sessionPath, { recursive: true });
+    await mkdir(paths.workspacePath, { recursive: true });
+    await mkdir(paths.inputPath, { recursive: true });
+    await mkdir(paths.outputPath, { recursive: true });
+  }
+
+  async readMeta(metaPath: string): Promise<SessionMeta | null> {
+    if (!(await this.exists(metaPath))) {
+      return null;
+    }
+    try {
+      const raw = await readFile(metaPath, "utf-8");
+      return JSON.parse(raw) as SessionMeta;
+    } catch (err) {
+      this.logger.warn({ err, metaPath }, "Failed to read session meta");
+      return null;
+    }
+  }
+
+  async writeMeta(metaPath: string, meta: SessionMeta): Promise<void> {
+    const payload = JSON.stringify(meta, null, 2);
+    await writeFile(metaPath, payload, "utf-8");
+  }
+
+  private async exists(targetPath: string): Promise<boolean> {
+    try {
+      await access(targetPath, constants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}

@@ -26,6 +26,7 @@ triggerMode: mention
 keywords: []
 cooldown: 0
 adminUsers: []
+allowMultipleSessions: false
 `;
 
 export interface GroupFileRepositoryOptions {
@@ -49,6 +50,7 @@ export class GroupFileRepository {
     await mkdir(join(groupPath, "skills"), { recursive: true });
     await mkdir(join(groupPath, "context"), { recursive: true });
     await mkdir(join(groupPath, "assets"), { recursive: true });
+    await mkdir(join(groupPath, "sessions"), { recursive: true });
 
     const agentPath = join(groupPath, "agent.md");
     if (!(await this.exists(agentPath))) {
@@ -191,4 +193,5 @@ export class GroupFileRepository {
       return false;
     }
   }
+
 }

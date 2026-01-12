@@ -1,6 +1,18 @@
 version: "3.8"
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: opencode-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ../../data/redis:/data
+    networks:
+      - llbot_net
+
   pmhq:
     image: linyuchen/pmhq:latest
     platform: linux/amd64

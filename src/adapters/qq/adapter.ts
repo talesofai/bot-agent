@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import type { Logger } from "pino";
 import type {
   PlatformAdapter,
@@ -16,14 +17,11 @@ export interface QQAdapterOptions {
   logger?: Logger;
 }
 
-export class QQAdapter implements PlatformAdapter {
+export class QQAdapter extends EventEmitter implements PlatformAdapter {
   readonly platform = "qq";
 
   private connection: MilkyConnection;
   private sender: MessageSender;
-  private messageHandlers: MessageHandler[] = [];
-  private connectHandlers: Array<() => void> = [];
-  private disconnectHandlers: Array<() => void> = [];
   private logger: Logger;
   private botUserId: string | null = null;
   private isShuttingDown = false;
@@ -35,6 +33,7 @@ export class QQAdapter implements PlatformAdapter {
         "QQAdapter requires MILKY_URL to be configured (received empty or undefined url)",
       );
     }
+    super();
     this.logger = options.logger ?? defaultLogger.child({ adapter: "qq" });
 
     this.connection = new MilkyConnection({
@@ -49,26 +48,14 @@ export class QQAdapter implements PlatformAdapter {
 
     // Forward connection events with error protection
     this.connection.on("connect", () => {
-      for (const handler of this.connectHandlers) {
-        try {
-          handler();
-        } catch (err) {
-          this.logger.error({ err }, "Connect handler error");
-        }
-      }
+      this.emit("connect");
     });
     this.connection.on("disconnect", () => {
       // Don't notify if we're intentionally shutting down
       if (this.isShuttingDown) {
         return;
       }
-      for (const handler of this.disconnectHandlers) {
-        try {
-          handler();
-        } catch (err) {
-          this.logger.error({ err }, "Disconnect handler error");
-        }
-      }
+      this.emit("disconnect");
     });
 
     this.sender = new MessageSender(this.connection, this.logger);
@@ -89,7 +76,7 @@ export class QQAdapter implements PlatformAdapter {
   }
 
   onMessage(handler: MessageHandler): void {
-    this.messageHandlers.push(handler);
+    this.on("message", handler);
   }
 
   async sendMessage(options: SendMessageOptions): Promise<void> {
@@ -102,12 +89,12 @@ export class QQAdapter implements PlatformAdapter {
 
   /** Register a handler called when connection is established (including reconnects) */
   onConnect(handler: () => void): void {
-    this.connectHandlers.push(handler);
+    this.on("connect", handler);
   }
 
   /** Register a handler called when connection is lost */
   onDisconnect(handler: () => void): void {
-    this.disconnectHandlers.push(handler);
+    this.on("disconnect", handler);
   }
 
   private async handleEvent(event: unknown): Promise<void> {
@@ -115,16 +102,21 @@ export class QQAdapter implements PlatformAdapter {
       const message = parseMessage(event, this.botUserId);
       if (message) {
         this.logger.debug({ messageId: message.id }, "Message received");
-        for (const handler of this.messageHandlers) {
-          try {
-            await handler(message);
-          } catch (err) {
-            this.logger.error({ err, messageId: message.id }, "Handler error");
-          }
-        }
+        await this.emitMessage(message);
       }
     } catch (err) {
       this.logger.error({ err, event }, "Failed to parse event");
+    }
+  }
+
+  private async emitMessage(message: Parameters<MessageHandler>[0]): Promise<void> {
+    const handlers = this.listeners("message") as MessageHandler[];
+    for (const handler of handlers) {
+      try {
+        await handler(message);
+      } catch (err) {
+        this.logger.error({ err, messageId: message.id }, "Handler error");
+      }
     }
   }
 }

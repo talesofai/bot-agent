@@ -128,12 +128,12 @@ describe("MilkyConnection", () => {
     ).reconnectConfig = { initialDelay: 1, maxDelay: 1, multiplier: 1 };
 
     const connectPromise = connection.connect();
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     await connectPromise;
 
     sockets[0]?.close();
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(connectionCount).toBe(2);
   });

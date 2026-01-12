@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-01-13
+
+### Added
+
+- 群级触发逻辑（triggerMode/keywords/cooldown/adminUsers）
+- 入口默认群 ID 支持（DEFAULT_GROUP_ID）
+
 ## [0.0.12] - 2026-01-13
 
 ### Added

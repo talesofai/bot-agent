@@ -169,14 +169,14 @@ Be friendly and concise.
       writeFileSync(join(groupPath, "config.yaml"), "enabled: true");
 
       await store.loadGroup("get-test");
-
-      const group = store.getGroup("get-test");
+      
+      const group = await store.getGroup("get-test");
       expect(group).not.toBeNull();
       expect(group!.id).toBe("get-test");
     });
 
-    test("should return null for unloaded group", () => {
-      const group = store.getGroup("not-loaded");
+    test("should return null for unloaded group", async () => {
+      const group = await store.getGroup("not-loaded");
       expect(group).toBeNull();
     });
   });

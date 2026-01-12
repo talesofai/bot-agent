@@ -84,8 +84,13 @@ export class GroupStore {
   /**
    * Get group data by ID
    */
-  getGroup(groupId: string): GroupData | null {
-    return this.groups.get(groupId) ?? null;
+  async getGroup(groupId: string): Promise<GroupData | null> {
+    const cached = this.groups.get(groupId);
+    if (cached) {
+      return cached;
+    }
+
+    return this.loadGroup(groupId);
   }
 
   /**

@@ -105,7 +105,7 @@ export class SessionWorker {
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
     const { sessionId, groupId, userId, key, payload } = job.data;
-    const lockKey = `session:lock:${sessionId}`;
+    const lockKey = `session:lock:${groupId}:${sessionId}`;
 
     // 1. Acquire Lock
     // ioredis v5: set(key, value, "EX", seconds, "NX")

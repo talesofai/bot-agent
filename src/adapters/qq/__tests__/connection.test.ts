@@ -1,4 +1,5 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
+import { Server, WebSocket as MockWebSocket } from "mock-socket";
 import { MilkyConnection } from "../connection";
 import type { Logger } from "pino";
 
@@ -14,70 +15,39 @@ const createMockLogger = () => {
   return mockLogger;
 };
 
-class FakeWebSocket {
-  static instances: FakeWebSocket[] = [];
-  private listeners = new Map<string, Set<(event: Event) => void>>();
-  readonly url: string;
-
-  constructor(url: string) {
-    this.url = url;
-    FakeWebSocket.instances.push(this);
-  }
-
-  addEventListener(type: string, handler: (event: Event) => void): void {
-    const set = this.listeners.get(type) ?? new Set();
-    set.add(handler);
-    this.listeners.set(type, set);
-  }
-
-  removeEventListener(type: string, handler: (event: Event) => void): void {
-    const set = this.listeners.get(type);
-    if (!set) {
-      return;
-    }
-    set.delete(handler);
-  }
-
-  send(): void {}
-
-  close(): void {
-    this.emit("close");
-  }
-
-  emit(type: string): void {
-    const set = this.listeners.get(type);
-    if (!set) {
-      return;
-    }
-    const event = { type } as Event;
-    for (const handler of set) {
-      handler(event);
-    }
-  }
-}
-
 describe("MilkyConnection", () => {
   let mockLogger: Logger;
   let onEventMock: ReturnType<typeof mock>;
   let onBotIdMock: ReturnType<typeof mock>;
   let originalWebSocket: typeof WebSocket;
+  let server: Server;
+  let connectionCount = 0;
+  let sockets: Array<{ close: () => void }> = [];
+  const wsUrl = "ws://localhost:1234";
 
   beforeEach(() => {
     mockLogger = createMockLogger();
     onEventMock = mock(async () => {});
     onBotIdMock = mock(() => {});
     originalWebSocket = globalThis.WebSocket;
-    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
-    FakeWebSocket.instances = [];
+    globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    connectionCount = 0;
+    sockets = [];
+    server = new Server(wsUrl);
+    server.on("connection", (socket) => {
+      connectionCount += 1;
+      sockets.push(socket);
+    });
   });
 
   afterEach(() => {
     globalThis.WebSocket = originalWebSocket;
+    server.stop();
   });
 
   test("should create connection instance correctly", () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
       onBotId: onBotIdMock,
@@ -89,7 +59,7 @@ describe("MilkyConnection", () => {
 
   test("should report not connected initially", () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
     });
@@ -99,7 +69,7 @@ describe("MilkyConnection", () => {
 
   test("should throw error when sending request while disconnected", async () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
     });
@@ -111,7 +81,7 @@ describe("MilkyConnection", () => {
 
   test("should emit events on EventEmitter", () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
     });
@@ -132,7 +102,7 @@ describe("MilkyConnection", () => {
 
   test("disconnect should set connected to false", async () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
     });
@@ -143,7 +113,7 @@ describe("MilkyConnection", () => {
 
   test("should reconnect after close", async () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
     });
@@ -158,19 +128,19 @@ describe("MilkyConnection", () => {
     ).reconnectConfig = { initialDelay: 1, maxDelay: 1, multiplier: 1 };
 
     const connectPromise = connection.connect();
-    FakeWebSocket.instances[0].emit("open");
+    await new Promise((resolve) => setTimeout(resolve, 1));
     await connectPromise;
 
-    FakeWebSocket.instances[0].emit("close");
+    sockets[0]?.close();
 
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    expect(FakeWebSocket.instances.length).toBe(2);
+    expect(connectionCount).toBe(2);
   });
 
   test("should handle ArrayBuffer payloads", async () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
     });
@@ -189,7 +159,7 @@ describe("MilkyConnection", () => {
 
   test("should handle Uint8Array payloads", async () => {
     const connection = new MilkyConnection({
-      url: "ws://localhost:3000",
+      url: wsUrl,
       logger: mockLogger,
       onEvent: onEventMock,
     });

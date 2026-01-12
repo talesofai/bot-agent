@@ -26,9 +26,14 @@ const adapter = config.SERVICE_ROLE === "worker" ? null : createAdapter(config);
 const sessionManager = new SessionManager();
 const groupStore = adapter ? new GroupStore() : null;
 if (groupStore) {
-  groupStore.init().catch((err) => {
-    logger.error({ err }, "Failed to initialize GroupStore");
-  });
+  groupStore
+    .init()
+    .then(() => {
+      groupStore.startWatching();
+    })
+    .catch((err) => {
+      logger.error({ err }, "Failed to initialize GroupStore");
+    });
 }
 const groupCooldowns = new Map<string, number>();
 const sessionQueueName = "session-jobs";

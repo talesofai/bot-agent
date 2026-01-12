@@ -1,4 +1,5 @@
 import { Worker, type Job, DelayedError } from "bullmq";
+import { randomUUID } from "node:crypto";
 import IORedis from "ioredis";
 import type { Logger } from "pino";
 
@@ -108,10 +109,11 @@ export class SessionWorker {
     const lockKey = `session:lock:${groupId}:${sessionId}`;
 
     // 1. Acquire Lock
+    const lockValue = `${sessionId}:${randomUUID()}`;
     // ioredis v5: set(key, value, "EX", seconds, "NX")
     const acquired = await this.lockConnection.set(
       lockKey,
-      "locked",
+      lockValue,
       "EX",
       this.sessionLockTtlSeconds,
       "NX",
@@ -183,7 +185,7 @@ export class SessionWorker {
         }
       }
       // 8. Release Lock
-      await this.lockConnection.del(lockKey);
+      await this.releaseLock(lockKey, lockValue);
     }
   }
 
@@ -270,5 +272,13 @@ export class SessionWorker {
       userId: jobData.userId,
       sessionId: jobData.sessionId,
     });
+  }
+
+  private async releaseLock(lockKey: string, lockValue: string): Promise<void> {
+    const script =
+      "if redis.call('get', KEYS[1]) == ARGV[1] then " +
+      "return redis.call('del', KEYS[1]) " +
+      "else return 0 end";
+    await this.lockConnection.eval(script, 1, lockKey, lockValue);
   }
 }

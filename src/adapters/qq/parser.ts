@@ -37,7 +37,8 @@ export function parseMessage(
     return null;
   }
 
-  const { content, mentionsBot } = extractContent(event, botUserId);
+  const { segments, mentionsBot } = normalizeSegments(event, botUserId);
+  const content = extractTextFromSegments(segments);
 
   return {
     id: String(event.message_id),
@@ -70,42 +71,30 @@ function isMessageEvent(event: unknown): event is MilkyMessageEvent {
   );
 }
 
-/**
- * Extract content and mentionsBot from event
- * Handles message as array, string, or undefined with raw_message fallback
- */
-function extractContent(
+function normalizeSegments(
   event: MilkyMessageEvent,
   botUserId: string | null,
-): { content: string; mentionsBot: boolean } {
+): { segments: MilkyMessageSegment[]; mentionsBot: boolean } {
   const { message, raw_message } = event;
-
-  // Case 1: message is an array of segments
   if (Array.isArray(message)) {
     return {
-      content: extractTextFromSegments(message),
+      segments: message,
       mentionsBot: checkMentionsBotInSegments(message, botUserId),
     };
   }
-
-  // Case 2: message is a string
   if (typeof message === "string") {
     return {
-      content: parseRawMessage(message),
+      segments: wrapTextAsSegments(parseRawMessage(message)),
       mentionsBot: checkMentionsBotInRaw(message, botUserId),
     };
   }
-
-  // Case 3: fallback to raw_message
   if (typeof raw_message === "string") {
     return {
-      content: parseRawMessage(raw_message),
+      segments: wrapTextAsSegments(parseRawMessage(raw_message)),
       mentionsBot: checkMentionsBotInRaw(raw_message, botUserId),
     };
   }
-
-  // No content available
-  return { content: "", mentionsBot: false };
+  return { segments: [], mentionsBot: false };
 }
 
 function extractTextFromSegments(message: MilkyMessageSegment[]): string {
@@ -116,6 +105,18 @@ function extractTextFromSegments(message: MilkyMessageSegment[]): string {
     }
   }
   return textParts.join("").trim();
+}
+
+function wrapTextAsSegments(text: string): MilkyMessageSegment[] {
+  if (!text) {
+    return [];
+  }
+  return [
+    {
+      type: "text",
+      data: { text },
+    },
+  ];
 }
 
 function checkMentionsBotInSegments(

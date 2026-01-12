@@ -12,6 +12,8 @@ export interface HttpServerOptions {
 
 export type HttpServer = Server;
 
+let cachedVersion: string | null = null;
+
 export async function startHttpServer(
   options: HttpServerOptions,
 ): Promise<HttpServer> {
@@ -40,14 +42,24 @@ export async function startHttpServer(
 }
 
 async function resolveVersion(): Promise<string> {
+  if (cachedVersion) {
+    return cachedVersion;
+  }
+  const envVersion = process.env.APP_VERSION ?? process.env.npm_package_version;
+  if (envVersion) {
+    cachedVersion = envVersion;
+    return cachedVersion;
+  }
   try {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const packagePath = path.resolve(moduleDir, "..", "..", "package.json");
     const raw = await readFile(packagePath, "utf-8");
     const parsed = JSON.parse(raw) as { version?: string };
-    return parsed.version ?? "unknown";
+    cachedVersion = parsed.version ?? "unknown";
+    return cachedVersion;
   } catch {
-    return "unknown";
+    cachedVersion = "unknown";
+    return cachedVersion;
   }
 }
 

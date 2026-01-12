@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Logger } from "pino";
 
 import type { SessionInfo, SessionMeta } from "../types/session";
+import { buildSessionId } from "./utils";
 
 export interface SessionRepositoryOptions {
   dataDir: string;
@@ -33,7 +34,7 @@ export class SessionRepository {
   }
 
   getSessionId(userId: string, key: number): string {
-    return `${userId}-${key}`;
+    return buildSessionId(userId, key);
   }
 
   async loadSession(

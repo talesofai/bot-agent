@@ -120,6 +120,7 @@ export class SessionWorker {
     let sessionInfo: SessionInfo | null = null;
     let lockLost = false;
     let heartbeatFailures = 0;
+    const abortController = new AbortController();
 
     try {
       // 2. Start Heartbeat
@@ -136,8 +137,9 @@ export class SessionWorker {
               { sessionId, heartbeatFailures },
               "Session lock missing during heartbeat",
             );
-            if (heartbeatFailures >= this.heartbeatFailureThreshold) {
+            if (heartbeatFailures >= this.heartbeatFailureThreshold && !lockLost) {
               lockLost = true;
+              abortController.abort();
             }
           })
           .catch((err) => {
@@ -146,8 +148,9 @@ export class SessionWorker {
               { err, sessionId, heartbeatFailures },
               "Failed to extend session lock",
             );
-            if (heartbeatFailures >= this.heartbeatFailureThreshold) {
+            if (heartbeatFailures >= this.heartbeatFailureThreshold && !lockLost) {
               lockLost = true;
+              abortController.abort();
             }
           });
       }, this.heartbeatIntervalMs);
@@ -175,6 +178,7 @@ export class SessionWorker {
         session: sessionInfo,
         history,
         launchSpec,
+        signal: abortController.signal,
       });
       this.assertLockHealthy(lockLost, sessionId);
 

@@ -7,6 +7,7 @@ export interface OpencodeRunInput {
   session: SessionInfo;
   history: HistoryEntry[];
   launchSpec: OpencodeLaunchSpec;
+  signal?: AbortSignal;
 }
 
 export interface OpencodeRunResult {

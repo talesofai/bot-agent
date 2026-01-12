@@ -13,6 +13,7 @@
 - BullMQ stalled 处理参数可配置，降低卡死任务风险
 - HistoryStore 读取尾部时保留完整首行，避免边界丢数据
 - QQ echo 计数器接近上限时回绕，避免无界增长
+- Worker 在锁丢失时发出中止信号，允许 Runner 提前退出
 
 ### Changed
 

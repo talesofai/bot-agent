@@ -17,6 +17,7 @@
 
 ### Changed
 
+- /health 使用 Bun.serve 实现，移除 Fastify 依赖
 - Adapter 侧支持 `#<key>` 前缀解析会话 key
 
 ## [0.0.9] - 2026-01-13

@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import fastify, { type FastifyInstance } from "fastify";
 import type { Logger } from "pino";
 
 import { getConfig } from "../config";
@@ -13,21 +12,29 @@ export interface HttpServerOptions {
 
 export async function startHttpServer(
   options: HttpServerOptions,
-): Promise<FastifyInstance> {
+): Promise<Server> {
   const config = getConfig();
-  const app = fastify({ logger: options.logger });
   const startedAt = Date.now();
   const version = await resolveVersion();
   const port = options.port ?? config.HTTP_PORT;
 
-  app.get("/health", async () => ({
-    status: "ok",
-    version,
-    uptime: formatUptime(Date.now() - startedAt),
-  }));
+  const server = Bun.serve({
+    port,
+    fetch(req) {
+      const url = new URL(req.url);
+      if (url.pathname === "/health") {
+        return Response.json({
+          status: "ok",
+          version,
+          uptime: formatUptime(Date.now() - startedAt),
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    },
+  });
 
-  await app.listen({ port, host: "0.0.0.0" });
-  return app;
+  options.logger.info({ port }, "HTTP server started");
+  return server;
 }
 
 async function resolveVersion(): Promise<string> {

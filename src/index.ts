@@ -135,7 +135,7 @@ const shutdown = async () => {
       await responseWorker.stop();
     }
     if (httpServer) {
-      await httpServer.close();
+      httpServer.stop();
     }
     if (responseQueue) {
       await responseQueue.close();

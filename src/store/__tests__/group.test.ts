@@ -2,16 +2,20 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { GroupStore } from "../group";
+let GroupStore: typeof import("../group").GroupStore;
 
 describe("GroupStore", () => {
   let testDir: string;
   let store: GroupStore;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create a unique temp directory for each test
     testDir = join(tmpdir(), `group-store-test-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
+    process.env.MILKY_URL ??= "http://localhost:3000";
+    if (!GroupStore) {
+      ({ GroupStore } = await import("../group"));
+    }
     store = new GroupStore({ dataDir: testDir });
   });
 

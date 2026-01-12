@@ -206,10 +206,13 @@ export class SessionWorker {
   ): Promise<void> {
     const entries: HistoryEntry[] = [];
 
-    if (
+    const hasUserEntry =
       payload?.input &&
-      !historyEntries?.some((entry) => entry.role === "user")
-    ) {
+      historyEntries?.some(
+        (entry) => entry.role === "user" && entry.content === payload.input,
+      );
+
+    if (payload?.input && !hasUserEntry) {
       entries.push({
         role: "user",
         content: payload.input,
@@ -217,9 +220,11 @@ export class SessionWorker {
       });
     }
 
-    const hasAssistantEntry = historyEntries?.some(
-      (entry) => entry.role === "assistant",
-    );
+    const hasAssistantEntry =
+      output &&
+      historyEntries?.some(
+        (entry) => entry.role === "assistant" && entry.content === output,
+      );
 
     if (historyEntries && historyEntries.length > 0) {
       entries.push(...historyEntries);

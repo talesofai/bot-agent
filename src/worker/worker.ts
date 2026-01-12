@@ -24,6 +24,8 @@ export interface SessionWorkerOptions {
   historyMaxBytes?: number;
   heartbeatIntervalMs?: number;
   heartbeatFailureThreshold?: number;
+  stalledIntervalMs?: number;
+  maxStalledCount?: number;
 }
 
 export class SessionWorker {
@@ -38,6 +40,8 @@ export class SessionWorker {
   private historyMaxBytes?: number;
   private heartbeatIntervalMs: number;
   private heartbeatFailureThreshold: number;
+  private stalledIntervalMs: number;
+  private maxStalledCount: number;
 
   constructor(options: SessionWorkerOptions) {
     this.logger = options.logger.child({ component: "session-worker", workerId: options.id });
@@ -48,6 +52,8 @@ export class SessionWorker {
     this.historyMaxBytes = options.historyMaxBytes;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 60_000;
     this.heartbeatFailureThreshold = options.heartbeatFailureThreshold ?? 3;
+    this.stalledIntervalMs = options.stalledIntervalMs ?? 30_000;
+    this.maxStalledCount = options.maxStalledCount ?? 1;
 
     this.workerConnection = new IORedis(options.redisUrl, {
       maxRetriesPerRequest: null,
@@ -66,6 +72,10 @@ export class SessionWorker {
         concurrency: options.concurrency ?? 1,
         prefix: options.prefix,
         autorun: false,
+        settings: {
+          stalledInterval: this.stalledIntervalMs,
+          maxStalledCount: this.maxStalledCount,
+        },
       }
     );
 

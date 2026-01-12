@@ -16,6 +16,8 @@ export interface SessionWorkerPoolOptions {
   historyMaxEntries?: number;
   historyMaxBytes?: number;
   heartbeatIntervalMs?: number;
+  stalledIntervalMs?: number;
+  maxStalledCount?: number;
 }
 
 export class SessionWorkerPool {
@@ -37,6 +39,8 @@ export class SessionWorkerPool {
       historyMaxEntries: options.historyMaxEntries,
       historyMaxBytes: options.historyMaxBytes,
       heartbeatIntervalMs: options.heartbeatIntervalMs,
+      stalledIntervalMs: options.stalledIntervalMs,
+      maxStalledCount: options.maxStalledCount,
     });
   }
 

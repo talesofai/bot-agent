@@ -23,6 +23,8 @@ export interface GroupStoreOptions {
   dataDir?: string;
   /** Custom logger */
   logger?: Logger;
+  /** Debounce delay for hot reload (ms) */
+  debounceMs?: number;
 }
 
 type ReloadCallback = (groupId: string) => void;
@@ -43,15 +45,18 @@ adminUsers: []
 export class GroupStore {
   private dataDir: string;
   private logger: Logger;
+  private debounceMs: number;
   private groups = new Map<string, GroupData>();
   private reloadCallbacks: ReloadCallback[] = [];
   private watcher: FSWatcher | null = null;
+  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: GroupStoreOptions = {}) {
     this.dataDir = options.dataDir ?? appConfig.GROUPS_DATA_DIR;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "group-store",
     });
+    this.debounceMs = options.debounceMs ?? 300;
   }
 
   /**
@@ -195,6 +200,11 @@ export class GroupStore {
       this.watcher = null;
       this.logger.info("Stopped file watching");
     }
+
+    for (const timer of this.debounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.debounceTimers.clear();
   }
 
   private async loadAllGroups(): Promise<void> {
@@ -328,19 +338,29 @@ export class GroupStore {
       return;
     }
 
-    this.logger.debug(
-      { groupId, filePath },
-      "Reloading group due to file change",
-    );
-    await this.loadGroup(groupId);
-
-    // Notify callbacks
-    for (const callback of this.reloadCallbacks) {
-      try {
-        callback(groupId);
-      } catch (err) {
-        this.logger.error({ err, groupId }, "Reload callback error");
-      }
+    const existingTimer = this.debounceTimers.get(groupId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
     }
+
+    const timer = setTimeout(async () => {
+      this.debounceTimers.delete(groupId);
+      this.logger.debug(
+        { groupId, filePath },
+        "Reloading group due to file change",
+      );
+      await this.loadGroup(groupId);
+
+      // Notify callbacks
+      for (const callback of this.reloadCallbacks) {
+        try {
+          callback(groupId);
+        } catch (err) {
+          this.logger.error({ err, groupId }, "Reload callback error");
+        }
+      }
+    }, this.debounceMs);
+
+    this.debounceTimers.set(groupId, timer);
   }
 }

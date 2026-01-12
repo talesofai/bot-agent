@@ -23,6 +23,7 @@
 - Opencode 启动参数结构精简
 - 开发文档中的测试命令更新为 `bun test src`
 - Opencode 启动时追加 `OPENCODE_MODEL`
+- GroupStore 初始化失败时记录错误日志
 
 ## [0.0.16] - 2026-01-13
 

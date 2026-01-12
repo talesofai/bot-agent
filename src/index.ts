@@ -25,7 +25,9 @@ logger.info(
 const adapter = config.SERVICE_ROLE === "worker" ? null : createAdapter(config);
 const sessionManager = new SessionManager();
 const groupStore = new GroupStore();
-void groupStore.init();
+groupStore.init().catch((err) => {
+  logger.error({ err }, "Failed to initialize GroupStore");
+});
 const groupCooldowns = new Map<string, number>();
 const sessionQueueName = "session-jobs";
 const responseQueueName = "session-responses";

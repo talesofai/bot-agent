@@ -44,6 +44,7 @@ describe("GroupStore", () => {
         "# Test Agent\n\nYou are helpful.",
       );
 
+      store = new GroupStore({ dataDir: testDir, preload: true });
       await store.init();
 
       const groups = store.listGroups();
@@ -53,9 +54,9 @@ describe("GroupStore", () => {
   });
 
   describe("ensureGroupDir", () => {
-    test("should create group directory with subdirs", () => {
-      store.ensureGroupDir("789012");
-
+    test("should create group directory with subdirs", async () => {
+      await store.ensureGroupDir("789012");
+      
       expect(existsSync(join(testDir, "789012"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "skills"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "context"))).toBe(true);
@@ -64,13 +65,13 @@ describe("GroupStore", () => {
       expect(existsSync(join(testDir, "789012", "config.yaml"))).toBe(true);
     });
 
-    test("should not overwrite existing directory", () => {
+    test("should not overwrite existing directory", async () => {
       const groupPath = join(testDir, "existing");
       mkdirSync(groupPath, { recursive: true });
       writeFileSync(join(groupPath, "agent.md"), "Custom content");
 
-      store.ensureGroupDir("existing");
-
+      await store.ensureGroupDir("existing");
+      
       const content = Bun.file(join(groupPath, "agent.md")).text();
       expect(content).resolves.toBe("Custom content");
     });

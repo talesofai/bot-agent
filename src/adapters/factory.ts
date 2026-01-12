@@ -16,9 +16,6 @@ export type PlatformType = "qq" | "discord";
 export function createAdapter(config: AppConfig): PlatformAdapter {
   switch (config.PLATFORM) {
     case "qq":
-      if (!config.MILKY_URL) {
-        throw new Error("MILKY_URL is required for QQ platform");
-      }
       return new QQAdapter({ url: config.MILKY_URL });
     case "discord":
       // TODO: Implement Discord adapter

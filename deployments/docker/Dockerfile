@@ -1,29 +1,20 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies when package.json is present
-COPY package.json package-lock.json* pnpm-lock.yaml* ./
-RUN if [ -f package.json ]; then \
-      if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; \
-      elif [ -f package-lock.json ]; then npm ci; \
-      else npm install; \
-      fi; \
-    fi
+# Install dependencies
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY . .
 
-# Build when scripts are available
-RUN if [ -f package.json ]; then \
-      if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm run build; \
-      else npm run build; \
-      fi; \
-    fi
+# Build
+RUN bun run build
 
 # Runtime stage
-FROM node:20-alpine
+FROM oven/bun:1-alpine
 
 WORKDIR /app
 
@@ -46,4 +37,4 @@ RUN mkdir -p /data/groups
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "[ -f dist/index.js ] || { echo 'dist/index.js not found. Build the app first.' >&2; exit 1; }; node dist/index.js"]
+CMD ["sh", "-c", "[ -f dist/index.js ] || { echo 'dist/index.js not found. Build the app first.' >&2; exit 1; }; bun run dist/index.js"]

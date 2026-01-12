@@ -94,6 +94,7 @@ interface UnifiedMessage {
   id: string;
   platform: string;
   channelId: string;
+  channelType: "group" | "private";
   userId: string;
   sender: { nickname: string; displayName: string; role: string };
   content: string;

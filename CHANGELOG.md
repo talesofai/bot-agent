@@ -40,6 +40,8 @@
 - 架构与计划文档统一群目录结构为 sessions
 - 架构文档补充会话工作目录说明
 - 入队时强制携带 channelType，避免默认落入群消息
+- 配置文档中的占位示例移除未实现字段
+- 开发文档补充 UnifiedMessage 的 channelType 字段
 - API 文档示例对齐当前群配置字段
 - History 追加判断基于最新 assistant 前的 user 记录
 - 移除文档中未实现的群配置环境变量

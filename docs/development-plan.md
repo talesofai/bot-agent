@@ -74,6 +74,7 @@ interface UnifiedMessage {
   id: string;
   platform: string;
   channelId: string; // 群号 / 频道 ID
+  channelType: "group" | "private";
   userId: string;
   sender: { nickname; displayName; role };
   content: string;

@@ -108,28 +108,20 @@ server:
 # Milky 连接配置
 milky:
   url: ${MILKY_URL}
-  reconnect:
-    interval: 5s
-    maxAttempts: 10
 
 # Agent 配置
 agent:
   model: ${OPENCODE_MODEL:-claude-sonnet-4-20250514}
-  timeout: 120s
-  maxTokens: 4096
 
 # 群配置
 groups:
   dataDir: ${GROUPS_DATA_DIR:-/data/groups}
-  autoInit: true
-  defaultAgentConfig: /app/configs/default-agent.md
 
 # MCP 配置
 mcp:
   servers:
     talesofai:
       url: ${MCP_TALESOFAI_URL}
-      timeout: 30s
 
 # 日志配置
 logging:

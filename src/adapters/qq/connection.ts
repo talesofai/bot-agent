@@ -38,7 +38,11 @@ export class MilkyConnection extends EventEmitter {
 
   private responseCallbacks = new Map<
     string,
-    { resolve: (data: unknown) => void; reject: (err: Error) => void }
+    {
+      resolve: (data: unknown) => void;
+      reject: (err: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
   >();
   private echoCounter = 0;
 
@@ -87,8 +91,11 @@ export class MilkyConnection extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.responseCallbacks.delete(echo);
-        reject(new Error(`Request timeout for action: ${action}`));
+        const callback = this.responseCallbacks.get(echo);
+        if (callback) {
+          this.responseCallbacks.delete(echo);
+          callback.reject(new Error(`Request timeout for action: ${action}`));
+        }
       }, 30000);
 
       this.responseCallbacks.set(echo, {
@@ -100,6 +107,7 @@ export class MilkyConnection extends EventEmitter {
           clearTimeout(timeout);
           reject(err);
         },
+        timeout,
       });
 
       this.ws!.send(payload);
@@ -313,6 +321,7 @@ export class MilkyConnection extends EventEmitter {
 
   private cancelPendingRequests(): void {
     for (const [echo, callback] of this.responseCallbacks) {
+      clearTimeout(callback.timeout);
       callback.reject(new Error("Connection closed"));
       this.responseCallbacks.delete(echo);
     }

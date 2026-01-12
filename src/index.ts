@@ -1,5 +1,6 @@
 import { getConfig } from "./config";
 import { logger } from "./logger";
+import { createHash } from "node:crypto";
 import { createAdapter } from "./adapters/index";
 
 import type { UnifiedMessage } from "./types/index";
@@ -44,12 +45,17 @@ if (worker) {
 // Register message handler
 if (adapter) {
   adapter.onMessage(async (message: UnifiedMessage) => {
+    const contentHash = createHash("sha256")
+      .update(message.content)
+      .digest("hex")
+      .slice(0, 12);
     logger.info(
       {
         id: message.id,
         channelId: message.channelId,
         userId: message.userId,
-        content: message.content.substring(0, 100),
+        contentHash,
+        contentLength: message.content.length,
         mentionsBot: message.mentionsBot,
       },
       "Message received",

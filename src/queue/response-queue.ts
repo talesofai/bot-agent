@@ -57,9 +57,8 @@ export class BullmqResponseQueue implements ResponseQueue {
     jobData: ResponseJobData,
     opts?: JobsOptions,
   ): Promise<ResponseJob> {
-    const data: ResponseJobData = { ...jobData };
-    const job = await this.queue.add("response-job", data, opts);
-    return { id: job.id!, data };
+    const job = await this.queue.add("response-job", jobData, opts);
+    return { id: job.id!, data: jobData };
   }
 
   async close(): Promise<void> {

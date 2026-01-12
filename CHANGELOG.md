@@ -30,6 +30,7 @@
 - 复用已有 session 时刷新活跃索引
 - Session lock 释放失败时记录警告而不中断任务
 - ResponseJobData 强制 channelType，避免隐式默认值
+- 队列 enqueue 移除多余的 payload 复制
 
 ### Changed
 

@@ -57,13 +57,11 @@ export class BullmqSessionQueue {
     jobData: SessionJobData,
     opts?: JobsOptions,
   ): Promise<SessionJob> {
-    const data: SessionJobData = { ...jobData };
-
-    const job = await this.queue.add("session-job", data, opts);
+    const job = await this.queue.add("session-job", jobData, opts);
 
     return {
       id: job.id!,
-      data,
+      data: jobData,
     };
   }
 

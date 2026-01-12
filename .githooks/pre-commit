@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+bun run format
+bunx prettier --check .
+
+if ! git diff --quiet; then
+  echo "Formatting modified files; stage changes before committing." >&2
+  exit 1
+fi

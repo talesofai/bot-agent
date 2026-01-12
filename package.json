@@ -9,7 +9,8 @@
     "start": "bun run dist/index.js",
     "test": "bun test",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@saltify/milky-node-sdk": "^1.0.0",

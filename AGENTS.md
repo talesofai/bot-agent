@@ -18,6 +18,7 @@
 - `docker-compose logs -f` — 实时查看所有服务日志。
 - `docker-compose logs -f opencode-bot-agent` — 仅实时查看 Bot Agent 日志。
 - `docker-compose logs -f luckylillia` — 仅实时查看 LuckyLilliaBot 日志。
+- 提交前必须在本地执行 `bun run format` 并确保格式检查通过后方可提交。
 
 一旦 TypeScript 应用就绪，请在此处添加具体的 `bun run` 脚本。
 

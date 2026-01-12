@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import matter from "gray-matter";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "pino";
 
@@ -123,32 +124,25 @@ export class GroupFileRepository {
   }
 
   parseAgentMd(content: string): AgentContent {
-    const normalizedContent = content.replace(/\r\n?/g, "\n");
-
-    const lines = normalizedContent.split("\n");
-    if (lines[0] === "---") {
-      const closingIndex = lines.indexOf("---", 1);
-      if (closingIndex !== -1) {
-        const frontmatterText = lines.slice(1, closingIndex).join("\n");
-        const bodyText = lines.slice(closingIndex + 1).join("\n");
-        try {
-          const frontmatter = AgentFrontmatterSchema.parse(
-            parseYaml(frontmatterText),
-          );
-          return {
-            frontmatter,
-            content: bodyText.trim(),
-          };
-        } catch {
-          // If frontmatter parsing fails, treat entire content as body
-        }
+    try {
+      const parsed = matter(content);
+      let frontmatter = {};
+      try {
+        frontmatter = AgentFrontmatterSchema.parse(parsed.data);
+      } catch (err) {
+        this.logger.warn({ err }, "Invalid agent frontmatter");
       }
+      return {
+        frontmatter,
+        content: parsed.content.trim(),
+      };
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to parse agent.md");
+      return {
+        frontmatter: {},
+        content: content.trim(),
+      };
     }
-
-    return {
-      frontmatter: {},
-      content: normalizedContent.trim(),
-    };
   }
 
   async loadSkills(groupPath: string): Promise<Record<string, Skill>> {

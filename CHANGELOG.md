@@ -23,6 +23,7 @@
 - Session lock key 追加 groupId，避免跨群冲突
 - GroupStore 加载失败时清理缓存，避免旧配置残留
 - History 追加仅在匹配内容时跳过，避免遗漏当前消息
+- GroupWatcher 监听删除事件，确保清理后重载
 
 ### Changed
 

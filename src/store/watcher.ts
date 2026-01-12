@@ -46,6 +46,14 @@ export class GroupWatcher {
       void this.handleFileChange(filePath);
     });
 
+    this.watcher.on("unlink", (filePath) => {
+      void this.handleFileChange(filePath);
+    });
+
+    this.watcher.on("unlinkDir", (filePath) => {
+      void this.handleFileChange(filePath);
+    });
+
     this.logger.info("Started file watching");
   }
 

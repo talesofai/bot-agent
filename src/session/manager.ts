@@ -149,6 +149,7 @@ export class SessionManager {
   }
 
   async getAgentPrompt(groupId: string): Promise<string> {
+    await this.groupRepository.ensureGroupDir(groupId);
     const groupPath = this.sessionRepository.getGroupPath(groupId);
     const agentContent = await this.groupRepository.loadAgentPrompt(groupPath);
     return agentContent.content;

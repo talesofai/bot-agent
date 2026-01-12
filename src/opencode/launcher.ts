@@ -11,11 +11,14 @@ export interface OpencodeLaunchSpec {
 }
 
 export class OpencodeLauncher {
-  buildLaunchSpec(sessionInfo: SessionInfo): OpencodeLaunchSpec {
+  buildLaunchSpec(
+    sessionInfo: SessionInfo,
+    prompt: string,
+  ): OpencodeLaunchSpec {
     const groupPath = sessionInfo.groupPath;
     return {
       command: "opencode",
-      args: ["-p", "-c", "-f", "json"],
+      args: ["-p", prompt, "-c", groupPath, "-f", "json"],
       cwd: sessionInfo.workspacePath,
       readOnlyPaths: [
         join(groupPath, "agent.md"),

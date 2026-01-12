@@ -133,6 +133,12 @@ export class SessionManager {
     return this.historyStore.readHistory(sessionInfo.historyPath, options);
   }
 
+  async getAgentPrompt(groupId: string): Promise<string> {
+    const groupPath = this.sessionRepository.getGroupPath(groupId);
+    const agentContent = await this.groupRepository.loadAgentPrompt(groupPath);
+    return agentContent.content;
+  }
+
   async appendHistory(
     sessionInfo: SessionInfo,
     entry: HistoryEntry,

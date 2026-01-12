@@ -5,6 +5,8 @@ import type { Logger } from "pino";
 import type { ResponseQueue, SessionJob, SessionJobData } from "../queue";
 import type { SessionManager } from "../session";
 import { OpencodeLauncher } from "../opencode/launcher";
+import { buildOpencodePrompt } from "../opencode/prompt";
+import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
 
@@ -137,7 +139,14 @@ export class SessionWorker {
         maxEntries: this.historyMaxEntries,
         maxBytes: this.historyMaxBytes,
       });
-      const launchSpec = this.launcher.buildLaunchSpec(sessionInfo);
+      const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
+      const systemPrompt = buildSystemPrompt(agentPrompt);
+      const prompt = buildOpencodePrompt({
+        systemPrompt,
+        history,
+        input: payload.input,
+      });
+      const launchSpec = this.launcher.buildLaunchSpec(sessionInfo, prompt);
 
       // 5. Run
       const result = await this.runner.run({

@@ -107,20 +107,20 @@ cooldown: 5
       expect(group!.config.cooldown).toBe(5);
     });
 
-    test("should load allowMultipleSessions from config", async () => {
+    test("should load maxSessions from config", async () => {
       const groupPath = join(testDir, "multi-session");
       mkdirSync(groupPath, { recursive: true });
       writeFileSync(
         join(groupPath, "config.yaml"),
         `
-allowMultipleSessions: true
+maxSessions: 3
 `,
       );
 
       const group = await store.loadGroup("multi-session");
 
       expect(group).not.toBeNull();
-      expect(group!.config.allowMultipleSessions).toBe(true);
+      expect(group!.config.maxSessions).toBe(3);
     });
 
     test("should parse agent.md with frontmatter", async () => {

@@ -1,4 +1,4 @@
-import { open, readFile, appendFile, stat } from "node:fs/promises";
+import { readFile, appendFile } from "node:fs/promises";
 import type { Logger } from "pino";
 import type { HistoryEntry } from "../types/session";
 
@@ -22,7 +22,14 @@ export class HistoryStore {
   ): Promise<HistoryEntry[]> {
     const maxBytes = options.maxBytes ?? this.maxBytes;
     try {
-      const content = await this.readTail(historyPath, maxBytes);
+      let content = await readFile(historyPath, "utf-8");
+      if (content.length > maxBytes) {
+        content = content.slice(-maxBytes);
+        const newlineIndex = content.indexOf("\n");
+        if (newlineIndex !== -1) {
+          content = content.slice(newlineIndex + 1);
+        }
+      }
       let entries = content
         .split("\n")
         .map((line) => line.trim())
@@ -56,28 +63,5 @@ export class HistoryStore {
   async appendHistory(historyPath: string, entry: HistoryEntry): Promise<void> {
     const line = `${JSON.stringify(entry)}\n`;
     await appendFile(historyPath, line, "utf-8");
-  }
-
-  private async readTail(historyPath: string, maxBytes: number): Promise<string> {
-    const fileStat = await stat(historyPath);
-    if (fileStat.size <= maxBytes) {
-      return readFile(historyPath, "utf-8");
-    }
-
-    const handle = await open(historyPath, "r");
-    try {
-      const start = Math.max(0, fileStat.size - maxBytes);
-      const length = fileStat.size - start;
-      const buffer = Buffer.alloc(length);
-      await handle.read(buffer, 0, length, start);
-      const raw = buffer.toString("utf-8");
-      const newlineIndex = raw.indexOf("\n");
-      if (newlineIndex === -1) {
-        return raw;
-      }
-      return raw.slice(newlineIndex + 1);
-    } finally {
-      await handle.close();
-    }
   }
 }

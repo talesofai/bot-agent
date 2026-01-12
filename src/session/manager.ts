@@ -16,12 +16,11 @@ import { SessionRepository } from "./repository";
 export interface SessionManagerOptions {
   dataDir?: string;
   logger?: Logger;
-  configCacheTtlMs?: number;
 }
 
 export interface CreateSessionOptions {
   key?: number;
-  allowMultipleSessions?: boolean;
+  maxSessions?: number;
 }
 
 export class SessionManager {
@@ -30,9 +29,6 @@ export class SessionManager {
   private groupRepository: GroupFileRepository;
   private sessionRepository: SessionRepository;
   private historyStore: HistoryStore;
-  private ensuredGroups = new Set<string>();
-  private configCache = new Map<string, { config: GroupConfig; loadedAt: number }>();
-  private configCacheTtlMs: number;
 
   constructor(options: SessionManagerOptions = {}) {
     this.dataDir = options.dataDir ?? appConfig.GROUPS_DATA_DIR;
@@ -48,7 +44,6 @@ export class SessionManager {
       logger: this.logger,
     });
     this.historyStore = new HistoryStore(this.logger);
-    this.configCacheTtlMs = options.configCacheTtlMs ?? 30_000;
   }
 
   async createSession(
@@ -62,11 +57,11 @@ export class SessionManager {
     await this.ensureGroupDir(groupId);
     const config = await this.getGroupConfig(groupId);
 
-    const allowMultipleSessions =
-      options.allowMultipleSessions ?? config.allowMultipleSessions;
+    const maxSessions = options.maxSessions ?? config.maxSessions;
+    this.assertValidMaxSessions(maxSessions);
 
-    if (key !== 0 && !allowMultipleSessions) {
-      throw new Error("Multiple sessions are not allowed for this group");
+    if (key >= maxSessions) {
+      throw new Error("Session key exceeds maxSessions for this group");
     }
 
     const sessionId = this.sessionRepository.getSessionId(userId, key);
@@ -139,22 +134,17 @@ export class SessionManager {
   }
 
   private async ensureGroupDir(groupId: string): Promise<void> {
-    if (this.ensuredGroups.has(groupId)) {
-      return;
-    }
     await this.groupRepository.ensureGroupDir(groupId);
-    this.ensuredGroups.add(groupId);
   }
 
   private async getGroupConfig(groupId: string): Promise<GroupConfig> {
-    const cached = this.configCache.get(groupId);
-    const now = Date.now();
-    if (cached && now - cached.loadedAt < this.configCacheTtlMs) {
-      return cached.config;
-    }
     const groupPath = this.sessionRepository.getGroupPath(groupId);
-    const config = await this.groupRepository.loadConfig(groupPath);
-    this.configCache.set(groupId, { config, loadedAt: now });
-    return config;
+    return this.groupRepository.loadConfig(groupPath);
+  }
+
+  private assertValidMaxSessions(maxSessions: number): void {
+    if (!Number.isInteger(maxSessions) || maxSessions < 1) {
+      throw new Error("maxSessions must be a positive integer");
+    }
   }
 }

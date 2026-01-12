@@ -26,7 +26,7 @@ triggerMode: mention
 keywords: []
 cooldown: 0
 adminUsers: []
-allowMultipleSessions: false
+maxSessions: 1
 `;
 
 export interface GroupFileRepositoryOptions {

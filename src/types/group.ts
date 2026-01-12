@@ -14,7 +14,7 @@ export const GroupConfigSchema = z.object({
   keywords: z.array(z.string()).default([]),
   cooldown: z.number().min(0).default(0),
   adminUsers: z.array(z.string()).default([]),
-  allowMultipleSessions: z.boolean().default(false),
+  maxSessions: z.number().int().min(1).default(1),
   model: z.string().optional(),
 });
 
@@ -70,5 +70,5 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = {
   keywords: [],
   cooldown: 0,
   adminUsers: [],
-  allowMultipleSessions: false,
+  maxSessions: 1,
 };

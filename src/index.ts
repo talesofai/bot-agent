@@ -1,18 +1,19 @@
 import { config } from "./config";
 import { logger } from "./logger";
-import { QQAdapter } from "./adapters/qq/index";
+import { createAdapter } from "./adapters/index";
 
 import type { UnifiedMessage } from "./types/index";
 
 logger.info(
   {
     env: config.NODE_ENV ?? "development",
+    platform: config.PLATFORM,
     bunVersion: Bun.version,
   },
   "Bot agent starting",
 );
 
-const adapter = new QQAdapter();
+const adapter = createAdapter(config);
 
 // Register message handler
 adapter.onMessage(async (message: UnifiedMessage) => {

@@ -6,7 +6,13 @@ import { z } from "zod";
 
 const envSchema = z.object({
   NODE_ENV: z.string().optional(),
-  MILKY_URL: z.string().url(),
+  /** Platform to use: qq or discord */
+  PLATFORM: z.enum(["qq", "discord"]).default("qq"),
+  // QQ platform configuration
+  MILKY_URL: z.string().url().optional(),
+  // Discord platform configuration
+  DISCORD_TOKEN: z.string().optional(),
+  DISCORD_APPLICATION_ID: z.string().optional(),
   GROUPS_DATA_DIR: z.string().default("/data/groups"),
   OPENCODE_MODEL: z.string().default("claude-sonnet-4-20250514"),
   LOG_LEVEL: z.string().default("info"),

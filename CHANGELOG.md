@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-01-12
+
+### Added
+
+- 多平台适配器工厂（`src/adapters/factory.ts`）
+  - `createAdapter()` 函数根据配置动态创建平台适配器
+  - 支持 `PLATFORM` 环境变量选择平台（`qq` | `discord`）
+- 配置扩展
+  - `PLATFORM` 平台选择，默认 `qq`
+  - `DISCORD_TOKEN` Discord Bot Token（预留）
+  - `DISCORD_APPLICATION_ID` Discord 应用 ID（预留）
+
+### Changed
+
+- `src/index.ts` 使用 `createAdapter(config)` 替代硬编码的 `new QQAdapter()`
+- `QQAdapter` 移除对全局 config 的直接依赖，url 通过构造函数传入
+- `MILKY_URL` 改为可选配置（由工厂函数验证）
+
 ## [0.0.4] - 2026-01-12
 
 ### Added

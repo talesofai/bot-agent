@@ -8,7 +8,6 @@ import { MilkyConnection } from "./connection";
 import { parseMessage } from "./parser";
 import { MessageSender } from "./sender";
 import { logger as defaultLogger } from "../../logger";
-import { config } from "../../config";
 
 export interface QQAdapterOptions {
   /** Milky WebSocket URL */
@@ -30,7 +29,10 @@ export class QQAdapter implements PlatformAdapter {
   private isShuttingDown = false;
 
   constructor(options: QQAdapterOptions = {}) {
-    const url = options.url ?? config.MILKY_URL;
+    const url = options.url;
+    if (!url) {
+      throw new Error("QQAdapter requires a url option");
+    }
     this.logger = options.logger ?? defaultLogger.child({ adapter: "qq" });
 
     this.connection = new MilkyConnection({

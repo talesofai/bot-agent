@@ -145,7 +145,7 @@ function checkMentionsBotInRaw(
   }
   // Check for CQ:at format with optional extra params: [CQ:at,qq=123456] or [CQ:at,qq=123456,name=xxx]
   // Match qq= anywhere in the CQ:at segment
-  const atPattern = new RegExp(`\\[CQ:at,[^\\]]*qq=${botUserId}[^\\]]*\\]`);
+  const atPattern = getAtPattern(botUserId);
   return atPattern.test(rawMessage);
 }
 
@@ -157,3 +157,14 @@ export function parseRawMessage(rawMessage: string): string {
   return rawMessage.replace(/\[CQ:[^\]]+\]/g, "").trim();
 }
 
+const atPatternCache = new Map<string, RegExp>();
+
+function getAtPattern(botUserId: string): RegExp {
+  const cached = atPatternCache.get(botUserId);
+  if (cached) {
+    return cached;
+  }
+  const pattern = new RegExp(`\\[CQ:at,[^\\]]*qq=${botUserId}[^\\]]*\\]`);
+  atPatternCache.set(botUserId, pattern);
+  return pattern;
+}

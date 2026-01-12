@@ -52,7 +52,6 @@ export class SessionManager {
     options: CreateSessionOptions = {},
   ): Promise<SessionInfo> {
     const key = options.key ?? 0;
-    this.assertValidKey(key);
 
     await this.ensureGroupDir(groupId);
     const config = await this.getGroupConfig(groupId);
@@ -65,15 +64,12 @@ export class SessionManager {
     }
 
     const sessionId = this.sessionRepository.getSessionId(userId, key);
-    const paths = this.sessionRepository.getSessionPaths(groupId, sessionId);
-    await this.sessionRepository.ensureSessionDir(paths);
-
-    const existing = await this.sessionRepository.readMeta(paths.metaPath);
+    const existing = await this.sessionRepository.loadSession(groupId, sessionId);
     if (existing) {
-      if (existing.ownerId !== userId) {
+      if (existing.meta.ownerId !== userId) {
         throw new Error("Session ownership mismatch");
       }
-      return { meta: existing, paths };
+      return existing;
     }
 
     const now = new Date().toISOString();
@@ -87,17 +83,11 @@ export class SessionManager {
       updatedAt: now,
     };
 
-    await this.sessionRepository.writeMeta(paths.metaPath, meta);
-    return { meta, paths };
+    return this.sessionRepository.createSession(meta);
   }
 
   async getSession(groupId: string, sessionId: string): Promise<SessionInfo | null> {
-    const paths = this.sessionRepository.getSessionPaths(groupId, sessionId);
-    const meta = await this.sessionRepository.readMeta(paths.metaPath);
-    if (!meta) {
-      return null;
-    }
-    return { meta, paths };
+    return this.sessionRepository.loadSession(groupId, sessionId);
   }
 
   async updateStatus(
@@ -109,28 +99,21 @@ export class SessionManager {
       status,
       updatedAt: new Date().toISOString(),
     };
-    await this.sessionRepository.writeMeta(sessionInfo.paths.metaPath, updated);
-    return { ...sessionInfo, meta: updated };
+    return this.sessionRepository.updateMeta(updated);
   }
 
   async readHistory(
     sessionInfo: SessionInfo,
     options?: HistoryReadOptions,
   ): Promise<HistoryEntry[]> {
-    return this.historyStore.readHistory(sessionInfo.paths.historyPath, options);
+    return this.historyStore.readHistory(sessionInfo.historyPath, options);
   }
 
   async appendHistory(
     sessionInfo: SessionInfo,
     entry: HistoryEntry,
   ): Promise<void> {
-    await this.historyStore.appendHistory(sessionInfo.paths.historyPath, entry);
-  }
-
-  private assertValidKey(key: number): void {
-    if (!Number.isInteger(key) || key < 0) {
-      throw new Error("Session key must be a non-negative integer");
-    }
+    await this.historyStore.appendHistory(sessionInfo.historyPath, entry);
   }
 
   private async ensureGroupDir(groupId: string): Promise<void> {

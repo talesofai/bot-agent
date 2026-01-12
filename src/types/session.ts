@@ -17,19 +17,9 @@ export interface HistoryEntry {
   [key: string]: unknown;
 }
 
-export interface SessionPaths {
-  groupPath: string;
-  sessionsPath: string;
-  sessionPath: string;
-  metaPath: string;
-  historyPath: string;
-  workspacePath: string;
-  inputPath: string;
-  outputPath: string;
-  runtimeLockPath: string;
-}
-
 export interface SessionInfo {
   meta: SessionMeta;
-  paths: SessionPaths;
+  groupPath: string;
+  workspacePath: string;
+  historyPath: string;
 }

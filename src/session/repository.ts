@@ -3,11 +3,23 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Logger } from "pino";
 
-import type { SessionMeta, SessionPaths } from "../types/session";
+import type { SessionInfo, SessionMeta } from "../types/session";
 
 export interface SessionRepositoryOptions {
   dataDir: string;
   logger: Logger;
+}
+
+interface SessionPaths {
+  groupPath: string;
+  sessionsPath: string;
+  sessionPath: string;
+  metaPath: string;
+  historyPath: string;
+  workspacePath: string;
+  inputPath: string;
+  outputPath: string;
+  runtimeLockPath: string;
 }
 
 export class SessionRepository {
@@ -27,7 +39,38 @@ export class SessionRepository {
     return `${userId}-${key}`;
   }
 
-  getSessionPaths(groupId: string, sessionId: string): SessionPaths {
+  async loadSession(groupId: string, sessionId: string): Promise<SessionInfo | null> {
+    const paths = this.buildSessionPaths(groupId, sessionId);
+    const meta = await this.readMeta(paths.metaPath);
+    if (!meta) {
+      return null;
+    }
+    return this.buildSessionInfo(meta, paths);
+  }
+
+  async createSession(meta: SessionMeta): Promise<SessionInfo> {
+    const paths = this.buildSessionPaths(meta.groupId, meta.sessionId);
+    await this.ensureSessionDir(paths);
+    await this.writeMeta(paths.metaPath, meta);
+    return this.buildSessionInfo(meta, paths);
+  }
+
+  async updateMeta(meta: SessionMeta): Promise<SessionInfo> {
+    const paths = this.buildSessionPaths(meta.groupId, meta.sessionId);
+    await this.writeMeta(paths.metaPath, meta);
+    return this.buildSessionInfo(meta, paths);
+  }
+
+  private buildSessionInfo(meta: SessionMeta, paths: SessionPaths): SessionInfo {
+    return {
+      meta,
+      groupPath: paths.groupPath,
+      workspacePath: paths.workspacePath,
+      historyPath: paths.historyPath,
+    };
+  }
+
+  private buildSessionPaths(groupId: string, sessionId: string): SessionPaths {
     const groupPath = this.getGroupPath(groupId);
     const sessionsPath = join(groupPath, "sessions");
     const sessionPath = join(sessionsPath, sessionId);
@@ -44,7 +87,7 @@ export class SessionRepository {
     };
   }
 
-  async ensureSessionDir(paths: SessionPaths): Promise<void> {
+  private async ensureSessionDir(paths: SessionPaths): Promise<void> {
     await mkdir(paths.sessionsPath, { recursive: true });
     await mkdir(paths.sessionPath, { recursive: true });
     await mkdir(paths.workspacePath, { recursive: true });
@@ -52,7 +95,7 @@ export class SessionRepository {
     await mkdir(paths.outputPath, { recursive: true });
   }
 
-  async readMeta(metaPath: string): Promise<SessionMeta | null> {
+  private async readMeta(metaPath: string): Promise<SessionMeta | null> {
     if (!(await this.exists(metaPath))) {
       return null;
     }
@@ -65,7 +108,7 @@ export class SessionRepository {
     }
   }
 
-  async writeMeta(metaPath: string, meta: SessionMeta): Promise<void> {
+  private async writeMeta(metaPath: string, meta: SessionMeta): Promise<void> {
     const payload = JSON.stringify(meta, null, 2);
     await writeFile(metaPath, payload, "utf-8");
   }

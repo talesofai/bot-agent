@@ -12,18 +12,18 @@ export interface OpencodeLaunchSpec {
 
 export class OpencodeLauncher {
   buildLaunchSpec(sessionInfo: SessionInfo): OpencodeLaunchSpec {
-    const groupPath = sessionInfo.paths.groupPath;
+    const groupPath = sessionInfo.groupPath;
     return {
       command: "opencode",
       args: [],
-      cwd: sessionInfo.paths.workspacePath,
+      cwd: sessionInfo.workspacePath,
       readOnlyPaths: [
         join(groupPath, "agent.md"),
         join(groupPath, "config.yaml"),
         join(groupPath, "skills"),
         join(groupPath, "assets"),
       ],
-      readWritePaths: [sessionInfo.paths.workspacePath],
+      readWritePaths: [sessionInfo.workspacePath],
     };
   }
 }

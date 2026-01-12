@@ -25,37 +25,14 @@ export class SessionTtlCleaner {
 
   async cleanup(): Promise<number> {
     const now = Date.now();
-    const groupDirs = await this.listDirs(this.dataDir);
     let removed = 0;
 
-    for (const groupId of groupDirs) {
-      const sessionsPath = join(this.dataDir, groupId, "sessions");
-      if (!(await this.exists(sessionsPath))) {
+    for await (const session of this.scanSessions()) {
+      if (!(await this.isExpired(session, now))) {
         continue;
       }
-
-      const sessionDirs = await this.listDirs(sessionsPath);
-      for (const sessionId of sessionDirs) {
-        const sessionPath = join(sessionsPath, sessionId);
-        const lockPath = join(sessionPath, ".runtime.lock");
-        if (await this.exists(lockPath)) {
-          continue;
-        }
-
-        const metaPath = join(sessionPath, "meta.json");
-        const meta = await this.readMeta(metaPath);
-        if (meta?.status === "running") {
-          continue;
-        }
-
-        const lastActive = await this.resolveLastActive(meta, sessionPath);
-        if (now - lastActive <= this.ttlMs) {
-          continue;
-        }
-
-        await rm(sessionPath, { recursive: true, force: true });
-        removed += 1;
-      }
+      await rm(session.sessionPath, { recursive: true, force: true });
+      removed += 1;
     }
 
     if (removed > 0) {
@@ -63,6 +40,35 @@ export class SessionTtlCleaner {
     }
 
     return removed;
+  }
+
+  private async isExpired(session: SessionScanEntry, now: number): Promise<boolean> {
+    if (await this.exists(session.lockPath)) {
+      return false;
+    }
+    if (session.meta?.status === "running") {
+      return false;
+    }
+    const lastActive = await this.resolveLastActive(session.meta, session.sessionPath);
+    return now - lastActive > this.ttlMs;
+  }
+
+  private async *scanSessions(): AsyncGenerator<SessionScanEntry> {
+    const groupDirs = await this.listDirs(this.dataDir);
+    for (const groupId of groupDirs) {
+      const sessionsPath = join(this.dataDir, groupId, "sessions");
+      if (!(await this.exists(sessionsPath))) {
+        continue;
+      }
+      const sessionDirs = await this.listDirs(sessionsPath);
+      for (const sessionId of sessionDirs) {
+        const sessionPath = join(sessionsPath, sessionId);
+        const lockPath = join(sessionPath, ".runtime.lock");
+        const metaPath = join(sessionPath, "meta.json");
+        const meta = await this.readMeta(metaPath);
+        yield { sessionPath, lockPath, meta };
+      }
+    }
   }
 
   private async resolveLastActive(
@@ -112,4 +118,10 @@ export class SessionTtlCleaner {
       return false;
     }
   }
+}
+
+interface SessionScanEntry {
+  sessionPath: string;
+  lockPath: string;
+  meta: SessionMeta | null;
 }

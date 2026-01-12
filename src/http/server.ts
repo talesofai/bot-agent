@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import type { Logger } from "pino";
 
 import { getConfig } from "../config";
@@ -46,21 +43,8 @@ async function resolveVersion(): Promise<string> {
     return cachedVersion;
   }
   const envVersion = process.env.APP_VERSION ?? process.env.npm_package_version;
-  if (envVersion) {
-    cachedVersion = envVersion;
-    return cachedVersion;
-  }
-  try {
-    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-    const packagePath = path.resolve(moduleDir, "..", "..", "package.json");
-    const raw = await readFile(packagePath, "utf-8");
-    const parsed = JSON.parse(raw) as { version?: string };
-    cachedVersion = parsed.version ?? "unknown";
-    return cachedVersion;
-  } catch {
-    cachedVersion = "unknown";
-    return cachedVersion;
-  }
+  cachedVersion = envVersion ?? "unknown";
+  return cachedVersion;
 }
 
 function formatUptime(durationMs: number): string {

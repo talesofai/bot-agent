@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.0.16] - 2026-01-13
+
+### Added
+
+- prompt 组装与 SessionManager 的单元测试
+
+### Changed
+
+- SessionManager 支持注入 activity tracker 以便测试
+
 ## [0.0.15] - 2026-01-13
 
 ### Added

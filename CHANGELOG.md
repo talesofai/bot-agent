@@ -21,6 +21,7 @@
 - QQ 连接测试改用 mock-socket，减少自制 FakeWebSocket 偏差
 - UnifiedMessage 支持泛型 raw 类型，减少 unknown 漫延
 - Dockerfile 运行命令改为使用 `bun run start`
+- Logger 改为惰性初始化，避免导入即加载配置
 
 ## [0.0.8] - 2026-01-13
 

@@ -1,4 +1,4 @@
-import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
+import { describe, expect, test, mock, beforeEach } from "bun:test";
 import { MilkyConnection } from "../connection";
 import type { Logger } from "pino";
 

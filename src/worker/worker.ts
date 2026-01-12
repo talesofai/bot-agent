@@ -185,7 +185,11 @@ export class SessionWorker {
         }
       }
       // 8. Release Lock
-      await this.releaseLock(lockKey, lockValue);
+      try {
+        await this.releaseLock(lockKey, lockValue);
+      } catch (err) {
+        this.logger.warn({ err }, "Failed to release session lock");
+      }
     }
   }
 

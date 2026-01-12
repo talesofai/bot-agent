@@ -17,6 +17,7 @@
 
 - SessionWorker 使用简单的 Redis SetNX + TTL，移除心跳与锁续期状态机
 - QQ 解析流程先标准化为 Segment 数组再提取文本
+- HistoryStore 改为读取完整文件并按条目裁剪，避免字节级截断
 
 ## [0.0.10] - 2026-01-13
 

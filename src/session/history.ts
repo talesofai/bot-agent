@@ -1,4 +1,4 @@
-import { open, readFile, appendFile, stat } from "node:fs/promises";
+import { readFile, appendFile } from "node:fs/promises";
 import type { Logger } from "pino";
 import type { HistoryEntry } from "../types/session";
 
@@ -22,7 +22,7 @@ export class HistoryStore {
   ): Promise<HistoryEntry[]> {
     const maxBytes = options.maxBytes ?? this.maxBytes;
     try {
-      const content = await this.readTail(historyPath, maxBytes);
+      const content = await readFile(historyPath, "utf-8");
       let entries = content
         .split("\n")
         .map((line) => line.trim())
@@ -36,6 +36,9 @@ export class HistoryStore {
           }
         })
         .filter((entry): entry is HistoryEntry => entry !== null);
+      if (typeof maxBytes === "number" && maxBytes > 0 && entries.length > 0) {
+        entries = this.trimEntriesByBytes(entries, maxBytes);
+      }
       if (
         typeof options.maxEntries === "number" &&
         options.maxEntries > 0 &&
@@ -58,35 +61,21 @@ export class HistoryStore {
     await appendFile(historyPath, line, "utf-8");
   }
 
-  private async readTail(
-    historyPath: string,
+  private trimEntriesByBytes(
+    entries: HistoryEntry[],
     maxBytes: number,
-  ): Promise<string> {
-    const fileStat = await stat(historyPath);
-    if (fileStat.size === 0) {
-      return "";
-    }
-
-    const length = Math.min(fileStat.size, maxBytes);
-    const start = Math.max(0, fileStat.size - length);
-    const handle = await open(historyPath, "r");
-    try {
-      let startsAtLine = start === 0;
-      if (!startsAtLine) {
-        const prefix = Buffer.alloc(1);
-        await handle.read(prefix, 0, 1, start - 1);
-        startsAtLine = prefix.toString("utf-8") === "\n";
+  ): HistoryEntry[] {
+    let total = 0;
+    const result: HistoryEntry[] = [];
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const line = JSON.stringify(entries[i]);
+      const lineBytes = Buffer.byteLength(line, "utf-8") + 1;
+      if (total + lineBytes > maxBytes) {
+        break;
       }
-      const buffer = Buffer.alloc(length);
-      await handle.read(buffer, 0, length, start);
-      let raw = buffer.toString("utf-8");
-      if (!startsAtLine) {
-        const newlineIndex = raw.indexOf("\n");
-        raw = newlineIndex === -1 ? "" : raw.slice(newlineIndex + 1);
-      }
-      return raw;
-    } finally {
-      await handle.close();
+      total += lineBytes;
+      result.push(entries[i]);
     }
+    return result.reverse();
   }
 }

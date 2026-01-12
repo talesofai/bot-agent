@@ -14,7 +14,7 @@ export interface SendMessageOptions {
 
 export type MessageHandler = (message: UnifiedMessage) => Promise<void> | void;
 
-export interface UnifiedMessage {
+export interface UnifiedMessage<T = Record<string, unknown>> {
   id: string;
   platform: string;
   channelId: string;
@@ -28,7 +28,7 @@ export interface UnifiedMessage {
   content: string;
   mentionsBot: boolean;
   timestamp: number;
-  raw: unknown;
+  raw: T;
 }
 
 export type ConnectionHandler = () => void;

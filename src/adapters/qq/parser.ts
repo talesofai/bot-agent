@@ -32,7 +32,7 @@ interface MilkyMessageSegment {
 export function parseMessage(
   event: unknown,
   botUserId: string | null,
-): UnifiedMessage | null {
+): UnifiedMessage<MilkyMessageEvent> | null {
   if (!isMessageEvent(event)) {
     return null;
   }

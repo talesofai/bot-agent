@@ -72,10 +72,8 @@ export class SessionWorker {
         concurrency: options.concurrency ?? 1,
         prefix: options.prefix,
         autorun: false,
-        settings: {
-          stalledInterval: this.stalledIntervalMs,
-          maxStalledCount: this.maxStalledCount,
-        },
+        stalledInterval: this.stalledIntervalMs,
+        maxStalledCount: this.maxStalledCount,
       }
     );
 

@@ -119,8 +119,8 @@ Be friendly and concise.
       const group = await store.loadGroup("skills-group");
       
       expect(group).not.toBeNull();
-      expect(group!.skills.length).toBe(2);
-      expect(group!.skills.map(s => s.name).sort()).toEqual(["code", "draw"]);
+      expect(Object.keys(group!.skills).length).toBe(2);
+      expect(Object.keys(group!.skills).sort()).toEqual(["code", "draw"]);
     });
 
     test("should return null for non-existent group", async () => {

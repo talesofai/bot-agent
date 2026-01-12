@@ -36,7 +36,7 @@ export interface GroupData {
   path: string;
   config: GroupConfig;
   agentPrompt: string;
-  skills: Skill[];
+  skills: Record<string, Skill>;
 }
 
 /**

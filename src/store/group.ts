@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, basename } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFile, readdir } from "node:fs/promises";
+import { join, basename, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "pino";
 import type { FSWatcher } from "chokidar";
@@ -22,8 +23,6 @@ export interface GroupStoreOptions {
   dataDir?: string;
   /** Custom logger */
   logger?: Logger;
-  /** Debounce delay for hot reload (ms) */
-  debounceMs?: number;
 }
 
 type ReloadCallback = (groupId: string) => void;
@@ -44,16 +43,13 @@ adminUsers: []
 export class GroupStore {
   private dataDir: string;
   private logger: Logger;
-  private debounceMs: number;
   private groups = new Map<string, GroupData>();
   private reloadCallbacks: ReloadCallback[] = [];
   private watcher: FSWatcher | null = null;
-  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: GroupStoreOptions = {}) {
     this.dataDir = options.dataDir ?? appConfig.GROUPS_DATA_DIR;
     this.logger = (options.logger ?? defaultLogger).child({ component: "group-store" });
-    this.debounceMs = options.debounceMs ?? 500;
   }
 
   /**
@@ -61,7 +57,7 @@ export class GroupStore {
    */
   async init(): Promise<void> {
     this.logger.info({ dataDir: this.dataDir }, "Initializing GroupStore");
-    
+
     // Ensure data directory exists
     if (!existsSync(this.dataDir)) {
       mkdirSync(this.dataDir, { recursive: true });
@@ -94,30 +90,30 @@ export class GroupStore {
   ensureGroupDir(groupId: string): string {
     const groupPath = join(this.dataDir, groupId);
     const isNewDir = !existsSync(groupPath);
-    
+
     // Ensure main directory and subdirectories exist
     mkdirSync(groupPath, { recursive: true });
     mkdirSync(join(groupPath, "skills"), { recursive: true });
     mkdirSync(join(groupPath, "context"), { recursive: true });
     mkdirSync(join(groupPath, "assets"), { recursive: true });
-    
+
     // Create default files if missing
     const agentPath = join(groupPath, "agent.md");
     if (!existsSync(agentPath)) {
       writeFileSync(agentPath, DEFAULT_AGENT_MD);
       this.logger.debug({ groupId }, "Created default agent.md");
     }
-    
+
     const configPath = join(groupPath, "config.yaml");
     if (!existsSync(configPath)) {
       writeFileSync(configPath, DEFAULT_CONFIG_YAML);
       this.logger.debug({ groupId }, "Created default config.yaml");
     }
-    
+
     if (isNewDir) {
       this.logger.info({ groupId }, "Created group directory");
     }
-    
+
     return groupPath;
   }
 
@@ -132,9 +128,9 @@ export class GroupStore {
     }
 
     try {
-      const config = this.loadConfig(groupPath);
-      const agentContent = this.loadAgentPrompt(groupPath);
-      const skills = this.loadSkills(groupPath);
+      const config = await this.loadConfig(groupPath);
+      const agentContent = await this.loadAgentPrompt(groupPath);
+      const skills = await this.loadSkills(groupPath);
 
       const groupData: GroupData = {
         id: groupId,
@@ -175,11 +171,11 @@ export class GroupStore {
     });
 
     this.watcher.on("change", (filePath) => {
-      this.handleFileChange(filePath);
+      void this.handleFileChange(filePath);
     });
 
     this.watcher.on("add", (filePath) => {
-      this.handleFileChange(filePath);
+      void this.handleFileChange(filePath);
     });
 
     this.logger.info("Started file watching");
@@ -194,12 +190,6 @@ export class GroupStore {
       this.watcher = null;
       this.logger.info("Stopped file watching");
     }
-
-    // Clear any pending debounce timers
-    for (const timer of this.debounceTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.debounceTimers.clear();
   }
 
   private async loadAllGroups(): Promise<void> {
@@ -207,24 +197,24 @@ export class GroupStore {
       return;
     }
 
-    const entries = readdirSync(this.dataDir, { withFileTypes: true });
-    
-    for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith(".")) {
-        await this.loadGroup(entry.name);
-      }
-    }
+    const entries = await readdir(this.dataDir, { withFileTypes: true });
+
+    const groupDirs = entries.filter(
+      (entry) => entry.isDirectory() && !entry.name.startsWith(".")
+    );
+
+    await Promise.all(groupDirs.map((entry) => this.loadGroup(entry.name)));
   }
 
-  private loadConfig(groupPath: string): GroupConfig {
+  private async loadConfig(groupPath: string): Promise<GroupConfig> {
     const configPath = join(groupPath, "config.yaml");
-    
+
     if (!existsSync(configPath)) {
       return { ...DEFAULT_GROUP_CONFIG };
     }
 
     try {
-      const content = readFileSync(configPath, "utf-8");
+      const content = await readFile(configPath, "utf-8");
       const parsed = parseYaml(content);
       return GroupConfigSchema.parse(parsed);
     } catch (err) {
@@ -233,15 +223,15 @@ export class GroupStore {
     }
   }
 
-  private loadAgentPrompt(groupPath: string): AgentContent {
+  private async loadAgentPrompt(groupPath: string): Promise<AgentContent> {
     const agentPath = join(groupPath, "agent.md");
-    
+
     if (!existsSync(agentPath)) {
       return { frontmatter: {}, content: "" };
     }
 
     try {
-      const content = readFileSync(agentPath, "utf-8");
+      const content = await readFile(agentPath, "utf-8");
       return this.parseAgentMd(content);
     } catch (err) {
       this.logger.warn({ err, agentPath }, "Failed to read agent.md");
@@ -252,20 +242,22 @@ export class GroupStore {
   private parseAgentMd(content: string): AgentContent {
     // Normalize line endings to \n for consistent parsing
     const normalizedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    
-    // Match frontmatter with optional trailing newline after closing ---
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---(?:\n([\s\S]*))?$/;
-    const match = normalizedContent.match(frontmatterRegex);
 
-    if (match) {
-      try {
-        const frontmatter = parseYaml(match[1]) as AgentFrontmatter;
-        return {
-          frontmatter,
-          content: (match[2] ?? "").trim(),
-        };
-      } catch {
-        // If frontmatter parsing fails, treat entire content as body
+    const lines = normalizedContent.split("\n");
+    if (lines[0] === "---") {
+      const closingIndex = lines.indexOf("---", 1);
+      if (closingIndex !== -1) {
+        const frontmatterText = lines.slice(1, closingIndex).join("\n");
+        const bodyText = lines.slice(closingIndex + 1).join("\n");
+        try {
+          const frontmatter = parseYaml(frontmatterText) as AgentFrontmatter;
+          return {
+            frontmatter,
+            content: bodyText.trim(),
+          };
+        } catch {
+          // If frontmatter parsing fails, treat entire content as body
+        }
       }
     }
 
@@ -275,30 +267,37 @@ export class GroupStore {
     };
   }
 
-  private loadSkills(groupPath: string): Skill[] {
+  private async loadSkills(groupPath: string): Promise<Record<string, Skill>> {
     const skillsPath = join(groupPath, "skills");
-    
+
     if (!existsSync(skillsPath)) {
-      return [];
+      return {};
     }
 
-    const skills: Skill[] = [];
-    
+    const skills: Record<string, Skill> = {};
+
     try {
-      const entries = readdirSync(skillsPath, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith(".md")) {
+      const entries = await readdir(skillsPath, { withFileTypes: true });
+
+      const skillEntries = entries.filter(
+        (entry) => entry.isFile() && entry.name.endsWith(".md")
+      );
+
+      const loadedSkills = await Promise.all(
+        skillEntries.map(async (entry) => {
           const skillPath = join(skillsPath, entry.name);
-          const content = readFileSync(skillPath, "utf-8");
+          const content = await readFile(skillPath, "utf-8");
           const name = basename(entry.name, ".md");
-          
-          skills.push({
+          return {
             name,
             content: content.trim(),
             enabled: true,
-          });
-        }
+          };
+        })
+      );
+
+      for (const skill of loadedSkills) {
+        skills[skill.name] = skill;
       }
     } catch (err) {
       this.logger.warn({ err, skillsPath }, "Failed to load skills");
@@ -307,37 +306,28 @@ export class GroupStore {
     return skills;
   }
 
-  private handleFileChange(filePath: string): void {
+  private async handleFileChange(filePath: string): Promise<void> {
     // Extract group ID from file path
-    const relativePath = filePath.replace(this.dataDir, "").replace(/^[/\\]/, "");
+    const relativePath = relative(this.dataDir, filePath);
+    if (!relativePath || relativePath.startsWith("..")) {
+      return;
+    }
     const groupId = relativePath.split(/[/\\]/)[0];
 
     if (!groupId) {
       return;
     }
 
-    // Debounce reload
-    const existingTimer = this.debounceTimers.get(groupId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
+    this.logger.debug({ groupId, filePath }, "Reloading group due to file change");
+    await this.loadGroup(groupId);
 
-    const timer = setTimeout(async () => {
-      this.debounceTimers.delete(groupId);
-      
-      this.logger.debug({ groupId, filePath }, "Reloading group due to file change");
-      await this.loadGroup(groupId);
-      
-      // Notify callbacks
-      for (const callback of this.reloadCallbacks) {
-        try {
-          callback(groupId);
-        } catch (err) {
-          this.logger.error({ err, groupId }, "Reload callback error");
-        }
+    // Notify callbacks
+    for (const callback of this.reloadCallbacks) {
+      try {
+        callback(groupId);
+      } catch (err) {
+        this.logger.error({ err, groupId }, "Reload callback error");
       }
-    }, this.debounceMs);
-
-    this.debounceTimers.set(groupId, timer);
+    }
   }
 }

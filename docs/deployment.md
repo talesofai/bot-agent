@@ -295,7 +295,7 @@ kubectl port-forward svc/luckylillia 3080:3080 -n opencode-bot-agent
 
 ### 健康检查
 
-Bot Agent 提供健康检查端点：
+当前版本尚未实现 HTTP 健康检查端点（规划中）：
 
 ```bash
 curl http://localhost:8080/health
@@ -307,7 +307,7 @@ curl http://localhost:8080/health
 
 ### 指标
 
-Bot Agent 暴露 Prometheus 指标：
+当前版本尚未实现 Prometheus 指标端点（规划中）：
 
 ```bash
 curl http://localhost:8080/metrics

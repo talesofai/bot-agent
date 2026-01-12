@@ -12,10 +12,12 @@ import type {
 } from "../types/session";
 import { HistoryStore, type HistoryReadOptions } from "./history";
 import { SessionRepository } from "./repository";
+import { SessionActivityIndex } from "./activity-index";
 
 export interface SessionManagerOptions {
   dataDir?: string;
   logger?: Logger;
+  redisUrl?: string;
 }
 
 export interface CreateSessionOptions {
@@ -29,6 +31,7 @@ export class SessionManager {
   private groupRepository: GroupFileRepository;
   private sessionRepository: SessionRepository;
   private historyStore: HistoryStore;
+  private activityIndex: SessionActivityIndex;
 
   constructor(options: SessionManagerOptions = {}) {
     this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
@@ -44,6 +47,11 @@ export class SessionManager {
       logger: this.logger,
     });
     this.historyStore = new HistoryStore(this.logger);
+    const redisUrl = options.redisUrl ?? getConfig().REDIS_URL;
+    this.activityIndex = new SessionActivityIndex({
+      redisUrl,
+      logger: this.logger,
+    });
   }
 
   async createSession(
@@ -86,7 +94,12 @@ export class SessionManager {
       updatedAt: now,
     };
 
-    return this.sessionRepository.createSession(meta);
+    const session = await this.sessionRepository.createSession(meta);
+    await this.activityIndex.recordActivity({
+      groupId: meta.groupId,
+      sessionId: meta.sessionId,
+    });
+    return session;
   }
 
   async getSession(
@@ -105,7 +118,12 @@ export class SessionManager {
       status,
       updatedAt: new Date().toISOString(),
     };
-    return this.sessionRepository.updateMeta(updated);
+    const session = await this.sessionRepository.updateMeta(updated);
+    await this.activityIndex.recordActivity({
+      groupId: updated.groupId,
+      sessionId: updated.sessionId,
+    });
+    return session;
   }
 
   async readHistory(
@@ -120,6 +138,10 @@ export class SessionManager {
     entry: HistoryEntry,
   ): Promise<void> {
     await this.historyStore.appendHistory(sessionInfo.historyPath, entry);
+    await this.activityIndex.recordActivity({
+      groupId: sessionInfo.meta.groupId,
+      sessionId: sessionInfo.meta.sessionId,
+    });
   }
 
   private async ensureGroupDir(groupId: string): Promise<void> {

@@ -1,37 +1,59 @@
 import { constants } from "node:fs";
-import { access, readdir, rm, stat, readFile } from "node:fs/promises";
+import { access, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Logger } from "pino";
 
 import { getConfig } from "../config";
 import type { SessionMeta } from "../types/session";
+import { SessionActivityIndex } from "./activity-index";
 
 export interface SessionTtlCleanerOptions {
   dataDir?: string;
   logger: Logger;
   ttlMs?: number;
+  redisUrl?: string;
 }
 
 export class SessionTtlCleaner {
   private dataDir: string;
   private logger: Logger;
   private ttlMs: number;
+  private activityIndex: SessionActivityIndex;
 
   constructor(options: SessionTtlCleanerOptions) {
     this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
     this.logger = options.logger.child({ component: "session-ttl-cleaner" });
     this.ttlMs = options.ttlMs ?? 30 * 24 * 60 * 60 * 1000;
+    const redisUrl = options.redisUrl ?? getConfig().REDIS_URL;
+    this.activityIndex = new SessionActivityIndex({
+      redisUrl,
+      logger: this.logger,
+    });
   }
 
   async cleanup(): Promise<number> {
     const now = Date.now();
     let removed = 0;
 
-    for await (const session of this.scanSessions()) {
-      if (!(await this.isExpired(session, now))) {
+    const expired = await this.activityIndex.fetchExpired(now - this.ttlMs);
+    for (const key of expired) {
+      const sessionPath = join(
+        this.dataDir,
+        key.groupId,
+        "sessions",
+        key.sessionId,
+      );
+      const metaPath = join(sessionPath, "meta.json");
+      const meta = await this.readMeta(metaPath);
+      if (meta?.status === "running") {
         continue;
       }
-      await rm(session.sessionPath, { recursive: true, force: true });
+      if (!(await this.exists(sessionPath))) {
+        await this.activityIndex.remove(key);
+        continue;
+      }
+      await rm(sessionPath, { recursive: true, force: true });
+      await this.activityIndex.remove(key);
       removed += 1;
     }
 
@@ -40,60 +62,6 @@ export class SessionTtlCleaner {
     }
 
     return removed;
-  }
-
-  private async isExpired(
-    session: SessionScanEntry,
-    now: number,
-  ): Promise<boolean> {
-    if (await this.exists(session.lockPath)) {
-      return false;
-    }
-    if (session.meta?.status === "running") {
-      return false;
-    }
-    const lastActive = await this.resolveLastActive(
-      session.meta,
-      session.sessionPath,
-    );
-    return now - lastActive > this.ttlMs;
-  }
-
-  private async *scanSessions(): AsyncGenerator<SessionScanEntry> {
-    const groupDirs = await this.listDirs(this.dataDir);
-    for (const groupId of groupDirs) {
-      const sessionsPath = join(this.dataDir, groupId, "sessions");
-      if (!(await this.exists(sessionsPath))) {
-        continue;
-      }
-      const sessionDirs = await this.listDirs(sessionsPath);
-      for (const sessionId of sessionDirs) {
-        const sessionPath = join(sessionsPath, sessionId);
-        const lockPath = join(sessionPath, ".runtime.lock");
-        const metaPath = join(sessionPath, "meta.json");
-        const meta = await this.readMeta(metaPath);
-        yield { sessionPath, lockPath, meta };
-      }
-    }
-  }
-
-  private async resolveLastActive(
-    meta: SessionMeta | null,
-    sessionPath: string,
-  ): Promise<number> {
-    const timestamp = meta?.updatedAt ?? meta?.createdAt;
-    if (timestamp) {
-      const parsed = Date.parse(timestamp);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
-    }
-    try {
-      const stats = await stat(sessionPath);
-      return stats.mtimeMs;
-    } catch {
-      return Date.now();
-    }
   }
 
   private async readMeta(metaPath: string): Promise<SessionMeta | null> {
@@ -105,17 +73,6 @@ export class SessionTtlCleaner {
     }
   }
 
-  private async listDirs(parent: string): Promise<string[]> {
-    try {
-      const entries = await readdir(parent, { withFileTypes: true });
-      return entries
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-        .map((entry) => entry.name);
-    } catch {
-      return [];
-    }
-  }
-
   private async exists(targetPath: string): Promise<boolean> {
     try {
       await access(targetPath, constants.F_OK);
@@ -124,10 +81,4 @@ export class SessionTtlCleaner {
       return false;
     }
   }
-}
-
-interface SessionScanEntry {
-  sessionPath: string;
-  lockPath: string;
-  meta: SessionMeta | null;
 }

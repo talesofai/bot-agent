@@ -67,7 +67,7 @@ export class ResponseWorker {
     const { channelId, channelType, content, platform, messageId } = job.data;
     await this.adapter.sendMessage({
       channelId,
-      channelType: channelType ?? "group",
+      channelType,
       content,
     });
     this.logger.info(

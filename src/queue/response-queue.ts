@@ -5,7 +5,7 @@ import type { ChannelType } from "../types/platform";
 export interface ResponseJobData {
   platform?: string;
   channelId: string;
-  channelType?: ChannelType;
+  channelType: ChannelType;
   messageId?: string;
   content: string;
   groupId?: string;

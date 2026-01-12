@@ -238,15 +238,19 @@ export class GroupStore {
   }
 
   private parseAgentMd(content: string): AgentContent {
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
-    const match = content.match(frontmatterRegex);
+    // Normalize line endings to \n for consistent parsing
+    const normalizedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    
+    // Match frontmatter with optional trailing newline after closing ---
+    const frontmatterRegex = /^---\n([\s\S]*?)\n---(?:\n([\s\S]*))?$/;
+    const match = normalizedContent.match(frontmatterRegex);
 
     if (match) {
       try {
         const frontmatter = parseYaml(match[1]) as AgentFrontmatter;
         return {
           frontmatter,
-          content: match[2].trim(),
+          content: (match[2] ?? "").trim(),
         };
       } catch {
         // If frontmatter parsing fails, treat entire content as body
@@ -255,7 +259,7 @@ export class GroupStore {
 
     return {
       frontmatter: {},
-      content: content.trim(),
+      content: normalizedContent.trim(),
     };
   }
 

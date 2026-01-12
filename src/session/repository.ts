@@ -17,9 +17,6 @@ interface SessionPaths {
   metaPath: string;
   historyPath: string;
   workspacePath: string;
-  inputPath: string;
-  outputPath: string;
-  runtimeLockPath: string;
 }
 
 export class SessionRepository {
@@ -87,9 +84,6 @@ export class SessionRepository {
       metaPath: join(sessionPath, "meta.json"),
       historyPath: join(sessionPath, "history.jsonl"),
       workspacePath: join(sessionPath, "workspace"),
-      inputPath: join(sessionPath, "workspace", "input"),
-      outputPath: join(sessionPath, "workspace", "output"),
-      runtimeLockPath: join(sessionPath, ".runtime.lock"),
     };
   }
 
@@ -97,8 +91,8 @@ export class SessionRepository {
     await mkdir(paths.sessionsPath, { recursive: true });
     await mkdir(paths.sessionPath, { recursive: true });
     await mkdir(paths.workspacePath, { recursive: true });
-    await mkdir(paths.inputPath, { recursive: true });
-    await mkdir(paths.outputPath, { recursive: true });
+    await mkdir(join(paths.workspacePath, "input"), { recursive: true });
+    await mkdir(join(paths.workspacePath, "output"), { recursive: true });
   }
 
   private async readMeta(metaPath: string): Promise<SessionMeta | null> {

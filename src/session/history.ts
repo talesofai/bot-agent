@@ -68,10 +68,16 @@ export class HistoryStore {
     const start = Math.max(0, fileStat.size - length);
     const handle = await open(historyPath, "r");
     try {
+      let startsAtLine = start === 0;
+      if (!startsAtLine) {
+        const prefix = Buffer.alloc(1);
+        await handle.read(prefix, 0, 1, start - 1);
+        startsAtLine = prefix.toString("utf-8") === "\n";
+      }
       const buffer = Buffer.alloc(length);
       await handle.read(buffer, 0, length, start);
       let raw = buffer.toString("utf-8");
-      if (start > 0) {
+      if (!startsAtLine) {
         const newlineIndex = raw.indexOf("\n");
         raw = newlineIndex === -1 ? "" : raw.slice(newlineIndex + 1);
       }

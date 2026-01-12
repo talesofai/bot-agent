@@ -4,9 +4,9 @@ import { createHash } from "node:crypto";
 import { createAdapter } from "./adapters/index";
 
 import type { UnifiedMessage } from "./types/index";
-import { BullmqSessionQueue } from "./queue";
+import { BullmqResponseQueue, BullmqSessionQueue } from "./queue";
 import { SessionManager, buildSessionId } from "./session";
-import { ShellOpencodeRunner, SessionWorker } from "./worker";
+import { ResponseWorker, ShellOpencodeRunner, SessionWorker } from "./worker";
 
 const config = getConfig();
 
@@ -21,32 +21,59 @@ logger.info(
 
 const adapter = config.SERVICE_ROLE === "worker" ? null : createAdapter(config);
 const sessionManager = new SessionManager();
+const sessionQueueName = "session-jobs";
+const responseQueueName = "session-responses";
 const sessionQueue = new BullmqSessionQueue({
   redisUrl: config.REDIS_URL,
-  queueName: "session-jobs",
+  queueName: sessionQueueName,
 });
+
+const responseQueue =
+  config.SERVICE_ROLE === "adapter"
+    ? null
+    : new BullmqResponseQueue({
+        redisUrl: config.REDIS_URL,
+        queueName: responseQueueName,
+      });
 
 const worker =
   config.SERVICE_ROLE === "adapter"
     ? null
     : new SessionWorker({
         id: "worker-1",
-        queueName: "session-jobs",
+        queueName: sessionQueueName,
         redisUrl: config.REDIS_URL,
         sessionManager,
         runner: new ShellOpencodeRunner(),
         logger,
+        responseQueue: responseQueue ?? undefined,
       });
 
 if (worker) {
   worker.start();
 }
 
+const responseWorker =
+  adapter === null
+    ? null
+    : new ResponseWorker({
+        id: "response-1",
+        queueName: responseQueueName,
+        redisUrl: config.REDIS_URL,
+        adapter,
+        logger,
+      });
+
+if (responseWorker) {
+  responseWorker.start();
+}
+
 // Register message handler
 if (adapter) {
   adapter.onMessage(async (message: UnifiedMessage) => {
+    const { key, content } = extractSessionKey(message.content);
     const contentHash = createHash("sha256")
-      .update(message.content)
+      .update(content)
       .digest("hex")
       .slice(0, 12);
     logger.info(
@@ -55,20 +82,19 @@ if (adapter) {
         channelId: message.channelId,
         userId: message.userId,
         contentHash,
-        contentLength: message.content.length,
+        contentLength: content.length,
         mentionsBot: message.mentionsBot,
       },
       "Message received",
     );
 
-    const key = 0;
     await sessionQueue.enqueue({
       groupId: message.channelId,
       userId: message.userId,
       key,
       sessionId: buildSessionId(message.userId, key),
       payload: {
-        input: message.content,
+        input: content,
         messageId: message.id,
         channelType: message.channelType ?? "group",
         platform: message.platform,
@@ -95,6 +121,12 @@ const shutdown = async () => {
     if (worker) {
       await worker.stop();
     }
+    if (responseWorker) {
+      await responseWorker.stop();
+    }
+    if (responseQueue) {
+      await responseQueue.close();
+    }
     await sessionQueue.close();
     if (adapter) {
       await adapter.disconnect();
@@ -118,4 +150,16 @@ if (adapter) {
       "Initial connection failed, reconnect will be attempted",
     );
   });
+}
+
+function extractSessionKey(input: string): { key: number; content: string } {
+  const match = input.match(/^\s*#(\d+)\s+/);
+  if (!match) {
+    return { key: 0, content: input };
+  }
+  const key = Number(match[1]);
+  if (!Number.isInteger(key) || key < 0) {
+    return { key: 0, content: input };
+  }
+  return { key, content: input.slice(match[0].length) };
 }

@@ -10,6 +10,12 @@
 ### Added
 
 - ShellOpencodeRunner 使用 `opencode` CLI 执行推理
+- 新增响应队列与 ResponseWorker，用于发送 AI 回复
+
+### Changed
+
+- Adapter 侧支持 `#<key>` 前缀解析会话 key
+
 ## [0.0.9] - 2026-01-13
 
 ### Fixed

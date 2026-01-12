@@ -3,7 +3,7 @@ import { Worker, type Job, DelayedError } from "bullmq";
 import IORedis from "ioredis";
 import type { Logger } from "pino";
 
-import type { SessionJob, SessionJobData } from "../queue";
+import type { ResponseQueue, SessionJob, SessionJobData } from "../queue";
 import type { SessionManager } from "../session";
 import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "./runner";
@@ -26,6 +26,7 @@ export interface SessionWorkerOptions {
   heartbeatFailureThreshold?: number;
   stalledIntervalMs?: number;
   maxStalledCount?: number;
+  responseQueue?: ResponseQueue;
 }
 
 export class SessionWorker {
@@ -34,6 +35,7 @@ export class SessionWorker {
   private sessionManager: SessionManager;
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
+  private responseQueue?: ResponseQueue;
   private workerConnection: IORedis;
   private lockConnection: IORedis;
   private historyMaxEntries?: number;
@@ -48,6 +50,7 @@ export class SessionWorker {
     this.sessionManager = options.sessionManager;
     this.launcher = options.launcher ?? new OpencodeLauncher();
     this.runner = options.runner;
+    this.responseQueue = options.responseQueue;
     this.historyMaxEntries = options.historyMaxEntries;
     this.historyMaxBytes = options.historyMaxBytes;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 60_000;
@@ -182,6 +185,7 @@ export class SessionWorker {
 
       // 7. Append History
       await this.appendHistoryFromJob(sessionInfo, payload, result.historyEntries, result.output);
+      await this.enqueueResponse(job.data, result.output);
 
     } catch (err) {
       this.logger.error({ err, sessionId }, "Error processing session job");
@@ -249,6 +253,25 @@ export class SessionWorker {
   private mapJob(job: Job<SessionJobData>): SessionJob {
     const id = job.id ? String(job.id) : `job-${Date.now()}`;
     return { id, data: job.data };
+  }
+
+  private async enqueueResponse(
+    jobData: SessionJobData,
+    output?: string,
+  ): Promise<void> {
+    if (!output || !this.responseQueue) {
+      return;
+    }
+    await this.responseQueue.enqueue({
+      platform: jobData.payload.platform,
+      channelId: jobData.groupId,
+      channelType: jobData.payload.channelType ?? "group",
+      messageId: jobData.payload.messageId,
+      content: output,
+      groupId: jobData.groupId,
+      userId: jobData.userId,
+      sessionId: jobData.sessionId,
+    });
   }
 
   private assertLockHealthy(lockLost: boolean, sessionId: string): void {

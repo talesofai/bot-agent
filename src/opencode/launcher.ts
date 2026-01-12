@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { SessionInfo } from "../types/session";
 
 export interface OpencodeLaunchSpec {
@@ -6,8 +5,6 @@ export interface OpencodeLaunchSpec {
   args: string[];
   cwd: string;
   env?: Record<string, string>;
-  readOnlyPaths: string[];
-  readWritePaths: string[];
 }
 
 export class OpencodeLauncher {
@@ -20,13 +17,6 @@ export class OpencodeLauncher {
       command: "opencode",
       args: ["-p", prompt, "-c", groupPath, "-f", "json"],
       cwd: sessionInfo.workspacePath,
-      readOnlyPaths: [
-        join(groupPath, "agent.md"),
-        join(groupPath, "config.yaml"),
-        join(groupPath, "skills"),
-        join(groupPath, "assets"),
-      ],
-      readWritePaths: [sessionInfo.workspacePath],
     };
   }
 }

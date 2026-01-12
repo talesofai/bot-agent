@@ -206,9 +206,7 @@ export class SessionWorker {
 
     if (
       payload?.input &&
-      !historyEntries?.some(
-        (entry) => entry.role === "user" && entry.content === payload.input,
-      )
+      !historyEntries?.some((entry) => entry.role === "user")
     ) {
       entries.push({
         role: "user",

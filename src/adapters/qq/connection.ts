@@ -97,7 +97,8 @@ export class MilkyConnection extends EventEmitter {
       throw new Error("WebSocket not connected");
     }
 
-    const echo = `${Date.now()}-${++this.echoCounter}`;
+    this.echoCounter = this.nextEchoCounter();
+    const echo = `${Date.now()}-${this.echoCounter}`;
     const payload = JSON.stringify({ action, params, echo });
 
     return new Promise((resolve, reject) => {
@@ -129,6 +130,13 @@ export class MilkyConnection extends EventEmitter {
   private handleMessageEvent = (event: MessageEvent): void => {
     void this.handleMessage(event.data);
   };
+
+  private nextEchoCounter(): number {
+    if (this.echoCounter >= Number.MAX_SAFE_INTEGER - 1) {
+      return 1;
+    }
+    return this.echoCounter + 1;
+  }
 
   private async handleMessage(data: unknown): Promise<void> {
     try {

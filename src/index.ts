@@ -6,7 +6,7 @@ import { createAdapter } from "./adapters/index";
 import type { UnifiedMessage } from "./types/index";
 import { BullmqSessionQueue } from "./queue";
 import { SessionManager, buildSessionId } from "./session";
-import { NoopOpencodeRunner, SessionWorker } from "./worker";
+import { ShellOpencodeRunner, SessionWorker } from "./worker";
 
 const config = getConfig();
 
@@ -34,7 +34,7 @@ const worker =
         queueName: "session-jobs",
         redisUrl: config.REDIS_URL,
         sessionManager,
-        runner: new NoopOpencodeRunner(),
+        runner: new ShellOpencodeRunner(),
         logger,
       });
 

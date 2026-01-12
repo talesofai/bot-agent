@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Added
+
+- ShellOpencodeRunner 使用 `opencode` CLI 执行推理
 ## [0.0.9] - 2026-01-13
 
 ### Fixed

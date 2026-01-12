@@ -23,6 +23,7 @@ export interface SessionWorkerOptions {
   historyMaxEntries?: number;
   historyMaxBytes?: number;
   heartbeatIntervalMs?: number;
+  heartbeatFailureThreshold?: number;
 }
 
 export class SessionWorker {
@@ -36,6 +37,7 @@ export class SessionWorker {
   private historyMaxEntries?: number;
   private historyMaxBytes?: number;
   private heartbeatIntervalMs: number;
+  private heartbeatFailureThreshold: number;
 
   constructor(options: SessionWorkerOptions) {
     this.logger = options.logger.child({ component: "session-worker", workerId: options.id });
@@ -45,6 +47,7 @@ export class SessionWorker {
     this.historyMaxEntries = options.historyMaxEntries;
     this.historyMaxBytes = options.historyMaxBytes;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 60_000;
+    this.heartbeatFailureThreshold = options.heartbeatFailureThreshold ?? 3;
 
     this.workerConnection = new IORedis(options.redisUrl, {
       maxRetriesPerRequest: null,
@@ -105,21 +108,48 @@ export class SessionWorker {
     let heartbeat: NodeJS.Timer | null = null;
     let statusUpdated = false;
     let sessionInfo: SessionInfo | null = null;
+    let lockLost = false;
+    let heartbeatFailures = 0;
 
     try {
       // 2. Start Heartbeat
       heartbeat = setInterval(() => {
-        this.lockConnection.expire(lockKey, 600).catch((err) => {
-          this.logger.warn({ err }, "Failed to extend session lock");
-        });
+        this.lockConnection
+          .expire(lockKey, 600)
+          .then((extended) => {
+            if (extended === 1) {
+              heartbeatFailures = 0;
+              return;
+            }
+            heartbeatFailures += 1;
+            this.logger.warn(
+              { sessionId, heartbeatFailures },
+              "Session lock missing during heartbeat",
+            );
+            if (heartbeatFailures >= this.heartbeatFailureThreshold) {
+              lockLost = true;
+            }
+          })
+          .catch((err) => {
+            heartbeatFailures += 1;
+            this.logger.warn(
+              { err, sessionId, heartbeatFailures },
+              "Failed to extend session lock",
+            );
+            if (heartbeatFailures >= this.heartbeatFailureThreshold) {
+              lockLost = true;
+            }
+          });
       }, this.heartbeatIntervalMs);
 
       // 3. Ensure Session Exists
       sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
+      this.assertLockHealthy(lockLost, sessionId);
       
       // 4. Update Status
       await this.sessionManager.updateStatus(sessionInfo, "running");
       statusUpdated = true;
+      this.assertLockHealthy(lockLost, sessionId);
 
       // 5. Prepare Context
       const history = await this.sessionManager.readHistory(sessionInfo, {
@@ -127,6 +157,7 @@ export class SessionWorker {
         maxBytes: this.historyMaxBytes,
       });
       const launchSpec = this.launcher.buildLaunchSpec(sessionInfo);
+      this.assertLockHealthy(lockLost, sessionId);
 
       // 6. Run
       const result = await this.runner.run({
@@ -135,6 +166,7 @@ export class SessionWorker {
         history,
         launchSpec,
       });
+      this.assertLockHealthy(lockLost, sessionId);
 
       // 7. Append History
       await this.appendHistoryFromJob(sessionInfo, payload, result.historyEntries, result.output);
@@ -205,5 +237,12 @@ export class SessionWorker {
   private mapJob(job: Job<SessionJobData>): SessionJob {
     const id = job.id ? String(job.id) : `job-${Date.now()}`;
     return { id, data: job.data };
+  }
+
+  private assertLockHealthy(lockLost: boolean, sessionId: string): void {
+    if (!lockLost) {
+      return;
+    }
+    throw new Error(`Session lock lost for ${sessionId}`);
   }
 }

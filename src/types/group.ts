@@ -42,12 +42,15 @@ export interface GroupData {
 /**
  * Agent.md frontmatter metadata
  */
-export interface AgentFrontmatter {
-  name?: string;
-  description?: string;
-  version?: string;
-  [key: string]: unknown;
-}
+export const AgentFrontmatterSchema = z
+  .object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    version: z.string().optional(),
+  })
+  .passthrough();
+
+export type AgentFrontmatter = z.infer<typeof AgentFrontmatterSchema>;
 
 /**
  * Parsed agent.md content

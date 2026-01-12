@@ -13,7 +13,7 @@ import {
   type GroupData,
   type Skill,
   type AgentContent,
-  type AgentFrontmatter,
+  AgentFrontmatterSchema,
 } from "../types/group";
 import { config as appConfig } from "../config";
 import { logger as defaultLogger } from "../logger";
@@ -241,7 +241,7 @@ export class GroupStore {
 
   private parseAgentMd(content: string): AgentContent {
     // Normalize line endings to \n for consistent parsing
-    const normalizedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const normalizedContent = content.replace(/\r\n?/g, "\n");
 
     const lines = normalizedContent.split("\n");
     if (lines[0] === "---") {
@@ -250,7 +250,7 @@ export class GroupStore {
         const frontmatterText = lines.slice(1, closingIndex).join("\n");
         const bodyText = lines.slice(closingIndex + 1).join("\n");
         try {
-          const frontmatter = parseYaml(frontmatterText) as AgentFrontmatter;
+          const frontmatter = AgentFrontmatterSchema.parse(parseYaml(frontmatterText));
           return {
             frontmatter,
             content: bodyText.trim(),

@@ -43,6 +43,7 @@
 - 配置文档中的占位示例移除未实现字段
 - 开发文档补充 UnifiedMessage 的 channelType 字段
 - 群目录创建移除未使用的 context 目录
+- 配置文档补充群目录需预创建的说明
 - API 文档示例对齐当前群配置字段
 - History 追加判断基于最新 assistant 前的 user 记录
 - 移除文档中未实现的群配置环境变量

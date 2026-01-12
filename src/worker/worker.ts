@@ -41,6 +41,7 @@ export class SessionWorker {
   private historyMaxEntries?: number;
   private historyMaxBytes?: number;
   private sessionLockTtlSeconds: number;
+  private requeueDelayMs: number;
   private stalledIntervalMs: number;
   private maxStalledCount: number;
 
@@ -56,6 +57,7 @@ export class SessionWorker {
     this.historyMaxEntries = options.historyMaxEntries;
     this.historyMaxBytes = options.historyMaxBytes;
     this.sessionLockTtlSeconds = options.sessionLockTtlSeconds ?? 600;
+    this.requeueDelayMs = options.requeueDelayMs ?? 2000;
     this.stalledIntervalMs = options.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.maxStalledCount ?? 1;
 
@@ -119,7 +121,7 @@ export class SessionWorker {
       if (!job.token) {
         throw new Error("Missing BullMQ job token for requeue");
       }
-      await job.moveToDelayed(Date.now() + 2000, job.token);
+      await job.moveToDelayed(Date.now() + this.requeueDelayMs, job.token);
       throw new DelayedError();
     }
 

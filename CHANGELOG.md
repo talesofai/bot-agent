@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-01-13
+
+### Added
+
+- system_prompt 追加 MCP usage method，用于 opencode system 指令
+
+### Changed
+
+- Opencode prompt 组装 system + history + 用户输入作为上下文
+
 ## [0.0.13] - 2026-01-13
 
 ### Added

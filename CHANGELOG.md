@@ -7,6 +7,53 @@
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-01-13
+
+### Added
+
+- 分布式 Opencode 会话运行时：Session/Queue/Worker 组件与 Redis 锁
+- 引入 BullMQ 队列与 Worker Pool，用于会话任务调度与并发处理
+- 新增 Redis 依赖与 Docker Compose 服务
+- 新增 `REDIS_URL`/`SERVICE_ROLE` 环境变量以支持队列与分角色部署
+- 会话历史写入与 TTL 清理支持
+- 分布式 Opencode 架构设计与 0.0.8 落地计划文档
+
+### Changed
+
+- 使用 `maxSessions` 取代 `allowMultipleSessions`，统一按 key 范围校验
+- 入口改为按角色运行：adapter 入队消息，worker 消费会话任务
+- QQAdapter 改为 EventEmitter 统一事件分发
+- SessionRepository 封装路径细节，SessionInfo 精简为必要路径
+- SessionTtlCleaner 扁平化遍历逻辑，避免深层嵌套
+- 更新配置与部署文档以匹配用户独占会话模型
+
+### Dependencies
+
+- 新增 `bullmq` 与 `ioredis` 依赖以支持队列与锁
+
+## [0.0.7] - 2026-01-12
+
+### Changed
+
+- GroupStore 拆分 Repository/Watcher，改为异步并行加载并支持懒加载
+- 配置加载流程简化并支持 `CONFIG_PATH`
+- Docker 基础镜像切换为 Bun 以匹配运行时选择
+
+### Fixed
+
+- QQ 连接重连流程扁平化并清理重复定时器与请求超时
+- QQ 发送保持 `channelId` 为字符串，避免精度丢失
+- 配置启动期强制校验平台依赖字段
+- GroupStore 文件变更监听恢复防抖，减少重复加载
+
+### Removed
+
+- 移除 Discord 适配器死代码与未使用的 `ws` 依赖
+
+### Performance
+
+- 缓存 CQ 正则，优化消息解析热路径
+
 ## [0.0.6] - 2026-01-12
 
 ### Fixed

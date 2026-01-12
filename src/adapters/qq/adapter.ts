@@ -31,7 +31,9 @@ export class QQAdapter implements PlatformAdapter {
   constructor(options: QQAdapterOptions = {}) {
     const url = options.url;
     if (!url) {
-      throw new Error("QQAdapter requires MILKY_URL to be configured (received empty or undefined url)");
+      throw new Error(
+        "QQAdapter requires MILKY_URL to be configured (received empty or undefined url)",
+      );
     }
     this.logger = options.logger ?? defaultLogger.child({ adapter: "qq" });
 

@@ -35,11 +35,17 @@ describe("GroupStore", () => {
       // Create a test group
       const groupPath = join(testDir, "123456");
       mkdirSync(groupPath, { recursive: true });
-      writeFileSync(join(groupPath, "config.yaml"), "enabled: true\ntriggerMode: mention\n");
-      writeFileSync(join(groupPath, "agent.md"), "# Test Agent\n\nYou are helpful.");
+      writeFileSync(
+        join(groupPath, "config.yaml"),
+        "enabled: true\ntriggerMode: mention\n",
+      );
+      writeFileSync(
+        join(groupPath, "agent.md"),
+        "# Test Agent\n\nYou are helpful.",
+      );
 
       await store.init();
-      
+
       const groups = store.listGroups();
       expect(groups.length).toBe(1);
       expect(groups[0].id).toBe("123456");
@@ -49,7 +55,7 @@ describe("GroupStore", () => {
   describe("ensureGroupDir", () => {
     test("should create group directory with subdirs", () => {
       store.ensureGroupDir("789012");
-      
+
       expect(existsSync(join(testDir, "789012"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "skills"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "context"))).toBe(true);
@@ -64,7 +70,7 @@ describe("GroupStore", () => {
       writeFileSync(join(groupPath, "agent.md"), "Custom content");
 
       store.ensureGroupDir("existing");
-      
+
       const content = Bun.file(join(groupPath, "agent.md")).text();
       expect(content).resolves.toBe("Custom content");
     });
@@ -74,17 +80,20 @@ describe("GroupStore", () => {
     test("should load group with config", async () => {
       const groupPath = join(testDir, "test-group");
       mkdirSync(groupPath, { recursive: true });
-      writeFileSync(join(groupPath, "config.yaml"), `
+      writeFileSync(
+        join(groupPath, "config.yaml"),
+        `
 enabled: true
 triggerMode: keyword
 keywords:
   - bot
   - help
 cooldown: 5
-`);
+`,
+      );
 
       const group = await store.loadGroup("test-group");
-      
+
       expect(group).not.toBeNull();
       expect(group!.config.enabled).toBe(true);
       expect(group!.config.triggerMode).toBe("keyword");
@@ -95,29 +104,40 @@ cooldown: 5
     test("should parse agent.md with frontmatter", async () => {
       const groupPath = join(testDir, "agent-group");
       mkdirSync(groupPath, { recursive: true });
-      writeFileSync(join(groupPath, "agent.md"), `---
+      writeFileSync(
+        join(groupPath, "agent.md"),
+        `---
 name: TestBot
 version: 1.0.0
 ---
 You are a helpful assistant.
 
 Be friendly and concise.
-`);
+`,
+      );
 
       const group = await store.loadGroup("agent-group");
-      
+
       expect(group).not.toBeNull();
-      expect(group!.agentPrompt).toBe("You are a helpful assistant.\n\nBe friendly and concise.");
+      expect(group!.agentPrompt).toBe(
+        "You are a helpful assistant.\n\nBe friendly and concise.",
+      );
     });
 
     test("should load skills from skills directory", async () => {
       const groupPath = join(testDir, "skills-group");
       mkdirSync(join(groupPath, "skills"), { recursive: true });
-      writeFileSync(join(groupPath, "skills", "draw.md"), "# Draw\n\nYou can draw images.");
-      writeFileSync(join(groupPath, "skills", "code.md"), "# Code\n\nYou can write code.");
+      writeFileSync(
+        join(groupPath, "skills", "draw.md"),
+        "# Draw\n\nYou can draw images.",
+      );
+      writeFileSync(
+        join(groupPath, "skills", "code.md"),
+        "# Code\n\nYou can write code.",
+      );
 
       const group = await store.loadGroup("skills-group");
-      
+
       expect(group).not.toBeNull();
       expect(Object.keys(group!.skills).length).toBe(2);
       expect(Object.keys(group!.skills).sort()).toEqual(["code", "draw"]);
@@ -134,7 +154,7 @@ Be friendly and concise.
       writeFileSync(join(groupPath, "config.yaml"), "invalid: yaml: content:");
 
       const group = await store.loadGroup("invalid-config");
-      
+
       expect(group).not.toBeNull();
       expect(group!.config.enabled).toBe(true);
       expect(group!.config.triggerMode).toBe("mention");
@@ -148,7 +168,7 @@ Be friendly and concise.
       writeFileSync(join(groupPath, "config.yaml"), "enabled: true");
 
       await store.loadGroup("get-test");
-      
+
       const group = store.getGroup("get-test");
       expect(group).not.toBeNull();
       expect(group!.id).toBe("get-test");

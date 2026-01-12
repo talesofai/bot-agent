@@ -60,13 +60,13 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 
 ## Kubernetes 使用
 
-1) 生成 K8s Secret 清单：
+1. 生成 K8s Secret 清单：
 
 ```bash
 ./scripts/generate-k8s-secret.sh
 ```
 
-2) 应用 Secret：
+2. 应用 Secret：
 
 ```bash
   kubectl apply -f deployments/k8s/llbot-secret.yaml

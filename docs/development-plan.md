@@ -191,14 +191,14 @@ interface UnifiedMessage {
 
 > 目标：生产环境部署
 
-| 任务               | 负责人 | 状态 |
-| ------------------ | ------ | ---- |
-| Dockerfile         |        | ⬜   |
+| 任务                                  | 负责人 | 状态 |
+| ------------------------------------- | ------ | ---- |
+| Dockerfile                            |        | ⬜   |
 | deployments/docker/docker-compose.yml |        | ⬜   |
-| K8s Deployment     |        | ⬜   |
-| K8s Service        |        | ⬜   |
-| K8s PVC            |        | ⬜   |
-| CI/CD Pipeline     |        | ⬜   |
+| K8s Deployment                        |        | ⬜   |
+| K8s Service                           |        | ⬜   |
+| K8s PVC                               |        | ⬜   |
+| CI/CD Pipeline                        |        | ⬜   |
 
 ---
 

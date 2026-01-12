@@ -55,7 +55,7 @@ describe("MilkyConnection", () => {
     });
 
     await expect(connection.sendRequest("test_action", {})).rejects.toThrow(
-      "WebSocket not connected"
+      "WebSocket not connected",
     );
   });
 

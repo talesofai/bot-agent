@@ -56,5 +56,8 @@ process.on("SIGTERM", shutdown);
 // Start the adapter with automatic reconnection handling
 adapter.connect().catch((err) => {
   // Log the initial failure, reconnect will be attempted automatically
-  logger.warn({ err }, "Initial connection failed, reconnect will be attempted");
+  logger.warn(
+    { err },
+    "Initial connection failed, reconnect will be attempted",
+  );
 });

@@ -23,7 +23,7 @@ export class MessageSender {
     if (!channelType) {
       throw new Error(
         "channelType is required for sending messages. " +
-        "Use 'group' for group messages or 'private' for private messages."
+          "Use 'group' for group messages or 'private' for private messages.",
       );
     }
 
@@ -43,17 +43,20 @@ export class MessageSender {
       await this.connection.sendRequest(action, params);
       this.logger.debug(
         { action, channelId, channelType, messageLength: message.length },
-        "Message sent"
+        "Message sent",
       );
     } catch (err) {
-      this.logger.error({ err, channelId, channelType }, "Failed to send message");
+      this.logger.error(
+        { err, channelId, channelType },
+        "Failed to send message",
+      );
       throw err;
     }
   }
 
   private buildMessage(
     content: string,
-    attachments?: SendMessageOptions["attachments"]
+    attachments?: SendMessageOptions["attachments"],
   ): MilkyMessageSegment[] {
     const segments: MilkyMessageSegment[] = [];
 

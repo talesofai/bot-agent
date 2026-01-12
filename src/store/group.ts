@@ -49,7 +49,9 @@ export class GroupStore {
 
   constructor(options: GroupStoreOptions = {}) {
     this.dataDir = options.dataDir ?? appConfig.GROUPS_DATA_DIR;
-    this.logger = (options.logger ?? defaultLogger).child({ component: "group-store" });
+    this.logger = (options.logger ?? defaultLogger).child({
+      component: "group-store",
+    });
   }
 
   /**
@@ -66,7 +68,10 @@ export class GroupStore {
 
     // Load all groups
     await this.loadAllGroups();
-    this.logger.info({ groupCount: this.groups.size }, "GroupStore initialized");
+    this.logger.info(
+      { groupCount: this.groups.size },
+      "GroupStore initialized",
+    );
   }
 
   /**
@@ -122,7 +127,7 @@ export class GroupStore {
    */
   async loadGroup(groupId: string): Promise<GroupData | null> {
     const groupPath = join(this.dataDir, groupId);
-    
+
     if (!existsSync(groupPath)) {
       return null;
     }
@@ -200,7 +205,7 @@ export class GroupStore {
     const entries = await readdir(this.dataDir, { withFileTypes: true });
 
     const groupDirs = entries.filter(
-      (entry) => entry.isDirectory() && !entry.name.startsWith(".")
+      (entry) => entry.isDirectory() && !entry.name.startsWith("."),
     );
 
     await Promise.all(groupDirs.map((entry) => this.loadGroup(entry.name)));
@@ -218,7 +223,10 @@ export class GroupStore {
       const parsed = parseYaml(content);
       return GroupConfigSchema.parse(parsed);
     } catch (err) {
-      this.logger.warn({ err, configPath }, "Failed to parse config, using defaults");
+      this.logger.warn(
+        { err, configPath },
+        "Failed to parse config, using defaults",
+      );
       return { ...DEFAULT_GROUP_CONFIG };
     }
   }
@@ -250,7 +258,9 @@ export class GroupStore {
         const frontmatterText = lines.slice(1, closingIndex).join("\n");
         const bodyText = lines.slice(closingIndex + 1).join("\n");
         try {
-          const frontmatter = AgentFrontmatterSchema.parse(parseYaml(frontmatterText));
+          const frontmatter = AgentFrontmatterSchema.parse(
+            parseYaml(frontmatterText),
+          );
           return {
             frontmatter,
             content: bodyText.trim(),
@@ -280,7 +290,7 @@ export class GroupStore {
       const entries = await readdir(skillsPath, { withFileTypes: true });
 
       const skillEntries = entries.filter(
-        (entry) => entry.isFile() && entry.name.endsWith(".md")
+        (entry) => entry.isFile() && entry.name.endsWith(".md"),
       );
 
       const loadedSkills = await Promise.all(
@@ -293,7 +303,7 @@ export class GroupStore {
             content: content.trim(),
             enabled: true,
           };
-        })
+        }),
       );
 
       for (const skill of loadedSkills) {
@@ -318,7 +328,10 @@ export class GroupStore {
       return;
     }
 
-    this.logger.debug({ groupId, filePath }, "Reloading group due to file change");
+    this.logger.debug(
+      { groupId, filePath },
+      "Reloading group due to file change",
+    );
     await this.loadGroup(groupId);
 
     // Notify callbacks

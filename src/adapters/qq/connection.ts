@@ -20,7 +20,11 @@ const DEFAULT_RECONNECT: ReconnectConfig = {
   multiplier: 2,
 };
 
-type ConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting";
+type ConnectionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting";
 
 export class MilkyConnection extends EventEmitter {
   private ws: WebSocket | null = null;
@@ -81,7 +85,10 @@ export class MilkyConnection extends EventEmitter {
     return this.state === "connected";
   }
 
-  async sendRequest(action: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  async sendRequest(
+    action: string,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
     if (!this.ws || this.state !== "connected") {
       throw new Error("WebSocket not connected");
     }
@@ -174,7 +181,7 @@ export class MilkyConnection extends EventEmitter {
     }
     if (ArrayBuffer.isView(data)) {
       return this.textDecoder.decode(
-        new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+        new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
       );
     }
     if (data instanceof Blob) {
@@ -201,7 +208,8 @@ export class MilkyConnection extends EventEmitter {
 
   private handleClose = (): void => {
     const wasConnected = this.state === "connected";
-    const wasConnecting = this.state === "connecting" || this.state === "reconnecting";
+    const wasConnecting =
+      this.state === "connecting" || this.state === "reconnecting";
 
     this.state = "disconnected";
     this.detachSocket();
@@ -230,7 +238,9 @@ export class MilkyConnection extends EventEmitter {
 
     const WebSocketImpl = globalThis.WebSocket;
     if (!WebSocketImpl) {
-      const err = new Error("WebSocket is not available. This adapter requires Bun runtime.");
+      const err = new Error(
+        "WebSocket is not available. This adapter requires Bun runtime.",
+      );
       this.logger.error({ err }, "WebSocket unavailable");
       this.emit("connect_error", err);
       return;
@@ -304,13 +314,13 @@ export class MilkyConnection extends EventEmitter {
     const delay = Math.min(
       this.reconnectConfig.initialDelay *
         Math.pow(this.reconnectConfig.multiplier, this.reconnectAttempt),
-      this.reconnectConfig.maxDelay
+      this.reconnectConfig.maxDelay,
     );
 
     this.reconnectAttempt++;
     this.logger.info(
       { delay, attempt: this.reconnectAttempt },
-      "Scheduling reconnect"
+      "Scheduling reconnect",
     );
 
     this.reconnectTimer = setTimeout(() => {

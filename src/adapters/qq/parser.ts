@@ -31,7 +31,7 @@ interface MilkyMessageSegment {
  */
 export function parseMessage(
   event: unknown,
-  botUserId: string | null
+  botUserId: string | null,
 ): UnifiedMessage | null {
   if (!isMessageEvent(event)) {
     return null;
@@ -76,7 +76,7 @@ function isMessageEvent(event: unknown): event is MilkyMessageEvent {
  */
 function extractContent(
   event: MilkyMessageEvent,
-  botUserId: string | null
+  botUserId: string | null,
 ): { content: string; mentionsBot: boolean } {
   const { message, raw_message } = event;
 
@@ -120,7 +120,7 @@ function extractTextFromSegments(message: MilkyMessageSegment[]): string {
 
 function checkMentionsBotInSegments(
   message: MilkyMessageSegment[],
-  botUserId: string | null
+  botUserId: string | null,
 ): boolean {
   if (!botUserId) {
     return false;
@@ -138,7 +138,7 @@ function checkMentionsBotInSegments(
 
 function checkMentionsBotInRaw(
   rawMessage: string,
-  botUserId: string | null
+  botUserId: string | null,
 ): boolean {
   if (!botUserId) {
     return false;

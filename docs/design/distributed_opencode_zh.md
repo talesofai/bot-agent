@@ -39,11 +39,10 @@
 ├── assets/                 # [RO] 静态资源 (Admin可改)
 └── sessions/               # [System RW]
     └── {session_id}/       # [Opencode RW] 用户独占工作区
-        ├── meta.json       # { owner_id, status, created_at }
+        ├── meta.json       # { sessionId, groupId, ownerId, key, status, createdAt, updatedAt }
         ├── workspace/      # Opencode CWD (工作目录)
         │   ├── input/      # 输入文件
         │   └── output/     # 输出产物
-        └── .lock           # (可选) 运行时锁
 ```
 
 ## 4. Session 生命周期 (Persistent Data, Transient Runtime)
@@ -76,15 +75,9 @@ Session 数据永久存在，但计算资源按需分配。即 **"Serverless"** 
 
 - **用户级互斥**: 同一用户的 `sid` 在同一时刻只能被一个 Worker `Resume`。
 - 需要分布式锁吗？**需要**。
-  - 锁位置: `sessions/{sid}/.runtime.lock`
+  - 锁位置: Redis (`session:lock:{groupId}:{sessionId}`)
   - 作用: 防止两个 Worker 同时 Resume 同一个 Session (例如用户快速连发)。
-  - **死锁恢复 (Crash Recovery)**:
-    - **问题**: 机器时钟不准导致误判 TTL；或 Worker 崩溃导致锁残留。
-    - **对策**: **Heartbeat (心跳保活) + Wide TTL (宽限期)**。
-    - **机制**:
-      1.  持有锁的 Worker 每 **1分钟** `touch` 一次锁文件 (更新 `mtime`)。
-      2.  抢锁者检查 `mtime`。只有当 `Now - mtime > 10分钟` (宽限期) 时，才视作死锁并强制删除。
-      3.  **时钟依赖**: 依赖 K8s 节点间 NTP 同步，但 **10分钟** 的宽限期足以覆盖绝大多数时钟漂移 (Clock Skew)。
+  - 释放策略: 仅删除自身设置的锁值，避免误释放他人锁。
 
 ## 5. 部署模型 (Worker Pool)
 

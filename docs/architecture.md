@@ -87,7 +87,7 @@
 
 **为什么选择 opencode**：
 
-- 支持非交互式模式：`opencode -p "prompt" -c /path/to/group`
+- 支持非交互式模式：`opencode -p "prompt" -c /path/to/group -f json`
 - 原生支持 MCP 协议，可直接使用 talesofai MCP
 - 支持多种 AI 模型（OpenAI/Anthropic/Gemini）
 - 与项目 TypeScript (Bun) 技术栈一致，便于集成
@@ -97,13 +97,12 @@
 ```bash
 opencode -p "用户消息内容" \
          -c /data/groups/{group_id} \
-         -f json \
-         --quiet
+         -f json
 ```
 
 ### 4. 存储层 - 群目录
 
-**职责**：持久化群配置和上下文
+**职责**：持久化群配置和会话历史
 
 每个群独立目录，结构如下：
 
@@ -151,15 +150,15 @@ opencode -p "用户消息内容" \
 
 ## 技术选型
 
-| 组件     | 选型                 | 理由                                              |
-| -------- | -------------------- | ------------------------------------------------- |
-| 语言     | TypeScript           | 与 opencode/LuckyLilliaBot 一致，Discord 生态成熟 |
-| QQ 协议  | LuckyLilliaBot       | 协议全面，稳定性好                                |
-| 协议规范 | Milky                | 新一代标准，生态活跃                              |
-| Agent    | Anthropic/OpenAI SDK | 直接 API 调用，灵活可控                           |
-| 多平台   | Adapter 模式         | 统一接口，QQ/Discord 可扩展                       |
-| 配置格式 | YAML + Markdown      | 人类可读，Git 友好                                |
-| 部署     | Docker + K8s         | 云原生，易扩展                                    |
+| 组件     | 选型            | 理由                                              |
+| -------- | --------------- | ------------------------------------------------- |
+| 语言     | TypeScript      | 与 opencode/LuckyLilliaBot 一致，Discord 生态成熟 |
+| QQ 协议  | LuckyLilliaBot  | 协议全面，稳定性好                                |
+| 协议规范 | Milky           | 新一代标准，生态活跃                              |
+| Agent    | opencode CLI    | 统一封装模型调用，支持 MCP                        |
+| 多平台   | Adapter 模式    | 统一接口，QQ/Discord 可扩展                       |
+| 配置格式 | YAML + Markdown | 人类可读，Git 友好                                |
+| 部署     | Docker + K8s    | 云原生，易扩展                                    |
 
 ## 扩展性设计
 

@@ -14,7 +14,7 @@
 | ----------- | ---------------------- | ---------------------------------------------------- |
 | **语言**    | TypeScript             | 与 opencode/LuckyLilliaBot 一致，discord.js 生态成熟 |
 | **QQ 协议** | LuckyLilliaBot + Milky | 协议稳定，不易封号                                   |
-| **AI 调用** | Anthropic/OpenAI SDK   | 直接 API 调用                                        |
+| **AI 调用** | opencode CLI           | 统一封装模型调用，支持 MCP                           |
 | **多平台**  | Adapter 模式           | 统一接口，QQ/Discord 可扩展                          |
 
 ---
@@ -40,7 +40,7 @@
 │                        │                           │
 │  ┌──────────────────────────────────────────────┐  │
 │  │              Agent (LLM 调用)                 │  │
-│  │  Anthropic / OpenAI / MCP 工具               │  │
+│  │  opencode + MCP 工具                          │  │
 │  └──────────────────────────────────────────────┘  │
 │                        │                           │
 │  ┌──────────────────────────────────────────────┐  │
@@ -62,6 +62,8 @@ interface PlatformAdapter {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   onMessage(handler: MessageHandler): void;
+  onConnect(handler: ConnectionHandler): void;
+  onDisconnect(handler: ConnectionHandler): void;
   sendMessage(options: SendMessageOptions): Promise<void>;
   getBotUserId(): string | null;
 }
@@ -154,8 +156,8 @@ interface UnifiedMessage {
 | 任务               | 负责人 | 状态 |
 | ------------------ | ------ | ---- |
 | Agent 接口定义     |        | ⬜   |
-| Anthropic 实现     |        | ⬜   |
-| OpenAI 实现        |        | ⬜   |
+| opencode runner    |        | ⬜   |
+| opencode 输出解析  |        | ⬜   |
 | System Prompt 构建 |        | ⬜   |
 | Skills 注入        |        | ⬜   |
 | 响应解析与发送     |        | ⬜   |

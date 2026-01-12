@@ -44,8 +44,15 @@ OPENCODE_MODEL=claude-sonnet-4-20250514
 ### 连接配置
 
 ```env
+# 平台选择: qq | discord
+PLATFORM=qq
+
 # LuckyLilliaBot Milky API 地址
 MILKY_URL=http://localhost:3000
+
+# Discord 平台配置
+DISCORD_TOKEN=
+DISCORD_APPLICATION_ID=
 
 # WebSocket 重连配置（当前使用内置默认值）
 ```

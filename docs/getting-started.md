@@ -67,7 +67,7 @@ docker compose -f deployments/docker/docker-compose.yml logs luckylillia
 
 ## 步骤 5：测试
 
-在 QQ 群中 @机器人 发送消息，确认机器人在线。AI 回复功能待 Bot Agent 实现后可用。
+在 QQ 群中 @机器人 发送消息，确认机器人在线。AI 回复依赖 `opencode-bot-agent` 服务正常运行。
 
 可选：验证本地连通性（WebUI + Milky）：
 

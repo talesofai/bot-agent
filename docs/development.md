@@ -82,6 +82,8 @@ interface PlatformAdapter {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   onMessage(handler: MessageHandler): void;
+  onConnect(handler: ConnectionHandler): void;
+  onDisconnect(handler: ConnectionHandler): void;
   sendMessage(options: SendMessageOptions): Promise<void>;
   getBotUserId(): string | null;
 }

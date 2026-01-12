@@ -1,6 +1,6 @@
 # 开发指南
 
-本文档面向开发者，介绍如何参与 Bot Agent 开发（以 TypeScript 为主）。当前仓库暂无 TS 源码，内容用于落地规划。
+本文档面向开发者，介绍如何参与 Bot Agent 开发（以 TypeScript 为主）。
 
 ## 开发环境
 
@@ -58,8 +58,7 @@ docker compose -f deployments/docker/docker-compose.yml logs -f luckylillia
 
 ```
 opencode-bot-agent/
-├── src/                   # TypeScript 源码（规划中）
-├── test/                  # 测试（规划中）
+├── src/                   # TypeScript 源码（含测试）
 ├── configs/               # 配置文件
 ├── deployments/           # 部署配置
 ├── docs/                  # 文档
@@ -69,11 +68,11 @@ opencode-bot-agent/
 
 ## 代码规范
 
-- TypeScript 代码遵循 ESLint + Prettier（脚本落地后补充命令）。
+- TypeScript 代码遵循 ESLint + Prettier：`bun run lint`、`bun run format`。
 - 命名约定：变量/函数使用 `camelCase`，类型/类使用 `PascalCase`。
 - 配置文件使用 YAML/Markdown，保持 `configs/` 现有命名风格。
 
-## 核心模块（规划）
+## 核心模块
 
 多平台适配采用 Adapter 模式，接口示例：
 
@@ -106,5 +105,5 @@ interface UnifiedMessage {
 
 ## 测试
 
-- 测试目录与脚本将在 `src/` 与 `test/` 落地后补充。
+- 运行测试：`bun test`
 - 新增功能需配套测试与日志校验。

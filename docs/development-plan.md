@@ -1,5 +1,7 @@
 # Bot Agent 开发规划
 
+> 说明：TypeScript 实现已落地，以下为历史规划记录，状态可能与当前实现不一致。
+
 ## 项目概述
 
 基于 AI Agent 的多平台聊天机器人系统，支持 QQ 群和 Discord。

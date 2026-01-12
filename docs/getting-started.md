@@ -1,6 +1,6 @@
 # 快速开始
 
-本指南帮助你完成环境准备，并验证 LuckyLilliaBot 可用性。Bot Agent 的 TypeScript 实现仍在规划中。
+本指南帮助你完成环境准备，并验证 LuckyLilliaBot 可用性。
 
 ## 前置要求
 
@@ -89,7 +89,7 @@ WEBUI_TOKEN=your-token ./scripts/verify-local.sh
 
 ### Q: AI 不回复消息？
 
-目前 Bot Agent 尚未实现，AI 回复不可用。可以先检查 LuckyLilliaBot 是否在线与登录成功。
+AI 回复可用性取决于 Bot Agent 是否已连接并完成配置。
 
 ### Q: 如何查看日志？
 

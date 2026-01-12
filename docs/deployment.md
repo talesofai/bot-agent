@@ -1,6 +1,6 @@
 # 部署指南
 
-本文档介绍生产环境部署方案。当前 Bot Agent 代码实现尚未落地，以下内容以部署规划与示例配置为主。
+本文档介绍生产环境部署方案。部分部署细节仍在迭代中。
 
 ## 部署方式
 
@@ -74,7 +74,7 @@ services:
       - pmhq
 
   # opencode-bot-agent:
-  #   image: ghcr.io/talesofai/opencode-bot-agent:latest # 规划中的镜像
+  #   image: ghcr.io/talesofai/opencode-bot-agent:latest # 镜像占位
   #   container_name: opencode-bot-agent
   #   restart: unless-stopped
   #   depends_on:

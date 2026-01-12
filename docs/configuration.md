@@ -1,6 +1,6 @@
 # 配置说明
 
-本文档详细说明配置项规划。当前仓库包含 `configs/example.env`、`configs/default-agent.md` 与占位的 `configs/config.yaml`，热更新能力仍在规划中。
+本文档详细说明配置项。当前仓库包含 `configs/example.env`、`configs/default-agent.md` 与占位的 `configs/config.yaml`，热更新能力仍在迭代中。
 
 ## 配置方式
 

@@ -1,3 +1,4 @@
+import { getConfig } from "../config";
 import type { SessionInfo } from "../types/session";
 
 export interface OpencodeLaunchSpec {
@@ -13,9 +14,14 @@ export class OpencodeLauncher {
     prompt: string,
   ): OpencodeLaunchSpec {
     const groupPath = sessionInfo.groupPath;
+    const model = getConfig().OPENCODE_MODEL?.trim();
+    const args = ["-p", prompt, "-c", groupPath, "-f", "json"];
+    if (model) {
+      args.push("-m", model);
+    }
     return {
       command: "opencode",
-      args: ["-p", prompt, "-c", groupPath, "-f", "json"],
+      args,
       cwd: sessionInfo.workspacePath,
     };
   }

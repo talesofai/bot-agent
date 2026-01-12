@@ -27,6 +27,7 @@
 - SessionRepository 使用统一的 sessionId 构造逻辑
 - GroupConfig 的 model 覆盖 OPENCODE_MODEL
 - Session lock 使用随机值并对比删除，避免误释放他人锁
+- 复用已有 session 时刷新活跃索引
 
 ### Changed
 

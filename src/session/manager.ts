@@ -95,6 +95,10 @@ export class SessionManager {
       if (existing.meta.ownerId !== userId) {
         throw new Error("Session ownership mismatch");
       }
+      await this.activityIndex.recordActivity({
+        groupId: existing.meta.groupId,
+        sessionId: existing.meta.sessionId,
+      });
       return existing;
     }
 

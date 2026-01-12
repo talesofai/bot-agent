@@ -1,4 +1,5 @@
-import { appendFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, appendFile } from "node:fs/promises";
 import type { Logger } from "pino";
 import type { HistoryEntry } from "../types/session";
 
@@ -21,6 +22,9 @@ export class HistoryStore {
     options: HistoryReadOptions = {},
   ): Promise<HistoryEntry[]> {
     try {
+      if (!(await this.exists(historyPath))) {
+        return [];
+      }
       const content = await this.readTail(historyPath, options);
       if (!content.trim()) {
         return [];
@@ -70,6 +74,15 @@ export class HistoryStore {
     }
     const maxBytes = options.maxBytes ?? this.maxBytes;
     return this.runTail(["-c", String(maxBytes), historyPath]);
+  }
+
+  private async exists(historyPath: string): Promise<boolean> {
+    try {
+      await access(historyPath, constants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async runTail(args: string[]): Promise<string> {

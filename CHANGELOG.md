@@ -17,6 +17,7 @@
 - SessionWorker 重试延迟使用配置值
 - GroupWatcher 忽略 sessions 目录变更，避免无意义重载
 - SessionHistory 读取 tail 为空时直接返回空列表
+- SessionHistory 读取前检查文件存在，避免 tail 误报
 
 ### Changed
 

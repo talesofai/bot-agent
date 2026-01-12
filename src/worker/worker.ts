@@ -21,8 +21,7 @@ export interface SessionWorkerOptions {
   requeueDelayMs?: number;
   historyMaxEntries?: number;
   historyMaxBytes?: number;
-  heartbeatIntervalMs?: number;
-  heartbeatFailureThreshold?: number;
+  sessionLockTtlSeconds?: number;
   stalledIntervalMs?: number;
   maxStalledCount?: number;
   responseQueue?: ResponseQueue;
@@ -39,8 +38,7 @@ export class SessionWorker {
   private lockConnection: IORedis;
   private historyMaxEntries?: number;
   private historyMaxBytes?: number;
-  private heartbeatIntervalMs: number;
-  private heartbeatFailureThreshold: number;
+  private sessionLockTtlSeconds: number;
   private stalledIntervalMs: number;
   private maxStalledCount: number;
 
@@ -55,8 +53,7 @@ export class SessionWorker {
     this.responseQueue = options.responseQueue;
     this.historyMaxEntries = options.historyMaxEntries;
     this.historyMaxBytes = options.historyMaxBytes;
-    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 60_000;
-    this.heartbeatFailureThreshold = options.heartbeatFailureThreshold ?? 3;
+    this.sessionLockTtlSeconds = options.sessionLockTtlSeconds ?? 600;
     this.stalledIntervalMs = options.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.maxStalledCount ?? 1;
 
@@ -112,7 +109,7 @@ export class SessionWorker {
       lockKey,
       "locked",
       "EX",
-      600,
+      this.sessionLockTtlSeconds,
       "NX",
     );
     if (!acquired) {
@@ -124,80 +121,33 @@ export class SessionWorker {
       throw new DelayedError();
     }
 
-    let heartbeat: NodeJS.Timer | null = null;
     let statusUpdated = false;
     let sessionInfo: SessionInfo | null = null;
-    let lockLost = false;
-    let heartbeatFailures = 0;
-    const abortController = new AbortController();
 
     try {
-      // 2. Start Heartbeat
-      heartbeat = setInterval(() => {
-        this.lockConnection
-          .expire(lockKey, 600)
-          .then((extended) => {
-            if (extended === 1) {
-              heartbeatFailures = 0;
-              return;
-            }
-            heartbeatFailures += 1;
-            this.logger.warn(
-              { sessionId, heartbeatFailures },
-              "Session lock missing during heartbeat",
-            );
-            if (
-              heartbeatFailures >= this.heartbeatFailureThreshold &&
-              !lockLost
-            ) {
-              lockLost = true;
-              abortController.abort();
-            }
-          })
-          .catch((err) => {
-            heartbeatFailures += 1;
-            this.logger.warn(
-              { err, sessionId, heartbeatFailures },
-              "Failed to extend session lock",
-            );
-            if (
-              heartbeatFailures >= this.heartbeatFailureThreshold &&
-              !lockLost
-            ) {
-              lockLost = true;
-              abortController.abort();
-            }
-          });
-      }, this.heartbeatIntervalMs);
-
-      // 3. Ensure Session Exists
+      // 2. Ensure Session Exists
       sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
-      this.assertLockHealthy(lockLost, sessionId);
 
-      // 4. Update Status
+      // 3. Update Status
       await this.sessionManager.updateStatus(sessionInfo, "running");
       statusUpdated = true;
-      this.assertLockHealthy(lockLost, sessionId);
 
-      // 5. Prepare Context
+      // 4. Prepare Context
       const history = await this.sessionManager.readHistory(sessionInfo, {
         maxEntries: this.historyMaxEntries,
         maxBytes: this.historyMaxBytes,
       });
       const launchSpec = this.launcher.buildLaunchSpec(sessionInfo);
-      this.assertLockHealthy(lockLost, sessionId);
 
-      // 6. Run
+      // 5. Run
       const result = await this.runner.run({
         job: this.mapJob(job),
         session: sessionInfo,
         history,
         launchSpec,
-        signal: abortController.signal,
       });
-      this.assertLockHealthy(lockLost, sessionId);
 
-      // 7. Append History
+      // 6. Append History
       await this.appendHistoryFromJob(
         sessionInfo,
         payload,
@@ -209,9 +159,6 @@ export class SessionWorker {
       this.logger.error({ err, sessionId }, "Error processing session job");
       throw err;
     } finally {
-      if (heartbeat) {
-        clearInterval(heartbeat);
-      }
       if (statusUpdated && sessionInfo) {
         try {
           await this.sessionManager.updateStatus(sessionInfo, "idle");
@@ -293,12 +240,5 @@ export class SessionWorker {
       userId: jobData.userId,
       sessionId: jobData.sessionId,
     });
-  }
-
-  private assertLockHealthy(lockLost: boolean, sessionId: string): void {
-    if (!lockLost) {
-      return;
-    }
-    throw new Error(`Session lock lost for ${sessionId}`);
   }
 }

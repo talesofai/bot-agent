@@ -15,7 +15,7 @@ export interface SessionWorkerPoolOptions {
   requeueDelayMs?: number;
   historyMaxEntries?: number;
   historyMaxBytes?: number;
-  heartbeatIntervalMs?: number;
+  sessionLockTtlSeconds?: number;
   stalledIntervalMs?: number;
   maxStalledCount?: number;
 }
@@ -38,7 +38,7 @@ export class SessionWorkerPool {
       requeueDelayMs: options.requeueDelayMs,
       historyMaxEntries: options.historyMaxEntries,
       historyMaxBytes: options.historyMaxBytes,
-      heartbeatIntervalMs: options.heartbeatIntervalMs,
+      sessionLockTtlSeconds: options.sessionLockTtlSeconds,
       stalledIntervalMs: options.stalledIntervalMs,
       maxStalledCount: options.maxStalledCount,
     });

@@ -88,21 +88,33 @@ export class GroupStore {
   }
 
   /**
-   * Ensure group directory exists with default files
+   * Ensure group directory exists with all required subdirectories and default files.
+   * Will repair missing subdirectories and files in existing directories.
    */
   ensureGroupDir(groupId: string): string {
     const groupPath = join(this.dataDir, groupId);
+    const isNewDir = !existsSync(groupPath);
     
-    if (!existsSync(groupPath)) {
-      mkdirSync(groupPath, { recursive: true });
-      mkdirSync(join(groupPath, "skills"), { recursive: true });
-      mkdirSync(join(groupPath, "context"), { recursive: true });
-      mkdirSync(join(groupPath, "assets"), { recursive: true });
-      
-      // Create default files
-      writeFileSync(join(groupPath, "agent.md"), DEFAULT_AGENT_MD);
-      writeFileSync(join(groupPath, "config.yaml"), DEFAULT_CONFIG_YAML);
-      
+    // Ensure main directory and subdirectories exist
+    mkdirSync(groupPath, { recursive: true });
+    mkdirSync(join(groupPath, "skills"), { recursive: true });
+    mkdirSync(join(groupPath, "context"), { recursive: true });
+    mkdirSync(join(groupPath, "assets"), { recursive: true });
+    
+    // Create default files if missing
+    const agentPath = join(groupPath, "agent.md");
+    if (!existsSync(agentPath)) {
+      writeFileSync(agentPath, DEFAULT_AGENT_MD);
+      this.logger.debug({ groupId }, "Created default agent.md");
+    }
+    
+    const configPath = join(groupPath, "config.yaml");
+    if (!existsSync(configPath)) {
+      writeFileSync(configPath, DEFAULT_CONFIG_YAML);
+      this.logger.debug({ groupId }, "Created default config.yaml");
+    }
+    
+    if (isNewDir) {
       this.logger.info({ groupId }, "Created group directory");
     }
     

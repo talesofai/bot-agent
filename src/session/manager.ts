@@ -64,7 +64,10 @@ export class SessionManager {
     }
 
     const sessionId = this.sessionRepository.getSessionId(userId, key);
-    const existing = await this.sessionRepository.loadSession(groupId, sessionId);
+    const existing = await this.sessionRepository.loadSession(
+      groupId,
+      sessionId,
+    );
     if (existing) {
       if (existing.meta.ownerId !== userId) {
         throw new Error("Session ownership mismatch");
@@ -86,7 +89,10 @@ export class SessionManager {
     return this.sessionRepository.createSession(meta);
   }
 
-  async getSession(groupId: string, sessionId: string): Promise<SessionInfo | null> {
+  async getSession(
+    groupId: string,
+    sessionId: string,
+  ): Promise<SessionInfo | null> {
     return this.sessionRepository.loadSession(groupId, sessionId);
   }
 

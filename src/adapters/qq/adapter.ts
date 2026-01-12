@@ -109,7 +109,9 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
     }
   }
 
-  private async emitMessage(message: Parameters<MessageHandler>[0]): Promise<void> {
+  private async emitMessage(
+    message: Parameters<MessageHandler>[0],
+  ): Promise<void> {
     const handlers = this.listeners("message") as MessageHandler[];
     for (const handler of handlers) {
       try {

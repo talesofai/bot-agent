@@ -58,7 +58,10 @@ export class HistoryStore {
     await appendFile(historyPath, line, "utf-8");
   }
 
-  private async readTail(historyPath: string, maxBytes: number): Promise<string> {
+  private async readTail(
+    historyPath: string,
+    maxBytes: number,
+  ): Promise<string> {
     const fileStat = await stat(historyPath);
     if (fileStat.size === 0) {
       return "";

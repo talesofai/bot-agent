@@ -1,4 +1,3 @@
-
 import { Worker, type Job, DelayedError } from "bullmq";
 import IORedis from "ioredis";
 import type { Logger } from "pino";
@@ -46,7 +45,10 @@ export class SessionWorker {
   private maxStalledCount: number;
 
   constructor(options: SessionWorkerOptions) {
-    this.logger = options.logger.child({ component: "session-worker", workerId: options.id });
+    this.logger = options.logger.child({
+      component: "session-worker",
+      workerId: options.id,
+    });
     this.sessionManager = options.sessionManager;
     this.launcher = options.launcher ?? new OpencodeLauncher();
     this.runner = options.runner;
@@ -77,7 +79,7 @@ export class SessionWorker {
         autorun: false,
         stalledInterval: this.stalledIntervalMs,
         maxStalledCount: this.maxStalledCount,
-      }
+      },
     );
 
     this.worker.on("error", (err) => {
@@ -103,10 +105,16 @@ export class SessionWorker {
   private async processJob(job: Job<SessionJobData>): Promise<void> {
     const { sessionId, groupId, userId, key, payload } = job.data;
     const lockKey = `session:lock:${sessionId}`;
-    
+
     // 1. Acquire Lock
     // ioredis v5: set(key, value, "EX", seconds, "NX")
-    const acquired = await this.lockConnection.set(lockKey, "locked", "EX", 600, "NX");
+    const acquired = await this.lockConnection.set(
+      lockKey,
+      "locked",
+      "EX",
+      600,
+      "NX",
+    );
     if (!acquired) {
       this.logger.debug({ sessionId }, "Session busy, delaying job");
       if (!job.token) {
@@ -138,7 +146,10 @@ export class SessionWorker {
               { sessionId, heartbeatFailures },
               "Session lock missing during heartbeat",
             );
-            if (heartbeatFailures >= this.heartbeatFailureThreshold && !lockLost) {
+            if (
+              heartbeatFailures >= this.heartbeatFailureThreshold &&
+              !lockLost
+            ) {
               lockLost = true;
               abortController.abort();
             }
@@ -149,7 +160,10 @@ export class SessionWorker {
               { err, sessionId, heartbeatFailures },
               "Failed to extend session lock",
             );
-            if (heartbeatFailures >= this.heartbeatFailureThreshold && !lockLost) {
+            if (
+              heartbeatFailures >= this.heartbeatFailureThreshold &&
+              !lockLost
+            ) {
               lockLost = true;
               abortController.abort();
             }
@@ -159,7 +173,7 @@ export class SessionWorker {
       // 3. Ensure Session Exists
       sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
       this.assertLockHealthy(lockLost, sessionId);
-      
+
       // 4. Update Status
       await this.sessionManager.updateStatus(sessionInfo, "running");
       statusUpdated = true;
@@ -184,9 +198,13 @@ export class SessionWorker {
       this.assertLockHealthy(lockLost, sessionId);
 
       // 7. Append History
-      await this.appendHistoryFromJob(sessionInfo, payload, result.historyEntries, result.output);
+      await this.appendHistoryFromJob(
+        sessionInfo,
+        payload,
+        result.historyEntries,
+        result.output,
+      );
       await this.enqueueResponse(job.data, result.output);
-
     } catch (err) {
       this.logger.error({ err, sessionId }, "Error processing session job");
       throw err;
@@ -210,9 +228,12 @@ export class SessionWorker {
     groupId: string,
     userId: string,
     key: number,
-    expectedSessionId: string
+    expectedSessionId: string,
   ): Promise<SessionInfo> {
-    const existing = await this.sessionManager.getSession(groupId, expectedSessionId);
+    const existing = await this.sessionManager.getSession(
+      groupId,
+      expectedSessionId,
+    );
     if (existing) {
       return existing;
     }
@@ -223,10 +244,10 @@ export class SessionWorker {
     sessionInfo: SessionInfo,
     payload: SessionJobData["payload"],
     historyEntries?: HistoryEntry[],
-    output?: string
+    output?: string,
   ): Promise<void> {
     const entries: HistoryEntry[] = [];
-    
+
     if (payload?.input) {
       entries.push({
         role: "user",

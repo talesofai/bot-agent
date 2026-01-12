@@ -39,7 +39,10 @@ export class SessionRepository {
     return `${userId}-${key}`;
   }
 
-  async loadSession(groupId: string, sessionId: string): Promise<SessionInfo | null> {
+  async loadSession(
+    groupId: string,
+    sessionId: string,
+  ): Promise<SessionInfo | null> {
     const paths = this.buildSessionPaths(groupId, sessionId);
     const meta = await this.readMeta(paths.metaPath);
     if (!meta) {
@@ -61,7 +64,10 @@ export class SessionRepository {
     return this.buildSessionInfo(meta, paths);
   }
 
-  private buildSessionInfo(meta: SessionMeta, paths: SessionPaths): SessionInfo {
+  private buildSessionInfo(
+    meta: SessionMeta,
+    paths: SessionPaths,
+  ): SessionInfo {
     return {
       meta,
       groupPath: paths.groupPath,

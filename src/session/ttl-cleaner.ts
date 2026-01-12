@@ -42,14 +42,20 @@ export class SessionTtlCleaner {
     return removed;
   }
 
-  private async isExpired(session: SessionScanEntry, now: number): Promise<boolean> {
+  private async isExpired(
+    session: SessionScanEntry,
+    now: number,
+  ): Promise<boolean> {
     if (await this.exists(session.lockPath)) {
       return false;
     }
     if (session.meta?.status === "running") {
       return false;
     }
-    const lastActive = await this.resolveLastActive(session.meta, session.sessionPath);
+    const lastActive = await this.resolveLastActive(
+      session.meta,
+      session.sessionPath,
+    );
     return now - lastActive > this.ttlMs;
   }
 

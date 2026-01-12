@@ -27,10 +27,8 @@ export class MessageSender {
       );
     }
 
-    // Validate channelId is numeric
-    const numericId = Number(channelId);
-    if (Number.isNaN(numericId)) {
-      throw new Error(`Invalid channelId: "${channelId}" is not a valid QQ ID`);
+    if (!channelId) {
+      throw new Error("channelId is required for sending messages.");
     }
 
     const message = this.buildMessage(content, attachments);
@@ -38,8 +36,8 @@ export class MessageSender {
     const isGroup = channelType === "group";
     const action = isGroup ? "send_group_msg" : "send_private_msg";
     const params = isGroup
-      ? { group_id: numericId, message }
-      : { user_id: numericId, message };
+      ? { group_id: channelId, message }
+      : { user_id: channelId, message };
 
     try {
       await this.connection.sendRequest(action, params);

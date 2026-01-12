@@ -24,10 +24,12 @@ logger.info(
 
 const adapter = config.SERVICE_ROLE === "worker" ? null : createAdapter(config);
 const sessionManager = new SessionManager();
-const groupStore = new GroupStore();
-groupStore.init().catch((err) => {
-  logger.error({ err }, "Failed to initialize GroupStore");
-});
+const groupStore = adapter ? new GroupStore() : null;
+if (groupStore) {
+  groupStore.init().catch((err) => {
+    logger.error({ err }, "Failed to initialize GroupStore");
+  });
+}
 const groupCooldowns = new Map<string, number>();
 const sessionQueueName = "session-jobs";
 const responseQueueName = "session-responses";
@@ -86,7 +88,7 @@ startHttpServer({ logger })
   });
 
 // Register message handler
-if (adapter) {
+if (adapter && groupStore) {
   adapter.onMessage(async (message: UnifiedMessage) => {
     const groupId = config.DEFAULT_GROUP_ID ?? message.channelId;
     const group = await groupStore.getGroup(groupId);
@@ -153,7 +155,9 @@ if (adapter) {
 const shutdown = async () => {
   logger.info("Shutting down...");
   try {
-    await groupStore.stopWatching();
+    if (groupStore) {
+      await groupStore.stopWatching();
+    }
     if (worker) {
       await worker.stop();
     }

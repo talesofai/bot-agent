@@ -50,12 +50,25 @@ WEBUI_TOKEN=your-token ./scripts/rotate-secrets.sh
 ```env
 WEBUI_TOKEN=your-token
 OPENAI_API_KEY=sk-xxx
+DISCORD_TOKEN=your-token # 规划
+DISCORD_APPLICATION_ID=your-app-id # 规划
+API_TOKEN=your-token
 ```
 
-如果你通过 dotenv 加载环境变量，请将 secrets 合并到 `CONFIG_PATH` 指向的单一文件（推荐 `configs/.env`）：
+`API_TOKEN` 预留给 Bot Agent API 认证（规划中）。
+
+如果你通过 dotenv 加载环境变量，可以将 secrets 合并到 `CONFIG_PATH` 指向的单一文件（推荐 `configs/.env`），或在启动前手动导出 `configs/secrets/.env`：
 
 ```bash
 export CONFIG_PATH=configs/.env
+```
+
+例如：
+
+```bash
+set -a
+source configs/secrets/.env
+set +a
 ```
 
 运行时注入（Docker Compose 会直接导出环境变量，无需 `CONFIG_PATH`）：
@@ -80,6 +93,6 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 
 ## 误提交防护
 
-仓库已在 CI 中启用 `gitleaks` 扫描，PR 和主分支 push 会自动检测泄漏。
+仓库预留了 `gitleaks` 扫描（当前未启用），可在 CI 中开启以检测泄漏。
 
 如需定制扫描规则，可新增 `.gitleaks.toml`。

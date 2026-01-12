@@ -2,7 +2,7 @@
 
 本文档为接口草案，目前仅实现健康检查接口，其余接口仍在规划中。
 
-> 状态：部分已实现，接口与字段可能调整。
+> 状态：除健康检查外均为规划，接口与字段可能调整。
 
 ## HTTP API
 
@@ -19,7 +19,7 @@ GET /health
 ```json
 {
   "status": "ok",
-  "version": "1.0.0",
+  "version": "0.0.17",
   "uptime": "2h30m15s"
 }
 ```
@@ -32,7 +32,7 @@ GET /metrics
 
 返回 Prometheus 格式的指标数据（规划中）。
 
-### 群管理
+### 群管理（规划）
 
 #### 列出所有群
 
@@ -86,6 +86,8 @@ GET /api/v1/groups/{group_id}
 }
 ```
 
+说明：`cooldown` 为群级冷却时间（秒）。
+
 #### 更新群配置
 
 ```http
@@ -102,13 +104,13 @@ Content-Type: application/json
 }
 ```
 
-#### 重载群配置
+#### 重载群配置（规划）
 
 ```http
 POST /api/v1/groups/{group_id}/reload
 ```
 
-### Agent 配置
+### Agent 配置（规划）
 
 #### 获取 Agent 配置
 
@@ -135,7 +137,7 @@ Content-Type: application/json
 }
 ```
 
-### 技能管理
+### 技能管理（规划）
 
 #### 列出技能
 
@@ -185,7 +187,7 @@ DELETE /api/v1/groups/{group_id}/skills/{skill_name}
 
 ## WebSocket API
 
-Bot Agent 也支持 WebSocket 连接，用于实时事件推送。
+规划支持 WebSocket 连接，用于实时事件推送。
 
 ### 连接
 
@@ -263,7 +265,7 @@ AI 回复时推送。
 | `forbidden`       | 403         | 权限不足       |
 | `internal_error`  | 500         | 服务器内部错误 |
 
-## 认证
+## 认证（规划）
 
 API 使用 Bearer Token 认证：
 
@@ -271,4 +273,4 @@ API 使用 Bearer Token 认证：
 Authorization: Bearer <token>
 ```
 
-Token 通过环境变量 `API_TOKEN` 配置（放入 `configs/secrets/.env`）。如果未配置，API 不需要认证（仅用于开发环境）。
+Token 通过环境变量 `API_TOKEN` 配置（放入 `configs/secrets/.env`）。当前认证逻辑仍在规划中。

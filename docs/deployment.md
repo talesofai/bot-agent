@@ -9,9 +9,9 @@
 | Docker Compose | 单机、开发测试   | ⭐     |
 | Kubernetes     | 生产环境、多实例 | ⭐⭐⭐ |
 
-当前仅 LuckyLilliaBot 可稳定部署，Bot Agent 相关部分为规划配置。
+LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节仍在迭代。
 
-## Docker Compose 部署（规划）
+## Docker Compose 部署（基础可用）
 
 ### 目录结构
 
@@ -21,7 +21,9 @@
 │   └── docker/
 │       └── docker-compose.yml
 ├── configs/
-│   └── .env
+│   ├── .env
+│   └── secrets/
+│       └── .env
 └── data/
     ├── llbot/          # LuckyLilliaBot (LLBot) 数据
     └── groups/         # 群数据
@@ -43,7 +45,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - ./data/redis:/data
+      - ../../data/redis:/data
 
   pmhq:
     image: linyuchen/pmhq:latest
@@ -54,16 +56,16 @@ services:
       - ENABLE_HEADLESS=false
       - AUTO_LOGIN_QQ=
     volumes:
-      - ./data/llbot/qq:/root/.config/QQ
-      - ./data/llbot/data:/app/llbot/data
+      - ../../data/llbot/qq:/root/.config/QQ
+      - ../../data/llbot/data:/app/llbot/data
 
   luckylillia:
     image: linyuchen/llbot:latest
     container_name: luckylillia
     restart: unless-stopped
     env_file:
-      - ./configs/.env
-      - ./configs/secrets/.env
+      - ../../configs/.env
+      - ../../configs/secrets/.env
     environment:
       - ENABLE_WEBUI=true
       - WEBUI_PORT=3080
@@ -76,10 +78,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./data/llbot/data:/app/llbot/data
-      - ./data/llbot/qq:/root/.config/QQ
-      - ./data/llbot/default_config.json:/config/default_config.json:ro
-      - ./scripts/llbot-entrypoint.sh:/config/llbot-entrypoint.sh:ro
+      - ../../data/llbot/data:/app/llbot/data
+      - ../../data/llbot/qq:/root/.config/QQ
+      - ../../data/llbot/default_config.json:/config/default_config.json:ro
+      - ../../scripts/llbot-entrypoint.sh:/config/llbot-entrypoint.sh:ro
     depends_on:
       - pmhq
 
@@ -90,12 +92,16 @@ services:
   #   depends_on:
   #     - luckylillia
   #   volumes:
-  #     - ./data/groups:/data/groups
-  #     - ./configs:/app/configs
+  #     - ../../data/groups:/data/groups
+  #     - ../../configs:/app/configs
   #   env_file:
-  #     - ./configs/.env
+  #     - ../../configs/.env
+  #     - ../../configs/secrets/.env
   #   environment:
-  #     - MILKY_URL=http://luckylillia:3000
+  #     - PLATFORM=qq
+  #     - MILKY_URL=ws://luckylillia:3000
+  #     - DISCORD_TOKEN=your-token # 规划
+  #     - DISCORD_APPLICATION_ID=your-app-id # 规划
 ```
 
 当前使用公开镜像 `linyuchen/pmhq` 与 `linyuchen/llbot`。
@@ -110,7 +116,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 
 ## Kubernetes 部署（规划）
 
-当前仓库已提供 `deployments/k8s/` 目录，可直接应用基础资源：
+当前仓库已提供 `deployments/k8s/` 目录，主要覆盖 LuckyLilliaBot/PMHQ 基础资源，Bot Agent 需结合后文示例单独部署：
 
 - `deployments/k8s/llbot-namespace.yaml`
 - `deployments/k8s/llbot-pvc.yaml`
@@ -173,7 +179,7 @@ stringData:
   OPENAI_API_KEY: ""
   ANTHROPIC_API_KEY: ""
   GEMINI_API_KEY: ""
-  API_TOKEN: ""
+  API_TOKEN: "" # 预留给 Bot Agent API 认证
 ```
 
 ### PersistentVolumeClaim
@@ -242,12 +248,26 @@ spec:
         - name: opencode-bot-agent
           image: ghcr.io/talesofai/opencode-bot-agent:latest
           env:
+            - name: PLATFORM
+              value: "qq"
             - name: MILKY_URL
-              value: "http://luckylillia:3000"
+              value: "ws://luckylillia:3000"
+            - name: DISCORD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: DISCORD_TOKEN
+              # 规划
+            - name: DISCORD_APPLICATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: DISCORD_APPLICATION_ID
+              # 规划
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: opencode-bot-agent-secrets
+                  name: llbot-secrets
                   key: OPENAI_API_KEY
           volumeMounts:
             - name: data
@@ -307,11 +327,7 @@ curl http://localhost:8080/health
 
 ### 指标
 
-Prometheus 指标端点仍在规划中：
-
-```bash
-curl http://localhost:8080/metrics
-```
+Prometheus 指标端点仍在规划中（暂无 `/metrics` 路由）。
 
 ## 安全建议
 

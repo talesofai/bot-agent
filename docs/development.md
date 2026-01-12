@@ -23,7 +23,7 @@ cd opencode-bot-agent
 需要在仓库 Secrets 中配置：
 
 - `OPENAI_API_KEY`（必填）：OpenAI API Key。
-- `OPENAI_API_BASE`（可选）：自定义 OpenAI API Base（如代理或兼容服务）。
+- `OPENAI_BASE_URL`（可选）：自定义 OpenAI API Base（如代理或兼容服务）。
 
 工作流使用 `GITHUB_TOKEN` 更新 PR 描述并发布评审意见，请确保 `pull-requests: write` 权限开启。
 首次使用前请安装 OpenCode GitHub App（https://github.com/apps/opencode-agent）。

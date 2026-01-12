@@ -50,7 +50,7 @@
 ```python
 from milky_sdk import MilkyClient
 
-client = MilkyClient("http://localhost:3000")
+client = MilkyClient("ws://localhost:3000")
 client.on_message(handle_message)
 await client.connect()
 ```

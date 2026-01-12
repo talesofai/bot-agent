@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-基于 AI Agent 的多平台聊天机器人系统，支持 QQ 群和 Discord。
+基于 AI Agent 的多平台聊天机器人系统，已支持 QQ 群，Discord 适配仍在规划中。
 
 ---
 
@@ -34,7 +34,8 @@
 │  │            Platform Adapters               │    │
 │  │  ┌─────────────┐    ┌─────────────────┐   │    │
 │  │  │  QQ Adapter │    │ Discord Adapter │   │    │
-│  │  │  (Milky)    │    │ (discord.js)    │   │    │
+│  │  │            │    │   (规划)        │   │    │
+│  │  │  (Milky)    │    │ (discord.js, 规划) │   │    │
 │  │  └─────────────┘    └─────────────────┘   │    │
 │  └───────────────────────────────────────────┘    │
 │                        │                           │
@@ -99,7 +100,7 @@ interface UnifiedMessage {
 | 创建 LuckyLilliaBot Docker 镜像 |        | ⬜   |
 | K8s Deployment 配置             |        | ⬜   |
 | QQ 登录测试（观察 3-5 天）      |        | ⬜   |
-| Milky API 连通性验证            |        | ⬜   |
+| Milky WebSocket 连通性验证      |        | ⬜   |
 
 ---
 
@@ -184,11 +185,11 @@ interface UnifiedMessage {
 
 | 任务                           | 负责人 | 状态 |
 | ------------------------------ | ------ | ---- |
-| HTTP Server（Express/Fastify） |        | ⬜   |
+| HTTP Server（Bun.serve）       |        | ⬜   |
 | GET /health                    |        | ⬜   |
-| GET /api/groups                |        | ⬜   |
-| PUT /api/groups/:id            |        | ⬜   |
-| POST /api/groups/:id/reload    |        | ⬜   |
+| GET /api/v1/groups             |        | ⬜   |
+| PUT /api/v1/groups/:id         |        | ⬜   |
+| POST /api/v1/groups/:id/reload |        | ⬜   |
 
 ---
 
@@ -222,26 +223,18 @@ interface UnifiedMessage {
 
 ## 依赖库
 
-```json
-{
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
-    "openai": "^4.70.0",
-    "ws": "^8.16.0",
-    "chokidar": "^3.5.3",
-    "dotenv": "^16.3.1",
-    "pino": "^8.17.2",
-    "yaml": "^2.3.4",
-    "zod": "^3.22.4",
-    "fastify": "^4.25.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.3.2",
-    "tsx": "^4.6.2",
-    "vitest": "^1.0.4"
-  }
-}
-```
+依赖版本以 `package.json` 为准（Bun 运行时）。关键依赖包括：
+
+- `@saltify/milky-node-sdk`
+- `bullmq`
+- `ioredis`
+- `opencode-ai`
+- `pino`
+- `yaml`
+- `zod`
+- `chokidar`
+- `lru-cache`
+- `openai`
 
 ---
 
@@ -255,7 +248,10 @@ interface UnifiedMessage {
 │   ├── draw.md
 │   └── roleplay.md
 ├── sessions/         # 会话
+│   └── {user}-{key}/
+│       └── history.jsonl
 └── assets/           # 资源
+    └── images/
 ```
 
 ---
@@ -264,6 +260,6 @@ interface UnifiedMessage {
 
 - [LuckyLilliaBot](https://github.com/LLOneBot/LuckyLilliaBot)
 - [Milky 协议](https://milky.ntqqrev.org/)
-- [opencode](https://github.com/anomalyco/opencode)
+- [opencode](https://github.com/opencode-ai/opencode)
 - [Eridanus (参考)](https://github.com/AOrbitron/Eridanus)
 - [discord.js](https://discord.js.org/)

@@ -4,13 +4,10 @@
 
 ## 配置方式
 
-Bot Agent 支持三种配置方式（优先级从高到低）：
-
-1. **环境变量**
-2. **配置文件** (`configs/config.yaml`)
-3. **默认值**
+主配置当前仅支持 **环境变量 + 默认值**。`configs/config.yaml` 为占位模板，读取逻辑仍在规划中。
 
 如需从文件加载环境变量，请设置 `CONFIG_PATH` 指向单一 `.env` 文件（例如 `configs/.env`）。
+`CONFIG_PATH` 按项目根目录解析，避免使用绝对路径以便迁移。
 
 ## 环境变量
 
@@ -27,7 +24,7 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 GEMINI_API_KEY=xxx
 ```
 
-上述敏感项应合并到 `CONFIG_PATH` 指向的 `.env` 文件中。
+上述敏感项需在运行进程的环境中可见，可合并到 `CONFIG_PATH` 指向的 `.env` 文件，或在启动前额外导出 `configs/secrets/.env`。
 
 ### AI 模型配置（非敏感）
 
@@ -47,15 +44,19 @@ OPENCODE_MODEL=claude-sonnet-4-20250514
 # 平台选择: qq | discord
 PLATFORM=qq
 
-# LuckyLilliaBot Milky API 地址
-MILKY_URL=http://localhost:3000
+# LuckyLilliaBot Milky WebSocket 地址
+MILKY_URL=ws://localhost:3000
 
-# Discord 平台配置
+# Discord 平台配置（规划）
 DISCORD_TOKEN=
 DISCORD_APPLICATION_ID=
 
 # WebSocket 重连配置（当前使用内置默认值）
 ```
+
+> `SERVICE_ROLE=worker` 时可不提供平台连接配置；否则 `PLATFORM=qq` 必须提供 `MILKY_URL`，`PLATFORM=discord` 必须提供 `DISCORD_TOKEN`。
+>
+> Discord Adapter 当前仍是占位实现，`SERVICE_ROLE=adapter/all` 且 `PLATFORM=discord` 时会直接报错。
 
 ### 队列配置
 
@@ -75,6 +76,9 @@ HTTP_PORT=8080
 
 # 入口默认群 ID (未提供时使用消息 channelId)
 DEFAULT_GROUP_ID=
+
+# 可选：/health 版本号（默认读取 npm_package_version）
+APP_VERSION=
 ```
 
 ### 群管理配置
@@ -83,6 +87,8 @@ DEFAULT_GROUP_ID=
 # 群数据目录
 GROUPS_DATA_DIR=/data/groups
 ```
+
+`GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置与会话历史。
 
 ### 日志配置
 
@@ -151,7 +157,7 @@ logging:
 2. 如果不确定，诚实地说不知道
 3. 避免敏感话题
 
-## 可用技能
+## 可用技能（规划）
 
 - 闲聊对话
 - 问答解答
@@ -164,8 +170,8 @@ logging:
 ```
 /data/groups/{group_id}/
 ├── agent.md          # 群 Agent 人设（覆盖默认）
-├── config.yaml       # 群配置（可选）
-├── skills/           # 群技能（同名覆盖默认技能，新增为扩展）
+├── config.yaml       # 群配置
+├── skills/           # 群技能（默认技能规划中）
 │   ├── draw.md
 │   └── roleplay.md
 ├── sessions/         # 用户会话
@@ -181,8 +187,8 @@ logging:
 
 ### 继承与覆盖规则
 
-- 群目录若缺少 `agent.md` 会自动生成默认内容。
-- 通用技能（规划）与群目录下的 `skills/` 合并加载，同名文件覆盖默认技能，新增文件直接生效。
+- 群目录初始化或修复时若缺少 `agent.md` 会生成默认内容。
+- 通用技能仍在规划中，目前仅加载群目录下的 `skills/`。
 
 ### 群配置 config.yaml
 
@@ -193,17 +199,17 @@ triggerMode: mention # 触发方式: mention, keyword, all
 keywords: # keyword 模式的触发词
   - "小助手"
   - "机器人"
-cooldown: 5 # 消息冷却时间（秒）
+cooldown: 5 # 群级冷却时间（秒）
 maxSessions: 1 # 每个用户最大会话数
 model: claude-sonnet-4-20250514 # 覆盖 OPENCODE_MODEL（可选）
 
 # 管理员配置
 adminUsers:
-  - 123456789 # QQ 号
-  - 987654321
+  - "123456789" # QQ 号
+  - "987654321"
 ```
 
-## 配置热更新（规划）
+## 配置热更新
 
 ### 支持热更新的配置
 
@@ -213,13 +219,13 @@ adminUsers:
 
 ### 触发方式
 
-1. **自动**：文件修改后自动重载（通过 fsnotify）
-2. **手动**：发送管理指令 `/reload`
+1. **自动**：文件修改后自动重载（通过 chokidar）
+2. **手动**：发送管理指令 `/reload`（规划中）
 
 ### 不支持热更新的配置
 
 以下配置修改后需要重启服务：
 
 - 环境变量
-- `configs/config.yaml` 主配置
+- （规划）`configs/config.yaml` 主配置
 - API Key

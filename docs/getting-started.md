@@ -7,6 +7,7 @@
 - Docker 和 Docker Compose
 - QQ 账号（用于机器人登录）
 - OpenAI / Anthropic / Gemini API Key（任选其一）
+- opencode CLI（仅在本机运行 Bot Agent 时需要）
 
 ## 步骤 1：克隆项目
 
@@ -67,7 +68,20 @@ docker compose -f deployments/docker/docker-compose.yml logs luckylillia
 
 ## 步骤 5：测试
 
-在 QQ 群中 @机器人 发送消息，确认机器人在线。AI 回复依赖 `opencode-bot-agent` 服务正常运行。
+在 QQ 群中 @机器人 发送消息，确认机器人在线。AI 回复依赖 `opencode-bot-agent` 服务正常运行（当前 `docker-compose.yml` 仅启动 LuckyLilliaBot，需要单独启动 Bot Agent）。
+
+你可以在消息开头加 `#<key>` 切换会话编号，例如 `#2 继续刚才的话题`。不提供前缀时默认使用 key 0。
+
+如果你在本机直接运行 `opencode-bot-agent`（非 Docker 网络），请先把 `configs/.env` 中的 `MILKY_URL` 改为 `ws://localhost:3000`、`REDIS_URL` 改为 `redis://localhost:6379`，确认 `PLATFORM=qq`，然后在另一个终端启动：
+
+```bash
+set -a
+source configs/secrets/.env
+set +a
+CONFIG_PATH=configs/.env bun run dev
+```
+
+本地运行需要 `opencode` CLI 已安装并可从 `PATH` 访问。
 
 可选：验证本地连通性（WebUI + Milky）：
 

@@ -1,6 +1,6 @@
 # opencode-bot-agent
 
-基于 AI Agent 的 QQ 群机器人系统，使用 opencode 作为核心 Agent，支持自定义群配置和技能扩展。
+基于 AI Agent 的 QQ 群机器人系统，使用 opencode 作为核心 Agent，支持自定义群配置与技能目录（注入规划中）。
 
 ## 当前状态
 
@@ -9,7 +9,7 @@
 ## ✨ 特性
 
 - 🤖 **AI Agent 驱动**：使用 opencode 作为核心 Agent，支持 MCP 协议扩展
-- 📁 **群隔离架构**：每个群独立配置目录，支持自定义 Agent 人设和技能
+- 📁 **群隔离架构**：每个群独立配置目录，支持自定义 Agent 人设与技能目录（注入规划中）
 - 🔌 **可扩展**：通过 talesofai MCP 扩展能力，支持捏 Ta 等核心玩法
 - 🐧 **Linux 原生**：支持 Docker/K8s 容器化部署
 - 🌐 **多平台规划**：未来支持 Discord 等海外平台
@@ -56,11 +56,17 @@ opencode-bot-agent/
 └── data/                  # 运行时数据（群目录）
     └── groups/
         └── {group_id}/
-            ├── agent.md  # 群 Agent 配置（覆盖默认设计）
-            └── skills/   # 群技能（同名覆盖默认技能，新增为扩展）
+            ├── agent.md   # 群 Agent 配置（覆盖默认设计）
+            ├── config.yaml # 群配置
+            ├── skills/    # 群技能（默认技能规划中）
+            ├── sessions/  # 会话记录
+            │   └── {user}-{key}/
+            │       └── history.jsonl
+            └── assets/    # 群资源
+                └── images/
 ```
 
-默认 Agent 设计来自 `configs/default-agent.md`。通用技能（规划）与群内 `skills/` 合并加载，同名覆盖，新增补充。
+默认 Agent 设计来自 `configs/default-agent.md`。通用技能仍在规划中，目前仅加载群内 `skills/`。
 
 ## 🧩 部署目录
 

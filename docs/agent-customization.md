@@ -1,6 +1,6 @@
 # Agent 自定义指南
 
-本文档介绍如何为每个群自定义 Agent 行为（规划）。相关能力将在 Bot Agent 实现后落地。
+本文档介绍如何为每个群自定义 Agent 行为。当前已支持读取群目录下的 `agent.md` 与 `config.yaml`，skills 注入仍在规划中。
 
 ## 概述
 
@@ -16,12 +16,16 @@
 /data/groups/{group_id}/
 ├── agent.md          # 主要人设配置
 ├── config.yaml       # 群配置
-├── skills/           # 技能目录
+├── skills/           # 技能目录（默认技能规划中）
 │   ├── draw.md       # 绘画技能
 │   ├── roleplay.md   # 角色扮演技能
 │   └── search.md     # 搜索技能
 ├── sessions/         # 会话（自动管理）
+│   └── {user}-{key}/
+│       └── history.jsonl
 └── assets/           # 资源文件
+    ├── images/
+    └── characters/   # 角色配置（按需自建）
 ```
 
 ## agent.md 配置
@@ -103,7 +107,9 @@
 
 ## 技能配置
 
-技能是模块化的能力扩展，放在 `skills/` 目录下。
+以下内容为技能格式示例，当前不会自动注入到 prompt。
+
+技能是模块化的能力扩展，放在 `skills/` 目录下（注入 prompt 仍在规划中）。
 
 ### 绘画技能 (skills/draw.md)
 
@@ -153,12 +159,12 @@
 ## 使用方法
 
 1. 识别目标角色
-2. 加载角色配置（从 assets/characters/）
+2. 加载角色配置（从 assets/characters/，规划中）
 3. 以角色身份回复
 
 ## 角色配置格式
 
-角色配置放在 `assets/characters/{name}.yaml`:
+角色配置放在 `assets/characters/{name}.yaml`（规划）:
 
 ```yaml
 name: 小明
@@ -206,7 +212,7 @@ keywords: # keyword 模式的触发词
   - "小助手"
   - "机器人"
 
-# 冷却时间（防止刷屏）
+# 冷却时间（群级，防止刷屏）
 cooldown: 5
 
 # 每个用户最大会话数
@@ -217,21 +223,25 @@ model: claude-sonnet-4-20250514
 
 # 管理员
 adminUsers:
-  - 123456789
+  - "123456789"
 ```
+
+## 会话 key
+
+用户可在消息开头加 `#<key>` 选择会话编号，例如 `#2 继续刚才的话题`。不提供前缀时默认使用 key 0。
 
 ## 管理指令
 
 以下指令仍在规划中，当前版本尚未提供：
 
-| 指令                 | 说明          |
-| -------------------- | ------------- |
-| `/reload`            | 重载配置      |
-| `/enable`            | 启用 AI       |
-| `/disable`           | 禁用 AI       |
-| `/status`            | 查看状态      |
-| `/edit agent`        | 编辑 agent.md |
-| `/edit skill <name>` | 编辑技能      |
+| 指令                 | 说明                  |
+| -------------------- | --------------------- |
+| `/reload`            | 重载配置（规划）      |
+| `/enable`            | 启用 AI               |
+| `/disable`           | 禁用 AI               |
+| `/status`            | 查看状态              |
+| `/edit agent`        | 编辑 agent.md（规划） |
+| `/edit skill <name>` | 编辑技能（规划）      |
 
 ## 最佳实践
 

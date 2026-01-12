@@ -56,8 +56,65 @@
 - 开发计划任务列表改为 opencode runner 与输出解析
 - 分布式设计文档移除未使用的会话锁文件描述
 - 快速开始文档更新 AI 回复说明
+- 快速开始文档补充本地启动 opencode-bot-agent 说明
 - 分布式设计文档更新 meta.json 字段说明
 - 补齐 secrets 模板文件供初始化脚本使用
+- 配置文档补充平台必填项说明
+- secrets 文档补充 Discord token 示例
+- 部署文档补充平台相关环境变量示例
+- 部署文档对齐 K8s secret 名称
+- 配置示例中的 adminUsers 使用字符串类型
+- README 更新群目录结构示例
+- README 补充 sessions/history.jsonl 并标注 config.yaml 为占位模板
+- Agent customization 文档标注 config.yaml 占位与 sessions/history.jsonl
+- 文档纠正群目录 config.yaml 为实际配置
+- 开发计划文档补充 sessions/history.jsonl 示例
+- API 文档标注群管理与技能接口为规划中
+- 开发计划文档对齐 HTTP API 路径与 Bun.serve 选型
+- Agent customization 文档说明 agent/config 已支持、skills 注入仍规划中
+- 配置文档移除热更新章节的“规划”标记
+- Agent customization 文档补充管理指令为规划中
+- 配置文档澄清主配置仅支持环境变量
+- API 文档状态描述对齐仅健康检查已实现
+- 开发计划文档标注 Discord 适配仍在规划中
+- 架构文档移除 Discord 生态成熟的表述
+- 架构文档标注 Discord/Telegram 适配器规划中
+- 开发计划文档标注 Discord 适配器规划中
+- 0.0.4 计划文档补充历史计划说明
+- 0.0.3/0.0.5/0.0.7 计划文档补充历史计划说明
+- 0.0.6/0.0.8/0.0.9 计划文档补充历史计划说明
+- 0.0.10-0.0.17 计划文档补充历史计划说明
+- README 标注技能注入仍在规划中
+- 部署文档补充指标端点尚未提供
+- 快速开始文档补充本地运行需确认 PLATFORM=qq
+- README 补充技能注入仍在规划中
+- 配置文档补充 CONFIG_PATH 路径解析说明
+- 配置文档移除群配置的“可选”描述
+- 开发文档对齐 OpenAI_BASE_URL 环境变量命名
+- 配置文档补充 SERVICE_ROLE 影响平台配置要求
+- 示例环境变量标注 Discord 配置为 PLATFORM=discord 必填
+- 部署文档标注 Discord 配置为规划
+- secrets 文档标注 Discord Token 为规划
+- 示例环境变量补充 worker 角色的配置说明
+- 配置文档标注默认技能列表为规划
+- 配置文档澄清 agent.md 生成时机
+- 配置文档标注 Discord 环境变量为规划
+- 部署文档与 secrets 示例标注 Discord 配置为规划
+- 示例环境变量标注 Discord 配置为规划
+- secrets 文档补充 Discord 应用 ID 标注为规划
+- 配置文档澄清 Discord 平台报错条件
+- 配置文档补充 APP_VERSION 环境变量说明
+- 示例环境变量补充 APP_VERSION 配置
+- secrets 文档标注 gitleaks 扫描未启用
+- Agent customization 文档补充会话 key 前缀说明
+- 部署文档澄清 K8s 基础资源覆盖范围
+- 快速开始文档补充会话 key 前缀说明
+- 配置文档说明 cooldown 为群级冷却
+- API 文档补充 cooldown 为群级冷却
+- Agent customization 文档标注角色配置路径为规划
+- Agent customization 文档补充技能示例为格式说明
+- 开发计划文档标注 Discord 技术栈为规划
+- 配置文档对齐热更新监听器说明
 - API 文档示例对齐当前群配置字段
 - History 追加判断基于最新 assistant 前的 user 记录
 - 移除文档中未实现的群配置环境变量
@@ -67,6 +124,38 @@
 - 配置文档修正日志格式选项
 - 读取群配置前确保目录与默认文件
 - History 追加判断逻辑简化以减少分配
+- 开发计划文档依赖列表改为以 package.json 为准
+- 配置文档补充 Discord Adapter 未实现的说明
+- 文档与示例环境变量统一 Milky WebSocket 地址格式
+- API 文档标注 WebSocket 接口为规划中
+- 快速开始文档补充本地运行所需的 Redis 地址说明
+- 文档中的群目录结构补充 assets/images 子目录
+- 配置文档标注 config.yaml 仍为占位模板
+- 文档补充本地启动时加载 secrets 环境变量说明
+- 部署文档目录结构补充 secrets 环境文件
+- secrets 文档补充导出 secrets 环境变量示例
+- 部署文档更新 Bot Agent 状态描述
+- 开发计划文档更新 opencode 仓库链接
+- 分布式设计文档补充 assets/images 目录
+- 架构图标注 Milky WebSocket
+- 分布式设计文档补充 history.jsonl 说明
+- 分布式设计文档说明 workspace 内部文件按需生成
+- API 文档标注认证为规划中，并补充 API_TOKEN 说明
+- Agent customization 文档补充 assets/characters 说明
+- 快速开始文档说明 compose 未包含 Bot Agent
+- Agent customization 文档标注角色配置加载为规划中
+- 部署文档 compose 示例对齐实际路径
+- 架构文档标注 Milky WebSocket 术语
+- README 与配置文档标注默认技能仍在规划中
+- 配置文档标注主配置文件仍为规划
+- 部署文档调整 Docker Compose 状态描述
+- 开发计划文档统一 Milky WebSocket 术语
+- 文档标注 /reload 管理指令与接口为规划中
+- 快速开始文档补充 opencode CLI 本地依赖说明
+- 快速开始文档补充 opencode CLI 前置要求
+- 配置文档补充 GROUPS_DATA_DIR 持久化提示
+- API 文档示例版本号对齐当前版本
+- 架构文档标注 skills 注入仍在规划中
 
 ### Changed
 

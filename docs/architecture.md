@@ -19,7 +19,7 @@
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 └─────────────────────────────────────────────────────────────────┘
                                 │
-                                │ Milky API (HTTP/WebSocket)
+                                │ Milky WebSocket
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    消息处理层 (Bot Agent)                        │
@@ -118,6 +118,7 @@ opencode -p "用户消息内容" \
 │       ├── meta.json
 │       └── workspace/
 ├── assets/           # 群资源
+│   └── images/
 └── config.yaml       # 群配置
 ```
 
@@ -133,7 +134,7 @@ opencode -p "用户消息内容" \
    - 否：直接处理（如指令）
 4. opencode 执行推理，可能调用 MCP 工具
 5. opencode 返回响应
-6. Bot Agent → Milky API → LuckyLilliaBot → QQ
+6. Bot Agent → Milky WebSocket → LuckyLilliaBot → QQ
 ```
 
 ### Agent 调用流程
@@ -142,23 +143,23 @@ opencode -p "用户消息内容" \
 1. Bot Agent 准备会话工作目录（sessions/{user}-{key}/workspace）
 2. 加载 agent.md 作为 system prompt
 3. 调用 opencode 非交互模式
-4. opencode 读取群目录下的 skills/ 和 sessions/ 历史记录
-5. 执行推理，可能调用 talesofai MCP 工具
+4. Bot Agent 读取 sessions/ 历史记录并组装 prompt（skills 注入规划中）
+5. opencode 执行推理，可能调用 talesofai MCP 工具
 6. 返回 JSON 格式响应
 7. Bot Agent 解析响应，发送消息
 ```
 
 ## 技术选型
 
-| 组件     | 选型            | 理由                                              |
-| -------- | --------------- | ------------------------------------------------- |
-| 语言     | TypeScript      | 与 opencode/LuckyLilliaBot 一致，Discord 生态成熟 |
-| QQ 协议  | LuckyLilliaBot  | 协议全面，稳定性好                                |
-| 协议规范 | Milky           | 新一代标准，生态活跃                              |
-| Agent    | opencode CLI    | 统一封装模型调用，支持 MCP                        |
-| 多平台   | Adapter 模式    | 统一接口，QQ/Discord 可扩展                       |
-| 配置格式 | YAML + Markdown | 人类可读，Git 友好                                |
-| 部署     | Docker + K8s    | 云原生，易扩展                                    |
+| 组件     | 选型            | 理由                                      |
+| -------- | --------------- | ----------------------------------------- |
+| 语言     | TypeScript      | 与 opencode/LuckyLilliaBot 一致，生态成熟 |
+| QQ 协议  | LuckyLilliaBot  | 协议全面，稳定性好                        |
+| 协议规范 | Milky           | 新一代标准，生态活跃                      |
+| Agent    | opencode CLI    | 统一封装模型调用，支持 MCP                |
+| 多平台   | Adapter 模式    | 统一接口，QQ/Discord 可扩展               |
+| 配置格式 | YAML + Markdown | 人类可读，Git 友好                        |
+| 部署     | Docker + K8s    | 云原生，易扩展                            |
 
 ## 扩展性设计
 
@@ -178,6 +179,7 @@ opencode -p "用户消息内容" \
     ┌──────────┐    ┌──────────┐    ┌──────────┐
     │   QQ     │    │ Discord  │    │ Telegram │
     │ Adapter  │    │ Adapter  │    │ Adapter  │
+    │         │    │ (规划)   │    │ (规划)   │
     └──────────┘    └──────────┘    └──────────┘
 ```
 
@@ -203,7 +205,7 @@ opencode -p "用户消息内容" \
 │  │ LuckyLillia    │  │   Bot Agent    │  │  群数据存储  │  │
 │  │                │  │                │  │              │  │
 │  │ Port: 3000     │  │ + opencode     │  │ /data/groups │  │
-│  │ (Milky API)    │  │ + MCP Client   │  │              │  │
+│  │ (Milky WS)     │  │ + MCP Client   │  │              │  │
 │  └────────────────┘  └────────────────┘  └──────────────┘  │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘

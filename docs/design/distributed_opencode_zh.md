@@ -37,12 +37,12 @@
 ├── config.yaml             # [RO] 群配置 (Admin可改)
 ├── skills/                 # [RO] 技能/规则库 (Admin可改)
 ├── assets/                 # [RO] 静态资源 (Admin可改)
+│   └── images/
 └── sessions/               # [System RW]
     └── {session_id}/       # [Opencode RW] 用户独占工作区
+        ├── history.jsonl   # 会话历史
         ├── meta.json       # { sessionId, groupId, ownerId, key, status, createdAt, updatedAt }
-        ├── workspace/      # Opencode CWD (工作目录)
-        │   ├── input/      # 输入文件
-        │   └── output/     # 输出产物
+        ├── workspace/      # Opencode CWD (工作目录，内部文件按需生成)
 ```
 
 ## 4. Session 生命周期 (Persistent Data, Transient Runtime)

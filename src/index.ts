@@ -139,7 +139,7 @@ if (adapter && groupStore) {
         input: content,
         channelId: message.channelId,
         messageId: message.id,
-        channelType: message.channelType ?? "group",
+        channelType: message.channelType,
         platform: message.platform,
       },
     });

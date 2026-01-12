@@ -18,7 +18,7 @@ export interface UnifiedMessage<T = Record<string, unknown>> {
   id: string;
   platform: string;
   channelId: string;
-  channelType?: ChannelType;
+  channelType: ChannelType;
   userId: string;
   sender: {
     nickname: string;

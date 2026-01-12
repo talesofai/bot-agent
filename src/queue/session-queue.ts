@@ -6,7 +6,7 @@ export interface SessionJobPayload {
   input: string;
   channelId: string;
   messageId?: string;
-  channelType?: ChannelType;
+  channelType: ChannelType;
   platform?: string;
 }
 

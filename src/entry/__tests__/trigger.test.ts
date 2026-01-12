@@ -8,6 +8,7 @@ const baseMessage: UnifiedMessage = {
   id: "msg-1",
   platform: "qq",
   channelId: "group-1",
+  channelType: "group",
   userId: "user-1",
   sender: {
     nickname: "tester",

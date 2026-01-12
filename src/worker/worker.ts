@@ -296,7 +296,7 @@ export class SessionWorker {
     await this.responseQueue.enqueue({
       platform: jobData.payload.platform,
       channelId: jobData.payload.channelId,
-      channelType: jobData.payload.channelType ?? "group",
+      channelType: jobData.payload.channelType,
       messageId: jobData.payload.messageId,
       content: output,
       groupId: jobData.groupId,

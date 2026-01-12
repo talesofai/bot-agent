@@ -1,5 +1,4 @@
 import { config as loadEnv } from "dotenv";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { z } from "zod";
@@ -29,11 +28,7 @@ function createConfig(): AppConfig {
   const envPaths = ["configs/.env", "configs/secrets/.env"];
   for (const relativePath of envPaths) {
     const fullPath = path.resolve(projectRoot, relativePath);
-    if (existsSync(fullPath)) {
-      loadEnv({ path: fullPath });
-    } else {
-      console.warn(`Env file not found: ${fullPath}`);
-    }
+    loadEnv({ path: fullPath });
   }
 
   return envSchema.parse(process.env);

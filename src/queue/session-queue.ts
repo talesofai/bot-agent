@@ -1,11 +1,11 @@
-
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis from "ioredis";
+import type { ChannelType } from "../types/platform";
 
 export interface SessionJobPayload {
   input: string;
   messageId?: string;
-  channelType?: string;
+  channelType?: ChannelType;
   platform?: string;
 }
 
@@ -60,9 +60,9 @@ export class BullmqSessionQueue {
 
     const job = await this.queue.add("session-job", data, opts);
 
-    return { 
-      id: job.id!, 
-      data 
+    return {
+      id: job.id!,
+      data,
     };
   }
 

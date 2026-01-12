@@ -8,8 +8,6 @@ import type { PlatformAdapter } from "../types/platform";
 import type { AppConfig } from "../config";
 import { QQAdapter } from "./qq/index";
 
-export type PlatformType = "qq" | "discord";
-
 /**
  * Creates a platform adapter based on the provided configuration.
  */

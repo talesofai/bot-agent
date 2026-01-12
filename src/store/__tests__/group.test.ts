@@ -63,7 +63,6 @@ describe("GroupStore", () => {
 
       expect(existsSync(join(testDir, "789012"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "skills"))).toBe(true);
-      expect(existsSync(join(testDir, "789012", "context"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "assets"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "sessions"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "agent.md"))).toBe(true);

@@ -20,6 +20,8 @@ const DEFAULT_RECONNECT: ReconnectConfig = {
   multiplier: 2,
 };
 
+type ConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting";
+
 export class MilkyConnection extends EventEmitter {
   private ws: WebSocket | null = null;
   private url: string;
@@ -27,11 +29,12 @@ export class MilkyConnection extends EventEmitter {
   private onEvent: (event: unknown) => Promise<void>;
   private onBotId?: (id: string) => void;
 
-  private connected = false;
+  private state: ConnectionState = "disconnected";
   private shouldReconnect = true;
   private reconnectAttempt = 0;
   private reconnectConfig: ReconnectConfig;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly textDecoder = new TextDecoder();
 
   private responseCallbacks = new Map<
     string,
@@ -50,99 +53,11 @@ export class MilkyConnection extends EventEmitter {
 
   async connect(): Promise<void> {
     this.shouldReconnect = true;
-    return this.doConnect();
-  }
-
-  private async doConnect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let resolved = false;
-
-      const cleanup = () => {
-        this.ws?.removeEventListener("open", openHandler);
-        this.ws?.removeEventListener("error", initialErrorHandler);
-        this.ws?.removeEventListener("close", initialCloseHandler);
-      };
-
-      const openHandler = () => {
-        resolved = true;
-        cleanup();
-        this.connected = true;
-        this.reconnectAttempt = 0;
-        this.logger.info("WebSocket connected");
-        this.emit("connect");
-
-        // Re-add runtime handlers for errors and close
-        this.ws?.addEventListener("error", runtimeErrorHandler);
-        this.ws?.addEventListener("close", runtimeCloseHandler);
-        resolve();
-      };
-
-      const initialErrorHandler = (event: Event) => {
-        const err = new Error(`WebSocket error: ${event.type}`);
-        this.logger.error({ err }, "WebSocket error during connection");
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          // Schedule reconnect on error (not just on close)
-          if (this.shouldReconnect) {
-            this.scheduleReconnect();
-          }
-          reject(err);
-        }
-      };
-
-      const initialCloseHandler = () => {
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          const err = new Error("WebSocket closed during connection");
-          this.logger.error({ err }, "Connection failed");
-          // Schedule reconnect for initial connection failure
-          if (this.shouldReconnect) {
-            this.scheduleReconnect();
-          }
-          reject(err);
-        }
-      };
-
-      const runtimeErrorHandler = (event: Event) => {
-        const err = new Error(`WebSocket error: ${event.type}`);
-        this.logger.error({ err }, "WebSocket runtime error");
-        // Error may or may not trigger close, so we mark as disconnected
-        // and schedule reconnect if close doesn't happen shortly
-        if (this.connected) {
-          this.connected = false;
-          this.emit("disconnect");
-          this.cancelPendingRequests();
-          this.scheduleReconnect();
-        }
-      };
-
-      const runtimeCloseHandler = () => {
-        // Only process if we haven't already handled via error
-        if (this.connected) {
-          this.connected = false;
-          this.logger.warn("WebSocket closed");
-          this.emit("disconnect");
-          this.cancelPendingRequests();
-          this.scheduleReconnect();
-        }
-      };
-
-      try {
-        this.logger.debug({ url: this.url }, "Opening WebSocket connection");
-        this.ws = new WebSocket(this.url);
-
-        this.ws.addEventListener("open", openHandler);
-        this.ws.addEventListener("error", initialErrorHandler);
-        this.ws.addEventListener("close", initialCloseHandler);
-        this.ws.addEventListener("message", (event: MessageEvent) => {
-          this.handleMessage(event.data);
-        });
-      } catch (err) {
-        reject(err);
-      }
-    });
+    if (this.state === "connected") {
+      return;
+    }
+    this.openSocket();
+    await this.waitForConnect();
   }
 
   async disconnect(): Promise<void> {
@@ -152,19 +67,18 @@ export class MilkyConnection extends EventEmitter {
       this.reconnectTimer = null;
     }
     if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+      this.closeSocket();
     }
-    this.connected = false;
+    this.state = "disconnected";
     this.cancelPendingRequests();
   }
 
   isConnected(): boolean {
-    return this.connected;
+    return this.state === "connected";
   }
 
   async sendRequest(action: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    if (!this.ws || !this.connected) {
+    if (!this.ws || this.state !== "connected") {
       throw new Error("WebSocket not connected");
     }
 
@@ -193,9 +107,18 @@ export class MilkyConnection extends EventEmitter {
     });
   }
 
-  private handleMessage(data: string): void {
+  private handleMessageEvent = (event: MessageEvent): void => {
+    void this.handleMessage(event.data);
+  };
+
+  private async handleMessage(data: unknown): Promise<void> {
     try {
-      const parsed = JSON.parse(data);
+      const normalized = await this.normalizeMessageData(data);
+      if (!normalized) {
+        this.logger.warn({ data }, "Unsupported message payload");
+        return;
+      }
+      const parsed = JSON.parse(normalized);
       this.logger.debug({ data: parsed }, "Message received");
 
       // Handle response messages
@@ -234,15 +157,140 @@ export class MilkyConnection extends EventEmitter {
     }
   }
 
+  private async normalizeMessageData(data: unknown): Promise<string | null> {
+    if (typeof data === "string") {
+      return data;
+    }
+    if (data instanceof ArrayBuffer) {
+      return this.textDecoder.decode(new Uint8Array(data));
+    }
+    if (ArrayBuffer.isView(data)) {
+      return this.textDecoder.decode(
+        new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+      );
+    }
+    if (data instanceof Blob) {
+      return await data.text();
+    }
+    return null;
+  }
+
+  private handleOpen = (): void => {
+    this.state = "connected";
+    this.reconnectAttempt = 0;
+    this.logger.info("WebSocket connected");
+    this.emit("connect");
+  };
+
+  private handleError = (event: Event): void => {
+    const err = new Error(`WebSocket error: ${event.type}`);
+    this.logger.error({ err }, "WebSocket error");
+    if (this.state === "connecting" || this.state === "reconnecting") {
+      this.emit("connect_error", err);
+    }
+    this.ws?.close();
+  };
+
+  private handleClose = (): void => {
+    const wasConnected = this.state === "connected";
+    const wasConnecting = this.state === "connecting" || this.state === "reconnecting";
+
+    this.state = "disconnected";
+    this.detachSocket();
+    this.cancelPendingRequests();
+
+    if (wasConnected) {
+      this.logger.warn("WebSocket closed");
+      this.emit("disconnect");
+    } else if (wasConnecting) {
+      const err = new Error("WebSocket closed before connection established");
+      this.logger.error({ err }, "Connection failed");
+      this.emit("connect_error", err);
+    }
+
+    this.scheduleReconnect();
+  };
+
+  private openSocket(): void {
+    if (this.state === "connecting" || this.state === "reconnecting") {
+      return;
+    }
+    if (this.ws) {
+      this.logger.warn("Existing WebSocket detected, closing before reconnect");
+      this.detachSocket();
+    }
+
+    const WebSocketImpl = globalThis.WebSocket;
+    if (!WebSocketImpl) {
+      const err = new Error("WebSocket is not available. This adapter requires Bun runtime.");
+      this.logger.error({ err }, "WebSocket unavailable");
+      this.emit("connect_error", err);
+      return;
+    }
+
+    this.state = this.reconnectAttempt > 0 ? "reconnecting" : "connecting";
+    this.logger.debug({ url: this.url }, "Opening WebSocket connection");
+
+    this.ws = new WebSocketImpl(this.url);
+    this.ws.addEventListener("open", this.handleOpen);
+    this.ws.addEventListener("error", this.handleError);
+    this.ws.addEventListener("close", this.handleClose);
+    this.ws.addEventListener("message", this.handleMessageEvent);
+  }
+
+  private waitForConnect(): Promise<void> {
+    if (this.state === "connected") {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const onConnect = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+      const cleanup = () => {
+        this.off("connect", onConnect);
+        this.off("connect_error", onError);
+      };
+      this.on("connect", onConnect);
+      this.on("connect_error", onError);
+    });
+  }
+
+  private detachSocket(): void {
+    if (!this.ws) {
+      return;
+    }
+    this.ws.removeEventListener("open", this.handleOpen);
+    this.ws.removeEventListener("error", this.handleError);
+    this.ws.removeEventListener("close", this.handleClose);
+    this.ws.removeEventListener("message", this.handleMessageEvent);
+    this.ws = null;
+  }
+
+  private closeSocket(): void {
+    if (!this.ws) {
+      return;
+    }
+    const socket = this.ws;
+    this.detachSocket();
+    try {
+      socket.close();
+    } catch {
+      // Best-effort shutdown
+    }
+  }
+
   private scheduleReconnect(): void {
     if (!this.shouldReconnect) {
       return;
     }
 
-    // Clear any existing reconnect timer to prevent concurrent reconnections
     if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
+      return;
     }
 
     const delay = Math.min(
@@ -259,9 +307,7 @@ export class MilkyConnection extends EventEmitter {
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.doConnect().catch((err) => {
-        this.logger.error({ err }, "Reconnect failed");
-      });
+      this.openSocket();
     }, delay);
   }
 

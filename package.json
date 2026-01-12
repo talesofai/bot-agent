@@ -19,13 +19,11 @@
     "opencode-ai": "^1.1.13",
     "pino": "^8.17.2",
     "pino-pretty": "^10.3.1",
-    "ws": "^8.16.0",
     "yaml": "^2.3.4",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "@types/ws": "^8.5.10",
     "bun-types": "latest",
     "eslint": "^8.56.0",
     "prettier": "^3.1.0",

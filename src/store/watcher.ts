@@ -31,7 +31,8 @@ export class GroupWatcher {
     }
 
     this.watcher = watch(this.dataDir, {
-      ignored: /(^|[/\\])\../,
+      ignored: (path) =>
+        /(^|[/\\])\../.test(path) || /[/\\]sessions[/\\]/.test(path),
       persistent: true,
       ignoreInitial: true,
       depth: 3,

@@ -21,6 +21,7 @@
 - 仅在 adapter 角色下强制平台配置校验
 - Response 队列使用原始 channelId，避免 DEFAULT_GROUP_ID 误投递
 - Session lock key 追加 groupId，避免跨群冲突
+- GroupStore 加载失败时清理缓存，避免旧配置残留
 
 ### Changed
 

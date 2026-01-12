@@ -122,6 +122,7 @@ export class GroupStore {
     try {
       const groupData = await this.repository.loadGroup(groupId);
       if (!groupData) {
+        this.groups.delete(groupId);
         return null;
       }
 

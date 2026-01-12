@@ -8,6 +8,8 @@ const envSchema = z
     NODE_ENV: z.string().optional(),
     /** Platform to use: qq or discord */
     PLATFORM: z.enum(["qq", "discord"]).default("qq"),
+    /** Path to env file */
+    CONFIG_PATH: z.string().optional(),
     // QQ platform configuration
     MILKY_URL: z.string().url().optional(),
     // Discord platform configuration
@@ -42,10 +44,12 @@ function createConfig(): AppConfig {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const projectRoot = path.resolve(moduleDir, "..");
 
-  const envPaths = ["configs/.env", "configs/secrets/.env"];
-  for (const relativePath of envPaths) {
-    const fullPath = path.resolve(projectRoot, relativePath);
+  const configPath = process.env.CONFIG_PATH;
+  if (configPath) {
+    const fullPath = path.resolve(projectRoot, configPath);
     loadEnv({ path: fullPath });
+  } else {
+    loadEnv();
   }
 
   return envSchema.parse(process.env);

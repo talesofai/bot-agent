@@ -52,7 +52,13 @@ WEBUI_TOKEN=your-token
 OPENAI_API_KEY=sk-xxx
 ```
 
-运行时注入：
+如果你通过 dotenv 加载环境变量，请将 secrets 合并到 `CONFIG_PATH` 指向的单一文件（推荐 `configs/.env`）：
+
+```bash
+export CONFIG_PATH=configs/.env
+```
+
+运行时注入（Docker Compose 会直接导出环境变量，无需 `CONFIG_PATH`）：
 
 ```bash
 docker compose -f deployments/docker/docker-compose.yml up -d

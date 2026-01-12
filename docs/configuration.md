@@ -10,6 +10,8 @@ Bot Agent 支持三种配置方式（优先级从高到低）：
 2. **配置文件** (`configs/config.yaml`)
 3. **默认值**
 
+如需从文件加载环境变量，请设置 `CONFIG_PATH` 指向单一 `.env` 文件（例如 `configs/.env`）。
+
 ## 环境变量
 
 ### AI 模型配置（敏感）
@@ -25,7 +27,7 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 GEMINI_API_KEY=xxx
 ```
 
-上述敏感项应放入 `configs/secrets/.env`。
+上述敏感项应合并到 `CONFIG_PATH` 指向的 `.env` 文件中。
 
 ### AI 模型配置（非敏感）
 
@@ -37,7 +39,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENCODE_MODEL=claude-sonnet-4-20250514
 ```
 
-上述非敏感项放入 `configs/.env`。
+上述非敏感项同样写入 `CONFIG_PATH` 指向的 `.env` 文件中。
 
 ### 连接配置
 

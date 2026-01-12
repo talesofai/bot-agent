@@ -22,6 +22,7 @@ cd opencode-bot-agent
 ```bash
 cp configs/example.env configs/.env
 ./scripts/init-secrets.sh
+export CONFIG_PATH=configs/.env
 ```
 
 编辑 `configs/.env`：

@@ -43,6 +43,7 @@ PR 评论触发示例：
 
 ```bash
 cp configs/example.env configs/.env
+export CONFIG_PATH=configs/.env
 ./scripts/init-secrets.sh
 docker compose -f deployments/docker/docker-compose.yml up -d
 ```

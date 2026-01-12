@@ -1,4 +1,5 @@
 import { mkdir, readdir } from "node:fs/promises";
+import { LRUCache } from "lru-cache";
 import type { Logger } from "pino";
 import type { GroupData } from "../types/group";
 import { config as appConfig } from "../config";
@@ -15,6 +16,8 @@ export interface GroupStoreOptions {
   debounceMs?: number;
   /** Preload all groups on init */
   preload?: boolean;
+  /** Max groups kept in memory */
+  cacheSize?: number;
 }
 
 type ReloadCallback = (groupId: string) => void;
@@ -24,7 +27,7 @@ export class GroupStore {
   private logger: Logger;
   private debounceMs: number;
   private preload: boolean;
-  private groups = new Map<string, GroupData>();
+  private groups: LRUCache<string, GroupData>;
   private reloadCallbacks: ReloadCallback[] = [];
   private repository: GroupFileRepository;
   private watcher: GroupWatcher;
@@ -36,6 +39,8 @@ export class GroupStore {
     });
     this.debounceMs = options.debounceMs ?? 300;
     this.preload = options.preload ?? false;
+    const cacheSize = options.cacheSize ?? 1000;
+    this.groups = new LRUCache({ max: cacheSize });
     this.repository = new GroupFileRepository({
       dataDir: this.dataDir,
       logger: this.logger,

@@ -25,12 +25,14 @@
 - QQAdapter 改为 EventEmitter 统一事件分发
 - SessionRepository 封装路径细节，SessionInfo 精简为必要路径
 - HistoryStore 读取历史时改为尾部读取，避免全量读入内存
+- GroupStore 引入 LRU 缓存，限制群组数据常驻内存
 - SessionTtlCleaner 扁平化遍历逻辑，避免深层嵌套
 - 更新配置与部署文档以匹配用户独占会话模型
 
 ### Dependencies
 
 - 新增 `bullmq` 与 `ioredis` 依赖以支持队列与锁
+- 新增 `lru-cache` 用于 GroupStore 缓存
 
 ## [0.0.7] - 2026-01-12
 

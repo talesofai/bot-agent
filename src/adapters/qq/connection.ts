@@ -239,6 +239,12 @@ export class MilkyConnection extends EventEmitter {
       return;
     }
 
+    // Clear any existing reconnect timer to prevent concurrent reconnections
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     const delay = Math.min(
       this.reconnectConfig.initialDelay *
         Math.pow(this.reconnectConfig.multiplier, this.reconnectAttempt),

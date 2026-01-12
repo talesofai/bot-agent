@@ -137,6 +137,7 @@ if (adapter && groupStore) {
       sessionId: buildSessionId(message.userId, key),
       payload: {
         input: content,
+        channelId: message.channelId,
         messageId: message.id,
         channelType: message.channelType ?? "group",
         platform: message.platform,

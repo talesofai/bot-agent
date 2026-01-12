@@ -4,6 +4,7 @@ import type { ChannelType } from "../types/platform";
 
 export interface SessionJobPayload {
   input: string;
+  channelId: string;
   messageId?: string;
   channelType?: ChannelType;
   platform?: string;

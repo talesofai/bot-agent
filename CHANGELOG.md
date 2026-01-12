@@ -19,6 +19,7 @@
 - SessionHistory 读取 tail 为空时直接返回空列表
 - SessionHistory 读取前检查文件存在，避免 tail 误报
 - 仅在 adapter 角色下强制平台配置校验
+- Response 队列使用原始 channelId，避免 DEFAULT_GROUP_ID 误投递
 
 ### Changed
 

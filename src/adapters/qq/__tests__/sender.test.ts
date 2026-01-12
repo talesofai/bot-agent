@@ -38,7 +38,9 @@ describe("MessageSender", () => {
       content: "hello",
     } as SendMessageOptions;
 
-    await expect(sender.send(options)).rejects.toThrow("channelType is required");
+    await expect(sender.send(options)).rejects.toThrow(
+      "channelType is required",
+    );
   });
 
   test("should require channelId", async () => {

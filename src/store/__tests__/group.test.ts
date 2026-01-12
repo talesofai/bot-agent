@@ -60,7 +60,7 @@ describe("GroupStore", () => {
   describe("ensureGroupDir", () => {
     test("should create group directory with subdirs", async () => {
       await store.ensureGroupDir("789012");
-      
+
       expect(existsSync(join(testDir, "789012"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "skills"))).toBe(true);
       expect(existsSync(join(testDir, "789012", "context"))).toBe(true);
@@ -75,7 +75,7 @@ describe("GroupStore", () => {
       writeFileSync(join(groupPath, "agent.md"), "Custom content");
 
       await store.ensureGroupDir("existing");
-      
+
       const content = Bun.file(join(groupPath, "agent.md")).text();
       expect(content).resolves.toBe("Custom content");
     });
@@ -173,7 +173,7 @@ Be friendly and concise.
       writeFileSync(join(groupPath, "config.yaml"), "enabled: true");
 
       await store.loadGroup("get-test");
-      
+
       const group = await store.getGroup("get-test");
       expect(group).not.toBeNull();
       expect(group!.id).toBe("get-test");

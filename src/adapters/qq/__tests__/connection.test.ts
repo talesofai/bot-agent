@@ -147,8 +147,15 @@ describe("MilkyConnection", () => {
       logger: mockLogger,
       onEvent: onEventMock,
     });
-    (connection as unknown as { reconnectConfig: { initialDelay: number; maxDelay: number; multiplier: number } })
-      .reconnectConfig = { initialDelay: 1, maxDelay: 1, multiplier: 1 };
+    (
+      connection as unknown as {
+        reconnectConfig: {
+          initialDelay: number;
+          maxDelay: number;
+          multiplier: number;
+        };
+      }
+    ).reconnectConfig = { initialDelay: 1, maxDelay: 1, multiplier: 1 };
 
     const connectPromise = connection.connect();
     FakeWebSocket.instances[0].emit("open");
@@ -171,9 +178,11 @@ describe("MilkyConnection", () => {
     const payload = JSON.stringify({ post_type: "message" });
     const buffer = new TextEncoder().encode(payload).buffer;
 
-    await (connection as unknown as { handleMessage: (data: unknown) => Promise<void> }).handleMessage(
-      buffer
-    );
+    await (
+      connection as unknown as {
+        handleMessage: (data: unknown) => Promise<void>;
+      }
+    ).handleMessage(buffer);
 
     expect(onEventMock).toHaveBeenCalledTimes(1);
   });
@@ -188,9 +197,11 @@ describe("MilkyConnection", () => {
     const payload = JSON.stringify({ post_type: "message" });
     const buffer = new TextEncoder().encode(payload);
 
-    await (connection as unknown as { handleMessage: (data: unknown) => Promise<void> }).handleMessage(
-      buffer
-    );
+    await (
+      connection as unknown as {
+        handleMessage: (data: unknown) => Promise<void>;
+      }
+    ).handleMessage(buffer);
 
     expect(onEventMock).toHaveBeenCalledTimes(1);
   });

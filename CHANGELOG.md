@@ -24,6 +24,7 @@
 - 入口改为按角色运行：adapter 入队消息，worker 消费会话任务
 - QQAdapter 改为 EventEmitter 统一事件分发
 - SessionRepository 封装路径细节，SessionInfo 精简为必要路径
+- HistoryStore 读取历史时改为尾部读取，避免全量读入内存
 - SessionTtlCleaner 扁平化遍历逻辑，避免深层嵌套
 - 更新配置与部署文档以匹配用户独占会话模型
 

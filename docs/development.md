@@ -105,5 +105,5 @@ interface UnifiedMessage {
 
 ## 测试
 
-- 运行测试：`bun test`
+- 运行测试：`bun test src`
 - 新增功能需配套测试与日志校验。

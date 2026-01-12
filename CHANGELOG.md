@@ -14,6 +14,7 @@
 - SessionHistory 追加逻辑避免重复 user 记录
 - 当 history 无 assistant 记录时追加输出内容
 - Session key 校验负数输入
+- SessionWorker 重试延迟使用配置值
 
 ### Changed
 

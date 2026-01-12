@@ -12,17 +12,25 @@ import type {
 } from "../types/session";
 import { HistoryStore, type HistoryReadOptions } from "./history";
 import { SessionRepository } from "./repository";
-import { SessionActivityIndex } from "./activity-index";
+import {
+  SessionActivityIndex,
+  type SessionActivityKey,
+} from "./activity-index";
 
 export interface SessionManagerOptions {
   dataDir?: string;
   logger?: Logger;
   redisUrl?: string;
+  activityIndex?: SessionActivityTracker;
 }
 
 export interface CreateSessionOptions {
   key?: number;
   maxSessions?: number;
+}
+
+export interface SessionActivityTracker {
+  recordActivity(key: SessionActivityKey, timestampMs?: number): Promise<void>;
 }
 
 export class SessionManager {
@@ -31,7 +39,7 @@ export class SessionManager {
   private groupRepository: GroupFileRepository;
   private sessionRepository: SessionRepository;
   private historyStore: HistoryStore;
-  private activityIndex: SessionActivityIndex;
+  private activityIndex: SessionActivityTracker;
 
   constructor(options: SessionManagerOptions = {}) {
     this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
@@ -47,11 +55,15 @@ export class SessionManager {
       logger: this.logger,
     });
     this.historyStore = new HistoryStore(this.logger);
-    const redisUrl = options.redisUrl ?? getConfig().REDIS_URL;
-    this.activityIndex = new SessionActivityIndex({
-      redisUrl,
-      logger: this.logger,
-    });
+    if (options.activityIndex) {
+      this.activityIndex = options.activityIndex;
+    } else {
+      const redisUrl = options.redisUrl ?? getConfig().REDIS_URL;
+      this.activityIndex = new SessionActivityIndex({
+        redisUrl,
+        logger: this.logger,
+      });
+    }
   }
 
   async createSession(

@@ -49,6 +49,7 @@ export class GroupFileRepository {
     await mkdir(groupPath, { recursive: true });
     await mkdir(join(groupPath, "skills"), { recursive: true });
     await mkdir(join(groupPath, "assets"), { recursive: true });
+    await mkdir(join(groupPath, "assets", "images"), { recursive: true });
     await mkdir(join(groupPath, "sessions"), { recursive: true });
 
     const agentPath = join(groupPath, "agent.md");

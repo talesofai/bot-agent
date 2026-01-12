@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+## [0.0.17] - 2026-01-13
+
+### Fixed
+
+- SessionHistory 追加逻辑避免重复 user 记录
+- 当 history 无 assistant 记录时追加输出内容
+- Session key 校验负数输入
+
+### Changed
+
+- SessionRepository 移除未使用的路径字段
+- Opencode 启动参数结构精简
+- 开发文档中的测试命令更新为 `bun test src`
+
 ## [0.0.16] - 2026-01-13
 
 ### Added

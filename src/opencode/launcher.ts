@@ -15,7 +15,7 @@ export class OpencodeLauncher {
     const groupPath = sessionInfo.groupPath;
     return {
       command: "opencode",
-      args: [],
+      args: ["-p", "-c", "-f", "json"],
       cwd: sessionInfo.workspacePath,
       readOnlyPaths: [
         join(groupPath, "agent.md"),

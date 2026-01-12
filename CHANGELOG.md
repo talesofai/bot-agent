@@ -60,6 +60,7 @@
 - 仅在 adapter 角色初始化 GroupStore
 - 读取 agent prompt 前修复群目录缺失文件
 - adapter 启动时启用 GroupStore 文件监控
+- 精简占位配置中的未实现字段
 
 ## [0.0.16] - 2026-01-13
 

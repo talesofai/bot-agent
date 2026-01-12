@@ -219,9 +219,7 @@ export class SessionWorker {
 
     const hasUserEntry =
       payload?.input &&
-      historyEntries?.some(
-        (entry) => entry.role === "user" && entry.content === payload.input,
-      );
+      this.hasMatchingUserEntry(historyEntries ?? [], payload.input, output);
 
     if (payload?.input && !hasUserEntry) {
       entries.push({
@@ -252,6 +250,36 @@ export class SessionWorker {
     for (const entry of entries) {
       await this.sessionManager.appendHistory(sessionInfo, entry);
     }
+  }
+
+  private hasMatchingUserEntry(
+    historyEntries: HistoryEntry[],
+    input: string,
+    output?: string,
+  ): boolean {
+    if (historyEntries.length === 0) {
+      return false;
+    }
+    const assistantIndex =
+      output === undefined
+        ? -1
+        : (historyEntries
+            .map((entry, index) => ({ entry, index }))
+            .filter(
+              ({ entry }) =>
+                entry.role === "assistant" && entry.content === output,
+            )
+            .map(({ index }) => index)
+            .pop() ?? -1);
+    const searchEnd =
+      assistantIndex >= 0 ? assistantIndex : historyEntries.length;
+    for (let i = searchEnd - 1; i >= 0; i -= 1) {
+      const entry = historyEntries[i];
+      if (entry.role === "user") {
+        return entry.content === input;
+      }
+    }
+    return false;
   }
 
   private mapJob(job: Job<SessionJobData>): SessionJob {

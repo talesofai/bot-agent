@@ -38,6 +38,7 @@
 - 配置文档说明默认 agent.md 生成行为
 - 配置文档更新群目录结构为实际会话存储布局
 - API 文档示例对齐当前群配置字段
+- History 追加判断基于最新 assistant 前的 user 记录
 
 ### Changed
 

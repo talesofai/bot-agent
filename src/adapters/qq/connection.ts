@@ -132,9 +132,6 @@ export class MilkyConnection extends EventEmitter {
   };
 
   private nextEchoCounter(): number {
-    if (this.echoCounter >= Number.MAX_SAFE_INTEGER - 1) {
-      return 1;
-    }
     return this.echoCounter + 1;
   }
 

@@ -6,7 +6,7 @@ import type { GroupStore } from "../store";
 import type { RouterStore } from "../store/router";
 import type { BullmqSessionQueue } from "../queue";
 import { buildSessionId } from "../session";
-import { extractSessionKey, matchesKeywords, shouldEnqueue } from "./trigger";
+import { extractSessionKey, shouldEnqueue } from "./trigger";
 import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
 
@@ -58,44 +58,12 @@ export class MessageDispatcher {
       globalEchoRate,
     );
 
-    const defaultRouting = {
-      enableGlobal: true,
-      enableGroup: true,
-      enableBot: true,
-    };
-    const groupRouting = groupConfig.keywordRouting ?? defaultRouting;
-    const botRouting = botConfig?.keywordRouting ?? defaultRouting;
-    const effectiveRouting = {
-      enableGlobal: groupRouting.enableGlobal && botRouting.enableGlobal,
-      enableGroup: groupRouting.enableGroup && botRouting.enableGroup,
-      enableBot: groupRouting.enableBot && botRouting.enableBot,
-    };
-    const globalMatch =
-      effectiveRouting.enableGlobal &&
-      matchesKeywords(message.content, globalKeywords);
-    const groupMatch =
-      effectiveRouting.enableGroup &&
-      matchesKeywords(message.content, groupConfig.keywords);
-    const botKeywordMatches = new Set<string>();
-    if (groupRouting.enableBot) {
-      for (const [botId, config] of botConfigs) {
-        if (!config.keywordRouting.enableBot) {
-          continue;
-        }
-        if (matchesKeywords(message.content, config.keywords)) {
-          botKeywordMatches.add(botId);
-        }
-      }
-    }
     if (
       !shouldEnqueue({
         groupConfig,
         message,
-        keywordMatch: {
-          global: globalMatch,
-          group: groupMatch,
-          bot: botKeywordMatches,
-        },
+        globalKeywords,
+        botConfigs,
       })
     ) {
       if (this.echoTracker.shouldEcho(message, effectiveEchoRate)) {

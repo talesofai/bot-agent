@@ -1,36 +1,68 @@
-import type { GroupConfig } from "../types/group";
+import type { GroupConfig, KeywordRouting } from "../types/group";
 import type { SessionEvent } from "../types";
 
 const selfMentionPatterns = new Map<string, RegExp>();
 
-export interface KeywordMatch {
-  global: boolean;
-  group: boolean;
-  bot: Set<string>;
+const DEFAULT_ROUTING: KeywordRouting = {
+  enableGlobal: true,
+  enableGroup: true,
+  enableBot: true,
+};
+
+export interface BotKeywordConfig {
+  keywords: string[];
+  keywordRouting: KeywordRouting;
 }
 
-export interface TriggerInput {
+export interface TriggerContext {
   groupConfig: GroupConfig;
   message: SessionEvent;
-  keywordMatch: KeywordMatch;
+  globalKeywords: string[];
+  botConfigs: Map<string, BotKeywordConfig>;
 }
 
-export function shouldEnqueue(input: TriggerInput): boolean {
-  const { groupConfig, message, keywordMatch } = input;
+export function shouldEnqueue(input: TriggerContext): boolean {
+  const { groupConfig, message, globalKeywords, botConfigs } = input;
   if (mentionsSelf(message)) {
     return true;
   }
   if (groupConfig.triggerMode === "mention") {
     return false;
   }
-  if (keywordMatch.global || keywordMatch.group) {
+  const groupRouting = groupConfig.keywordRouting ?? DEFAULT_ROUTING;
+  const selfId = message.selfId ?? "";
+  const botConfig = selfId ? botConfigs.get(selfId) : undefined;
+  const botRouting = botConfig?.keywordRouting ?? DEFAULT_ROUTING;
+  const effectiveRouting = {
+    enableGlobal: groupRouting.enableGlobal && botRouting.enableGlobal,
+    enableGroup: groupRouting.enableGroup && botRouting.enableGroup,
+    enableBot: groupRouting.enableBot && botRouting.enableBot,
+  };
+  const globalMatch =
+    effectiveRouting.enableGlobal &&
+    matchesKeywords(message.content, globalKeywords);
+  const groupMatch =
+    effectiveRouting.enableGroup &&
+    matchesKeywords(message.content, groupConfig.keywords);
+  if (globalMatch || groupMatch) {
     return true;
   }
-  if (keywordMatch.bot.size === 0) {
+  if (!groupRouting.enableBot) {
     return false;
   }
-  const selfId = message.selfId ?? "";
-  return keywordMatch.bot.has(selfId);
+  const botKeywordMatches = new Set<string>();
+  for (const [botId, config] of botConfigs) {
+    if (!config.keywordRouting.enableBot) {
+      continue;
+    }
+    if (matchesKeywords(message.content, config.keywords)) {
+      botKeywordMatches.add(botId);
+    }
+  }
+  if (botKeywordMatches.size === 0) {
+    return false;
+  }
+  return botKeywordMatches.has(selfId);
 }
 
 function mentionsSelf(message: SessionEvent): boolean {

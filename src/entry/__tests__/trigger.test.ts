@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import { DEFAULT_GROUP_CONFIG, type GroupConfig } from "../../types/group";
 import type { SessionEvent } from "../../types/platform";
-import { extractSessionKey, shouldEnqueue } from "../trigger";
+import {
+  type BotKeywordConfig,
+  extractSessionKey,
+  shouldEnqueue,
+} from "../trigger";
 
 const baseMessage: SessionEvent = {
   type: "message",
@@ -22,6 +26,12 @@ function makeConfig(overrides: Partial<GroupConfig>): GroupConfig {
   return { ...DEFAULT_GROUP_CONFIG, ...overrides };
 }
 
+function makeBotConfigs(
+  configs: Array<[string, BotKeywordConfig]>,
+): Map<string, BotKeywordConfig> {
+  return new Map(configs);
+}
+
 describe("shouldEnqueue", () => {
   test("matches mention mode", () => {
     const message = {
@@ -35,11 +45,8 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatch: {
-        global: false,
-        group: false,
-        bot: new Set(),
-      },
+      globalKeywords: [],
+      botConfigs: makeBotConfigs([]),
     });
     expect(allowed).toBe(true);
   });
@@ -56,11 +63,16 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatch: {
-        global: false,
-        group: false,
-        bot: new Set(["bot-2"]),
-      },
+      globalKeywords: [],
+      botConfigs: makeBotConfigs([
+        [
+          "bot-2",
+          {
+            keywords: ["bot-a"],
+            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+          },
+        ],
+      ]),
     });
     expect(allowed).toBe(true);
   });
@@ -71,11 +83,8 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatch: {
-        global: false,
-        group: true,
-        bot: new Set(),
-      },
+      globalKeywords: [],
+      botConfigs: makeBotConfigs([]),
     });
     expect(allowed).toBe(true);
   });
@@ -86,11 +95,16 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatch: {
-        global: true,
-        group: false,
-        bot: new Set(["bot-2"]),
-      },
+      globalKeywords: ["global-key"],
+      botConfigs: makeBotConfigs([
+        [
+          "bot-2",
+          {
+            keywords: ["bot-a"],
+            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+          },
+        ],
+      ]),
     });
     expect(allowed).toBe(true);
   });
@@ -101,11 +115,16 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatch: {
-        global: false,
-        group: false,
-        bot: new Set(["bot-2"]),
-      },
+      globalKeywords: [],
+      botConfigs: makeBotConfigs([
+        [
+          "bot-2",
+          {
+            keywords: ["bot-a"],
+            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+          },
+        ],
+      ]),
     });
     expect(allowed).toBe(false);
   });
@@ -116,11 +135,16 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatch: {
-        global: false,
-        group: false,
-        bot: new Set([baseMessage.selfId]),
-      },
+      globalKeywords: [],
+      botConfigs: makeBotConfigs([
+        [
+          baseMessage.selfId,
+          {
+            keywords: ["bot-a"],
+            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+          },
+        ],
+      ]),
     });
     expect(allowed).toBe(true);
   });

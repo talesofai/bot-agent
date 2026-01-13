@@ -10,7 +10,6 @@ import { buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
-import type { ActivityRecorder } from "../session/activity-recorder";
 import { RedisActivityRecorder } from "../session/activity-recorder";
 
 export interface SessionWorkerOptions {
@@ -45,7 +44,7 @@ export class SessionWorker {
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
   private responseQueue?: ResponseQueue;
-  private activityRecorder: ActivityRecorder;
+  private activityRecorder: RedisActivityRecorder;
   private workerConnection: IORedis;
   private lockConnection: IORedis;
   private historyMaxEntries?: number;

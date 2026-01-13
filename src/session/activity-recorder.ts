@@ -2,12 +2,7 @@ import type { Logger } from "pino";
 
 import { SessionActivityIndex } from "./activity-index";
 
-export interface ActivityRecorder {
-  record(groupId: string, sessionId: string): Promise<void>;
-  close(): Promise<void>;
-}
-
-export class RedisActivityRecorder implements ActivityRecorder {
+export class RedisActivityRecorder {
   private index: SessionActivityIndex;
 
   constructor(options: { redisUrl: string; logger: Logger }) {

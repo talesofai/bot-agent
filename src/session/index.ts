@@ -3,7 +3,6 @@ export type { SessionManagerOptions, CreateSessionOptions } from "./manager";
 export { SessionRepository } from "./repository";
 export type { SessionRepositoryOptions } from "./repository";
 export { RedisActivityRecorder } from "./activity-recorder";
-export type { ActivityRecorder } from "./activity-recorder";
 
 export { HistoryStore } from "./history";
 export type { HistoryReadOptions } from "./history";

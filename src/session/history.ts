@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, appendFile } from "node:fs/promises";
+import { access, appendFile, open } from "node:fs/promises";
 import type { Logger } from "pino";
 import type { HistoryEntry } from "../types/session";
 
@@ -70,10 +70,11 @@ export class HistoryStore {
   ): Promise<string> {
     const maxEntries = options.maxEntries;
     if (typeof maxEntries === "number" && maxEntries > 0) {
-      return this.runTail(["-n", String(maxEntries), historyPath]);
+      const maxBytes = options.maxBytes ?? this.maxBytes;
+      return this.readTailByLines(historyPath, maxEntries, maxBytes);
     }
     const maxBytes = options.maxBytes ?? this.maxBytes;
-    return this.runTail(["-c", String(maxBytes), historyPath]);
+    return this.readTailByBytes(historyPath, maxBytes);
   }
 
   private async exists(historyPath: string): Promise<boolean> {
@@ -85,21 +86,74 @@ export class HistoryStore {
     }
   }
 
-  private async runTail(args: string[]): Promise<string> {
-    const child = Bun.spawn(["tail", ...args], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (exitCode !== 0) {
-      const detail = stderr.trim() || stdout.trim() || "unknown error";
-      this.logger.warn({ detail }, "tail command failed");
-      return "";
+  private async readTailByBytes(
+    historyPath: string,
+    maxBytes: number,
+  ): Promise<string> {
+    const file = await open(historyPath, "r");
+    try {
+      const stat = await file.stat();
+      if (stat.size === 0) {
+        return "";
+      }
+      const readSize = Math.min(maxBytes, stat.size);
+      const buffer = Buffer.allocUnsafe(readSize);
+      const { bytesRead } = await file.read(
+        buffer,
+        0,
+        readSize,
+        stat.size - readSize,
+      );
+      return buffer.subarray(0, bytesRead).toString("utf-8");
+    } finally {
+      await file.close();
     }
-    return stdout;
   }
+
+  private async readTailByLines(
+    historyPath: string,
+    maxEntries: number,
+    maxBytes: number,
+  ): Promise<string> {
+    const file = await open(historyPath, "r");
+    try {
+      const stat = await file.stat();
+      if (stat.size === 0) {
+        return "";
+      }
+      const chunks: Buffer[] = [];
+      const chunkSize = 64 * 1024;
+      let position = stat.size;
+      let linesFound = 0;
+      let totalBytes = 0;
+
+      while (position > 0 && linesFound <= maxEntries) {
+        const readSize = Math.min(chunkSize, position);
+        position -= readSize;
+        const buffer = Buffer.allocUnsafe(readSize);
+        const { bytesRead } = await file.read(buffer, 0, readSize, position);
+        const slice = buffer.subarray(0, bytesRead);
+        chunks.unshift(slice);
+        totalBytes += bytesRead;
+        linesFound += countNewlines(slice);
+        if (totalBytes >= maxBytes) {
+          break;
+        }
+      }
+
+      return Buffer.concat(chunks).toString("utf-8");
+    } finally {
+      await file.close();
+    }
+  }
+}
+
+function countNewlines(buffer: Buffer): number {
+  let count = 0;
+  for (const byte of buffer) {
+    if (byte === 10) {
+      count += 1;
+    }
+  }
+  return count;
 }

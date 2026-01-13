@@ -12,6 +12,7 @@
 - llbot 注册器脚本，定期写入注册表并设置 TTL
 - 复读概率配置 `echoRate`（全局/群/机器人可回退）
 - echoRate 回退与 llbot 注册器刷新路径的测试覆盖
+- 独立入口脚本：`start:adapter` / `start:worker`
 
 ### Changed
 
@@ -29,6 +30,7 @@
 - 会话清理改为磁盘扫描，并同步清理索引
 - 增加独立会话清理脚本 `clean:sessions`
 - 增加会话清理 CronJob 示例
+- 拆分 adapter 与 worker 启动入口，移除 `SERVICE_ROLE`
 
 ### Fixed
 

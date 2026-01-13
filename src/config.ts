@@ -20,7 +20,6 @@ const envSchema = z
     LOG_FORMAT: z.string().default("json"),
     MCP_TALESOFAI_URL: z.string().url().optional(),
     REDIS_URL: z.string().default("redis://localhost:6379"),
-    SERVICE_ROLE: z.enum(["all", "adapter", "worker"]).default("all"),
     HTTP_PORT: z.coerce.number().int().min(1).default(8080),
     DEFAULT_GROUP_ID: z.string().optional(),
     LLBOT_REGISTRY_PREFIX: z.string().default("llbot:registry"),
@@ -28,12 +27,7 @@ const envSchema = z
     LLBOT_REGISTRY_REFRESH_SEC: z.coerce.number().int().min(1).default(10),
   })
   .superRefine((data, ctx) => {
-    const requiresAdapterConfig = data.SERVICE_ROLE !== "worker";
-    if (
-      requiresAdapterConfig &&
-      data.PLATFORM === "discord" &&
-      !data.DISCORD_TOKEN
-    ) {
+    if (data.PLATFORM === "discord" && !data.DISCORD_TOKEN) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "DISCORD_TOKEN is required for Discord platform",

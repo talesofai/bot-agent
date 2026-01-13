@@ -65,18 +65,15 @@ DISCORD_APPLICATION_ID=
 # WebSocket 重连配置（当前使用内置默认值）
 ```
 
-> `SERVICE_ROLE=worker` 时可不提供平台连接配置；否则 `PLATFORM=qq` 需要 Redis 注册表可用，`PLATFORM=discord` 必须提供 `DISCORD_TOKEN`。
+> Adapter 进程使用 `PLATFORM=qq` 需要 Redis 注册表可用，`PLATFORM=discord` 必须提供 `DISCORD_TOKEN`。
 >
-> Discord Adapter 当前仍是占位实现，`SERVICE_ROLE=adapter/all` 且 `PLATFORM=discord` 时会直接报错。
+> Discord Adapter 当前仍是占位实现，`PLATFORM=discord` 时会直接报错。
 
 ### 队列配置
 
 ```env
 # Redis 连接地址 (BullMQ Backend)
 REDIS_URL=redis://localhost:6379
-
-# 服务角色: all | adapter | worker
-SERVICE_ROLE=all
 ```
 
 ### HTTP 服务配置

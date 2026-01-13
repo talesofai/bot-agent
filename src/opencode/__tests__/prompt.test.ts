@@ -27,7 +27,7 @@ describe("buildOpencodePrompt", () => {
       input: "ping",
     });
     expect(prompt).toContain("System:\nSYSTEM");
-    expect(prompt).toContain("History:\nuser: hi\nassistant: hello");
+    expect(prompt).toContain("History:\nuser [t]: hi\nassistant [t]: hello");
     expect(prompt).toContain("User:\nping");
   });
 });

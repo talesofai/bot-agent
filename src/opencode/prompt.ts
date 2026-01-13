@@ -19,7 +19,8 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
       if (!content) {
         return null;
       }
-      return `${entry.role}: ${content}`;
+      const timestamp = formatHistoryTimestamp(entry.createdAt);
+      return `${entry.role} [${timestamp}]: ${content}`;
     })
     .filter((line): line is string => Boolean(line));
 
@@ -33,4 +34,25 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
   }
 
   return sections.join("\n\n");
+}
+
+function formatHistoryTimestamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    return iso;
+  }
+  const year = parsed.getFullYear();
+  const month = pad2(parsed.getMonth() + 1);
+  const day = pad2(parsed.getDate());
+  const hour = pad2(parsed.getHours());
+  const minute = pad2(parsed.getMinutes());
+  const second = pad2(parsed.getSeconds());
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+    parsed.getDay()
+  ];
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${weekday}`;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
 }

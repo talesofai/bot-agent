@@ -1,23 +1,17 @@
 import { getConfig } from "./config";
 import { logger } from "./logger";
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { createAdapter } from "./adapters/index";
 
-import type { Bot, SessionEvent, SessionElement } from "./types/index";
+import type { Bot } from "./types/index";
 import { BullmqResponseQueue, BullmqSessionQueue } from "./queue";
-import { SessionManager, buildSessionId } from "./session";
+import { SessionManager } from "./session";
 import { GroupStore } from "./store";
 import { RouterStore } from "./store/router";
 import { ResponseWorker, ShellOpencodeRunner, SessionWorker } from "./worker";
 import { startHttpServer, type HttpServer } from "./http/server";
-import {
-  extractSessionKey,
-  matchesKeywords,
-  shouldEnqueue,
-} from "./entry/trigger";
 import { EchoTracker } from "./entry/echo";
-import { resolveEchoRate } from "./entry/echo-rate";
+import { MessageDispatcher } from "./entry/message-dispatcher";
 
 const config = getConfig();
 
@@ -118,100 +112,16 @@ startHttpServer({ logger })
 const echoTracker = new EchoTracker();
 
 if (adapter && groupStore) {
-  adapter.onEvent(async (message: SessionEvent) => {
-    const groupId = config.DEFAULT_GROUP_ID ?? message.channelId;
-    const group = await groupStore.getGroup(groupId);
-    const groupConfig = group?.config;
-    if (!groupConfig || !groupConfig.enabled) {
-      return;
-    }
-    const routerSnapshot = await routerStore?.getSnapshot();
-    const globalKeywords = routerSnapshot?.globalKeywords ?? [];
-    const globalEchoRate = routerSnapshot?.globalEchoRate ?? 30;
-    const botConfigs = routerSnapshot?.botConfigs ?? new Map();
-    const defaultRouting = {
-      enableGlobal: true,
-      enableGroup: true,
-      enableBot: true,
-    };
-    const groupRouting = groupConfig.keywordRouting ?? defaultRouting;
-    const selfId = message.selfId ?? "";
-    const botConfig = selfId ? botConfigs.get(selfId) : undefined;
-    const botRouting = botConfig?.keywordRouting ?? defaultRouting;
-    const effectiveEchoRate = resolveEchoRate(
-      botConfig?.echoRate,
-      groupConfig.echoRate,
-      globalEchoRate,
-    );
-    const effectiveRouting = {
-      enableGlobal: groupRouting.enableGlobal && botRouting.enableGlobal,
-      enableGroup: groupRouting.enableGroup && botRouting.enableGroup,
-      enableBot: groupRouting.enableBot && botRouting.enableBot,
-    };
-    const globalMatch =
-      effectiveRouting.enableGlobal &&
-      matchesKeywords(message.content, globalKeywords);
-    const groupMatch =
-      effectiveRouting.enableGroup &&
-      matchesKeywords(message.content, groupConfig.keywords);
-    const botKeywordMatches = new Set<string>();
-    if (groupRouting.enableBot) {
-      for (const [botId, config] of botConfigs) {
-        if (!config.keywordRouting.enableBot) {
-          continue;
-        }
-        if (matchesKeywords(message.content, config.keywords)) {
-          botKeywordMatches.add(botId);
-        }
-      }
-    }
-    if (
-      !shouldEnqueue({
-        groupConfig,
-        message,
-        keywordMatch: {
-          global: globalMatch,
-          group: groupMatch,
-          bot: botKeywordMatches,
-        },
-      })
-    ) {
-      if (echoTracker.shouldEcho(message, effectiveEchoRate)) {
-        await adapter.sendMessage(message, message.content, {
-          elements: message.elements,
-        });
-      }
-      return;
-    }
-    const { key, content } = extractSessionKey(message.content);
-    const logContent =
-      groupConfig.triggerMode === "keyword" ? message.content : content;
-    const contentHash = createHash("sha256")
-      .update(logContent)
-      .digest("hex")
-      .slice(0, 12);
-    logger.info(
-      {
-        id: message.messageId,
-        channelId: message.channelId,
-        userId: message.userId,
-        botId: message.selfId,
-        contentHash,
-        contentLength: logContent.length,
-      },
-      "Message received",
-    );
-
-    const session = applySessionKey(message, content);
-
-    await sessionQueue.enqueue({
-      groupId,
-      userId: message.userId,
-      key,
-      sessionId: buildSessionId(message.userId, key),
-      session,
-    });
+  const dispatcher = new MessageDispatcher({
+    adapter,
+    groupStore,
+    routerStore,
+    sessionQueue,
+    echoTracker,
+    logger,
+    defaultGroupId: config.DEFAULT_GROUP_ID,
   });
+  adapter.onEvent((message) => dispatcher.dispatch(message));
 }
 
 // Graceful shutdown
@@ -256,46 +166,4 @@ if (adapter && bot) {
       "Initial connection failed, reconnect will be attempted",
     );
   });
-}
-
-function applySessionKey(message: SessionEvent, content: string): SessionEvent {
-  if (content === message.content) {
-    return message;
-  }
-  const elements = stripPrefixFromElements(
-    message.elements,
-    message.content,
-    content,
-  );
-  return { ...message, content, elements };
-}
-
-function stripPrefixFromElements(
-  elements: SessionElement[],
-  rawContent: string,
-  cleanedContent: string,
-): SessionElement[] {
-  const prefixIndex = rawContent.indexOf(cleanedContent);
-  if (prefixIndex <= 0) {
-    return elements;
-  }
-  let offset = prefixIndex;
-  const updated: SessionElement[] = [];
-  for (const element of elements) {
-    if (offset === 0) {
-      updated.push(element);
-      continue;
-    }
-    if (element.type !== "text") {
-      updated.push(element);
-      continue;
-    }
-    const trimmed = element.text.slice(offset).trimStart();
-    offset = 0;
-    if (!trimmed) {
-      continue;
-    }
-    updated.push({ ...element, text: trimmed });
-  }
-  return updated.length > 0 ? updated : elements;
 }

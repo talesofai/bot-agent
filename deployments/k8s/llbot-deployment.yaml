@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: luckylillia
-  namespace: opencode-bot-agent
+  namespace: bot
 spec:
   replicas: 1
   selector:
@@ -44,7 +44,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: opencode-bot-agent-data
+            claimName: bot-data
         - name: llbot-config
           configMap:
             name: llbot-config

@@ -118,7 +118,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 
 当前仓库已提供 `deployments/k8s/` 目录，主要覆盖 LuckyLilliaBot/PMHQ 基础资源，Bot Agent 需结合后文示例单独部署：
 
-- `deployments/k8s/llbot-namespace.yaml`
+- `deployments/k8s/bot-namespace.yaml`
 - `deployments/k8s/llbot-pvc.yaml`
 - `deployments/k8s/llbot-configmap.yaml`
 - `deployments/k8s/pmhq-deployment.yaml`
@@ -135,7 +135,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 ./scripts/init-secrets.sh
 ```
 
-设置 `WEBUI_TOKEN` 等敏感项后，直接启动：
+设置 `WEBUI_TOKEN` 等敏感项后，直接启动（`WEBUI_TOKEN` 不能为空，否则脚本拒绝生成 Secret）：
 
 ```bash
 docker compose -f deployments/docker/docker-compose.yml up -d
@@ -157,11 +157,11 @@ kubectl apply -f deployments/k8s/llbot-secret.yaml
 ### 命名空间
 
 ```yaml
-# deployments/k8s/llbot-namespace.yaml
+# deployments/k8s/bot-namespace.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: opencode-bot-agent
+  name: bot
 ```
 
 ### Secret（API Keys）
@@ -172,10 +172,10 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: llbot-secrets
-  namespace: opencode-bot-agent
+  namespace: bot
 type: Opaque
 stringData:
-  WEBUI_TOKEN: "change-me"
+  WEBUI_TOKEN: ""
   OPENAI_API_KEY: ""
   ANTHROPIC_API_KEY: ""
   GEMINI_API_KEY: ""
@@ -189,8 +189,8 @@ stringData:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: opencode-bot-agent-data
-  namespace: opencode-bot-agent
+  name: bot-data
+  namespace: bot
 spec:
   accessModes:
     - ReadWriteOnce
@@ -207,7 +207,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: luckylillia
-  namespace: opencode-bot-agent
+  namespace: bot
 spec:
   replicas: 1
   selector:
@@ -233,7 +233,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: opencode-bot-agent
-  namespace: opencode-bot-agent
+  namespace: bot
 spec:
   replicas: 1
   selector:
@@ -276,17 +276,16 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: opencode-bot-agent-data
+            claimName: bot-data
 ```
 
 ### 部署命令
 
 ```bash
-kubectl apply -f deployments/k8s/llbot-namespace.yaml
+kubectl apply -f deployments/k8s/bot-namespace.yaml
 kubectl apply -f deployments/k8s/llbot-pvc.yaml
 kubectl apply -f deployments/k8s/llbot-secret.yaml
 kubectl apply -f deployments/k8s/llbot-configmap.yaml
-kubectl apply -f deployments/k8s/pmhq-deployment.yaml
 kubectl apply -f deployments/k8s/llbot-deployment.yaml
 kubectl apply -f deployments/k8s/llbot-service.yaml
 ```
@@ -301,10 +300,10 @@ LuckyLilliaBot 需要扫码登录。在 K8s 环境中：
 
 ```bash
 # 查看日志获取二维码
-kubectl logs -f deployment/luckylillia -n opencode-bot-agent
+kubectl logs -f deployment/luckylillia -n bot
 
 # 或者端口转发，访问 WebUI
-kubectl port-forward svc/luckylillia 3080:3080 -n opencode-bot-agent
+kubectl port-forward svc/luckylillia 3080:3080 -n bot
 ```
 
 ### Session 持久化

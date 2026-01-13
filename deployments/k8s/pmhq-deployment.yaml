@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pmhq
-  namespace: opencode-bot-agent
+  namespace: bot
 spec:
   replicas: 1
   selector:
@@ -16,6 +16,8 @@ spec:
       containers:
         - name: pmhq
           image: linyuchen/pmhq:latest
+          ports:
+            - containerPort: 13000
           securityContext:
             privileged: true
           env:
@@ -33,4 +35,4 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: opencode-bot-agent-data
+            claimName: bot-data

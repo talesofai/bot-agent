@@ -4,10 +4,22 @@ set -e
 ENV_FILE="${ENV_FILE:-configs/secrets/.env}"
 OUTPUT_FILE="${OUTPUT_FILE:-deployments/k8s/llbot-secret.yaml}"
 SECRET_NAME="${SECRET_NAME:-llbot-secrets}"
-NAMESPACE="${NAMESPACE:-opencode-bot-agent}"
+NAMESPACE="${NAMESPACE:-bot}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing env file: $ENV_FILE"
+  exit 1
+fi
+
+raw_token="$(sed -n 's/^[[:space:]]*WEBUI_TOKEN[[:space:]]*=[[:space:]]*//p' "$ENV_FILE" | tail -n 1)"
+case "$raw_token" in
+  \"*\") WEBUI_TOKEN="${raw_token#\"}"; WEBUI_TOKEN="${WEBUI_TOKEN%\"}" ;;
+  \'*\') WEBUI_TOKEN="${raw_token#\'}"; WEBUI_TOKEN="${WEBUI_TOKEN%\'}" ;;
+  *) WEBUI_TOKEN="$(printf "%s" "$raw_token" | sed 's/[[:space:]]#.*$//')" ;;
+esac
+WEBUI_TOKEN="$(printf "%s" "${WEBUI_TOKEN:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+if [ -z "$WEBUI_TOKEN" ]; then
+  echo "WEBUI_TOKEN is required and cannot be empty in $ENV_FILE"
   exit 1
 fi
 

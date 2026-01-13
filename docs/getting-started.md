@@ -36,7 +36,7 @@ export CONFIG_PATH=configs/.env
 编辑 `configs/secrets/.env`（只保留敏感项）：
 
 ```env
-WEBUI_TOKEN=change-me
+WEBUI_TOKEN=
 OPENAI_API_KEY=sk-xxx
 # ANTHROPIC_API_KEY=sk-ant-xxx
 # GEMINI_API_KEY=xxx

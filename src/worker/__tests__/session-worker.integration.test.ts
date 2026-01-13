@@ -6,7 +6,11 @@ import pino from "pino";
 
 import type { ResponseJob, ResponseJobData, ResponseQueue } from "../../queue";
 import { BullmqSessionQueue } from "../../queue";
-import { SessionManager, buildSessionId } from "../../session";
+import {
+  NoopActivityRecorder,
+  SessionManager,
+  buildSessionId,
+} from "../../session";
 import type { OpencodeRunner, OpencodeRunResult } from "../runner";
 import { SessionWorker } from "../worker";
 
@@ -80,6 +84,7 @@ describe("session worker integration", () => {
       sessionManager,
       runner: new FakeRunner(),
       logger,
+      activityRecorder: new NoopActivityRecorder(),
       responseQueue,
     });
     const sessionQueue = new BullmqSessionQueue({

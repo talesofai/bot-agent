@@ -10,7 +10,8 @@ import { buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
-import { SessionActivityIndex } from "../session/activity-index";
+import type { ActivityRecorder } from "../session/activity-recorder";
+import { RedisActivityRecorder } from "../session/activity-recorder";
 
 export interface SessionWorkerOptions {
   id: string;
@@ -28,6 +29,7 @@ export interface SessionWorkerOptions {
   launcher?: OpencodeLauncher;
   runner: OpencodeRunner;
   logger: Logger;
+  activityRecorder?: ActivityRecorder;
   limits?: {
     historyEntries?: number;
     historyBytes?: number;
@@ -44,7 +46,7 @@ export class SessionWorker {
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
   private responseQueue?: ResponseQueue;
-  private activityIndex: SessionActivityIndex;
+  private activityRecorder: ActivityRecorder;
   private workerConnection: IORedis;
   private lockConnection: IORedis;
   private historyMaxEntries?: number;
@@ -70,10 +72,12 @@ export class SessionWorker {
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
-    this.activityIndex = new SessionActivityIndex({
-      redisUrl: options.redis.url,
-      logger: this.logger,
-    });
+    this.activityRecorder =
+      options.activityRecorder ??
+      new RedisActivityRecorder({
+        redisUrl: options.redis.url,
+        logger: this.logger,
+      });
 
     this.workerConnection = new IORedis(options.redis.url, {
       maxRetriesPerRequest: null,
@@ -115,7 +119,7 @@ export class SessionWorker {
     await this.worker.close();
     await this.workerConnection.quit();
     await this.lockConnection.quit();
-    await this.activityIndex.close();
+    await this.activityRecorder.close();
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
@@ -266,10 +270,10 @@ export class SessionWorker {
 
   private async recordActivity(sessionInfo: SessionInfo): Promise<void> {
     try {
-      await this.activityIndex.recordActivity({
-        groupId: sessionInfo.meta.groupId,
-        sessionId: sessionInfo.meta.sessionId,
-      });
+      await this.activityRecorder.record(
+        sessionInfo.meta.groupId,
+        sessionInfo.meta.sessionId,
+      );
     } catch (err) {
       this.logger.warn({ err }, "Failed to record session activity");
     }

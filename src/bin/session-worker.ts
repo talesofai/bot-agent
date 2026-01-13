@@ -1,6 +1,7 @@
 import { getConfig } from "../config";
 import { logger } from "../logger";
 import { SessionManager } from "../session";
+import { RedisActivityRecorder } from "../session/activity-recorder";
 import { BullmqResponseQueue, BullmqSessionQueue } from "../queue";
 import { ShellOpencodeRunner, SessionWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
@@ -35,6 +36,10 @@ const worker = new SessionWorker({
   sessionManager,
   runner: new ShellOpencodeRunner(),
   logger,
+  activityRecorder: new RedisActivityRecorder({
+    redisUrl: config.REDIS_URL,
+    logger,
+  }),
   responseQueue,
 });
 worker.start();

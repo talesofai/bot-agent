@@ -1,7 +1,7 @@
 import { Worker, type Job, DelayedError } from "bullmq";
-import { randomUUID } from "node:crypto";
 import IORedis from "ioredis";
 import type { Logger } from "pino";
+import Redlock, { type Lock } from "redlock";
 
 import type { ResponseQueue, SessionJob, SessionJobData } from "../queue";
 import type { SessionManager } from "../session";
@@ -47,9 +47,10 @@ export class SessionWorker {
   private activityIndex: SessionActivityStore;
   private workerConnection: IORedis;
   private lockConnection: IORedis;
+  private redlock: Redlock;
   private historyMaxEntries?: number;
   private historyMaxBytes?: number;
-  private sessionLockTtlSeconds: number;
+  private sessionLockTtlMs: number;
   private requeueDelayMs: number;
   private stalledIntervalMs: number;
   private maxStalledCount: number;
@@ -65,7 +66,8 @@ export class SessionWorker {
     this.responseQueue = options.responseQueue;
     this.historyMaxEntries = options.limits?.historyEntries;
     this.historyMaxBytes = options.limits?.historyBytes;
-    this.sessionLockTtlSeconds = options.limits?.lockTtlSeconds ?? 600;
+    const lockTtlSeconds = options.limits?.lockTtlSeconds ?? 600;
+    this.sessionLockTtlMs = lockTtlSeconds * 1000;
     this.requeueDelayMs = options.limits?.requeueDelayMs ?? 2000;
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
@@ -80,6 +82,11 @@ export class SessionWorker {
     });
     this.lockConnection = new IORedis(options.redis.url, {
       maxRetriesPerRequest: null,
+    });
+    this.redlock = new Redlock([this.lockConnection], {
+      retryCount: 0,
+      retryDelay: 0,
+      retryJitter: 0,
     });
 
     this.worker = new Worker<SessionJobData>(
@@ -123,22 +130,40 @@ export class SessionWorker {
     const lockKey = `session:lock:${groupId}:${sessionId}`;
 
     // 1. Acquire Lock
-    const lockValue = `${sessionId}:${randomUUID()}`;
-    // ioredis v5: set(key, value, "EX", seconds, "NX")
-    const acquired = await this.lockConnection.set(
-      lockKey,
-      lockValue,
-      "EX",
-      this.sessionLockTtlSeconds,
-      "NX",
-    );
-    if (!acquired) {
+    let lock: Lock | null = null;
+    try {
+      lock = await this.redlock.acquire([lockKey], this.sessionLockTtlMs);
+    } catch (err) {
+      if (!this.isLockBusy(err)) {
+        this.logger.error({ err, lockKey }, "Failed to acquire session lock");
+        throw err;
+      }
       this.logger.debug({ sessionId }, "Session busy, delaying job");
       if (!job.token) {
         throw new Error("Missing BullMQ job token for requeue");
       }
       await job.moveToDelayed(Date.now() + this.requeueDelayMs, job.token);
       throw new DelayedError();
+    }
+    let renewTimer: ReturnType<typeof setInterval> | null = null;
+    if (lock) {
+      const renewIntervalMs = Math.max(
+        1000,
+        Math.floor(this.sessionLockTtlMs / 2),
+      );
+      renewTimer = setInterval(() => {
+        void (async () => {
+          try {
+            lock = await lock!.extend(this.sessionLockTtlMs);
+          } catch (err) {
+            if (renewTimer) {
+              clearInterval(renewTimer);
+              renewTimer = null;
+            }
+            this.logger.warn({ err, lockKey }, "Failed to extend session lock");
+          }
+        })();
+      }, renewIntervalMs);
     }
 
     let statusUpdated = false;
@@ -202,10 +227,15 @@ export class SessionWorker {
         }
       }
       // 8. Release Lock
-      try {
-        await this.releaseLock(lockKey, lockValue);
-      } catch (err) {
-        this.logger.warn({ err }, "Failed to release session lock");
+      if (renewTimer) {
+        clearInterval(renewTimer);
+      }
+      if (lock) {
+        try {
+          await lock.release();
+        } catch (err) {
+          this.logger.warn({ err }, "Failed to release session lock");
+        }
       }
     }
   }
@@ -292,12 +322,10 @@ export class SessionWorker {
       session: jobData.session,
     });
   }
-
-  private async releaseLock(lockKey: string, lockValue: string): Promise<void> {
-    const script =
-      "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-      "return redis.call('del', KEYS[1]) " +
-      "else return 0 end";
-    await this.lockConnection.eval(script, 1, lockKey, lockValue);
+  private isLockBusy(err: unknown): boolean {
+    if (!(err instanceof Error)) {
+      return false;
+    }
+    return err.name === "ExecutionError" || err.name === "ResourceLockedError";
   }
 }

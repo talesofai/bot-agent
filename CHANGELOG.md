@@ -44,6 +44,7 @@
 - SessionManager 移除可注入 activity tracker，改由 Worker 记录活跃度
 - 活跃度记录移除 recorder 包装层，直接使用 SessionActivityIndex
 - 活跃度存储命名更清晰，SessionActivityStore 替代 Index
+- 会话 key 类型命名简化为 SessionKey
 
 ### Fixed
 

@@ -4,10 +4,7 @@ import type { Logger } from "pino";
 
 import { getConfig } from "../config";
 import type { SessionMeta, SessionStatus } from "../types/session";
-import {
-  SessionActivityStore,
-  type SessionActivityKey,
-} from "./activity-store";
+import { SessionActivityStore, type SessionKey } from "./activity-store";
 
 export interface SessionTtlCleanerOptions {
   dataDir?: string;
@@ -130,7 +127,7 @@ export class SessionTtlCleaner {
     }
   }
 
-  private async removeIndexEntry(key: SessionActivityKey): Promise<void> {
+  private async removeIndexEntry(key: SessionKey): Promise<void> {
     if (!this.activityIndex) {
       return;
     }

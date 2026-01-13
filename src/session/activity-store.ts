@@ -7,7 +7,7 @@ export interface SessionActivityStoreOptions {
   key?: string;
 }
 
-export interface SessionActivityKey {
+export interface SessionKey {
   groupId: string;
   sessionId: string;
 }
@@ -26,22 +26,20 @@ export class SessionActivityStore {
   }
 
   async recordActivity(
-    key: SessionActivityKey,
+    key: SessionKey,
     timestampMs = Date.now(),
   ): Promise<void> {
     const member = this.encodeMember(key);
     await this.redis.zadd(this.key, timestampMs, member);
   }
 
-  async fetchExpired(cutoffMs: number): Promise<SessionActivityKey[]> {
+  async fetchExpired(cutoffMs: number): Promise<SessionKey[]> {
     const members = await this.redis.zrangebyscore(this.key, 0, cutoffMs);
     const decoded = members.map((member) => this.decodeMember(member));
-    return decoded.filter(
-      (entry): entry is SessionActivityKey => entry !== null,
-    );
+    return decoded.filter((entry): entry is SessionKey => entry !== null);
   }
 
-  async remove(key: SessionActivityKey): Promise<void> {
+  async remove(key: SessionKey): Promise<void> {
     const member = this.encodeMember(key);
     await this.redis.zrem(this.key, member);
   }
@@ -50,11 +48,11 @@ export class SessionActivityStore {
     await this.redis.quit();
   }
 
-  private encodeMember(key: SessionActivityKey): string {
+  private encodeMember(key: SessionKey): string {
     return `${key.groupId}:${key.sessionId}`;
   }
 
-  private decodeMember(member: string): SessionActivityKey | null {
+  private decodeMember(member: string): SessionKey | null {
     const [groupId, ...rest] = member.split(":");
     if (!groupId || rest.length === 0) {
       this.logger.warn({ member }, "Invalid session activity member");

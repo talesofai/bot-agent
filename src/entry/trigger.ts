@@ -1,6 +1,8 @@
 import type { GroupConfig } from "../types/group";
 import type { SessionEvent } from "../types";
 
+const selfMentionPatterns = new Map<string, RegExp>();
+
 export interface KeywordMatch {
   global: boolean;
   group: boolean;
@@ -58,9 +60,19 @@ function mentionsSelfInContent(message: SessionEvent): boolean {
   if (message.platform !== "discord") {
     return false;
   }
-  const escaped = message.selfId.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
-  const pattern = new RegExp(`<@!?${escaped}>`, "g");
+  const pattern = getSelfMentionPattern(message.selfId);
   return pattern.test(message.content);
+}
+
+function getSelfMentionPattern(selfId: string): RegExp {
+  const cached = selfMentionPatterns.get(selfId);
+  if (cached) {
+    return cached;
+  }
+  const escaped = selfId.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+  const pattern = new RegExp(`<@!?${escaped}>`);
+  selfMentionPatterns.set(selfId, pattern);
+  return pattern;
 }
 
 export function extractSessionKey(input: string): {

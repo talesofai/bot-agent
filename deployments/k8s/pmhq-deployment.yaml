@@ -20,6 +20,13 @@ spec:
             - containerPort: 13000
           securityContext:
             privileged: true
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: ENABLE_HEADLESS
               value: "false"

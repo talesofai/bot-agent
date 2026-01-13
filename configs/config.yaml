@@ -5,14 +5,19 @@ server:
   host: 0.0.0.0
   port: 8080
 
-milky:
-  url: ${MILKY_URL}
+llbotRegistry:
+  prefix: ${LLBOT_REGISTRY_PREFIX:-llbot:registry}
+  ttlSeconds: ${LLBOT_REGISTRY_TTL_SEC:-30}
+  refreshSeconds: ${LLBOT_REGISTRY_REFRESH_SEC:-10}
 
 agent:
   model: ${OPENCODE_MODEL:-claude-sonnet-4-20250514}
 
 groups:
   dataDir: ${GROUPS_DATA_DIR:-/data/groups}
+
+data:
+  dir: ${DATA_DIR:-/data}
 
 mcp:
   servers:

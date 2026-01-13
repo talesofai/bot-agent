@@ -32,6 +32,13 @@ spec:
           ports:
             - containerPort: 3000
             - containerPort: 3080
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
           volumeMounts:
             - name: data
               mountPath: /app/llbot/data

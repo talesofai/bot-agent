@@ -24,7 +24,10 @@ const DEFAULT_CONFIG_YAML = `# 群配置
 enabled: true
 triggerMode: mention
 keywords: []
-cooldown: 0
+keywordRouting:
+  enableGlobal: true
+  enableGroup: true
+  enableBot: true
 adminUsers: []
 maxSessions: 1
 `;

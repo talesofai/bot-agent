@@ -33,10 +33,28 @@ describe("shouldEnqueue", () => {
     };
     const config = makeConfig({ triggerMode: "mention" });
     const allowed = shouldEnqueue({
-      groupId: "group-1",
       groupConfig: config,
       message,
-      context: { cooldowns: new Map() },
+      keywordMatched: false,
+      botKeywordMatches: new Set(),
+    });
+    expect(allowed).toBe(true);
+  });
+
+  test("mention bypasses bot keyword ownership", () => {
+    const message = {
+      ...baseMessage,
+      elements: [
+        { type: "mention", userId: baseMessage.selfId },
+        { type: "text", text: baseMessage.content },
+      ],
+    };
+    const config = makeConfig({ triggerMode: "keyword" });
+    const allowed = shouldEnqueue({
+      groupConfig: config,
+      message,
+      keywordMatched: false,
+      botKeywordMatches: new Set(["bot-2"]),
     });
     expect(allowed).toBe(true);
   });
@@ -45,77 +63,36 @@ describe("shouldEnqueue", () => {
     const message = { ...baseMessage, content: "Hello Bot" };
     const config = makeConfig({ triggerMode: "keyword", keywords: ["bot"] });
     const allowed = shouldEnqueue({
-      groupId: "group-1",
       groupConfig: config,
       message,
-      context: { cooldowns: new Map() },
+      keywordMatched: true,
+      botKeywordMatches: new Set(),
     });
     expect(allowed).toBe(true);
   });
 
-  test("respects cooldown for non-admin users", () => {
-    let now = 1000;
-    const context = { cooldowns: new Map<string, number>(), now: () => now };
-    const message = {
-      ...baseMessage,
-      elements: [
-        { type: "mention", userId: baseMessage.selfId },
-        { type: "text", text: baseMessage.content },
-      ],
-    };
-    const config = makeConfig({ triggerMode: "mention", cooldown: 10 });
-    expect(
-      shouldEnqueue({
-        groupId: "group-1",
-        groupConfig: config,
-        message,
-        context,
-      }),
-    ).toBe(true);
-    now += 2000;
-    expect(
-      shouldEnqueue({
-        groupId: "group-1",
-        groupConfig: config,
-        message,
-        context,
-      }),
-    ).toBe(false);
+  test("respects bot keyword ownership", () => {
+    const message = { ...baseMessage, content: "hello bot-a" };
+    const config = makeConfig({ triggerMode: "keyword" });
+    const allowed = shouldEnqueue({
+      groupConfig: config,
+      message,
+      keywordMatched: true,
+      botKeywordMatches: new Set(["bot-2"]),
+    });
+    expect(allowed).toBe(false);
   });
 
-  test("admin bypasses cooldown after trigger match", () => {
-    let now = 1000;
-    const context = { cooldowns: new Map<string, number>(), now: () => now };
-    const message = {
-      ...baseMessage,
-      userId: "admin-1",
-      elements: [
-        { type: "mention", userId: baseMessage.selfId },
-        { type: "text", text: baseMessage.content },
-      ],
-    };
-    const config = makeConfig({
-      triggerMode: "mention",
-      cooldown: 10,
-      adminUsers: ["admin-1"],
+  test("allows bot keyword match for self", () => {
+    const message = { ...baseMessage, content: "hello bot-a" };
+    const config = makeConfig({ triggerMode: "keyword" });
+    const allowed = shouldEnqueue({
+      groupConfig: config,
+      message,
+      keywordMatched: true,
+      botKeywordMatches: new Set([baseMessage.selfId]),
     });
-    expect(
-      shouldEnqueue({
-        groupId: "group-1",
-        groupConfig: config,
-        message,
-        context,
-      }),
-    ).toBe(true);
-    now += 2000;
-    expect(
-      shouldEnqueue({
-        groupId: "group-1",
-        groupConfig: config,
-        message,
-        context,
-      }),
-    ).toBe(true);
+    expect(allowed).toBe(true);
   });
 });
 

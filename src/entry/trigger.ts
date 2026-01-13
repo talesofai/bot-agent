@@ -1,44 +1,26 @@
 import type { GroupConfig } from "../types/group";
 import type { SessionEvent } from "../types";
 
-export interface TriggerContext {
-  cooldowns: Map<string, number>;
-  now?: () => number;
-}
-
 export interface TriggerInput {
-  groupId: string;
   groupConfig: GroupConfig;
   message: SessionEvent;
-  context: TriggerContext;
+  keywordMatched: boolean;
+  botKeywordMatches: Set<string>;
 }
 
 export function shouldEnqueue(input: TriggerInput): boolean {
-  const { groupId, groupConfig, message, context } = input;
-  const triggerMatched =
-    groupConfig.triggerMode === "mention"
-      ? mentionsSelf(message)
-      : groupConfig.triggerMode === "keyword"
-        ? matchesKeywords(message.content, groupConfig.keywords)
-        : groupConfig.triggerMode === "all";
-
-  if (!triggerMatched) {
-    return false;
-  }
-  if (groupConfig.adminUsers.includes(message.userId)) {
+  const { groupConfig, message, keywordMatched, botKeywordMatches } = input;
+  if (mentionsSelf(message)) {
     return true;
   }
-  if (groupConfig.cooldown > 0) {
-    const now = (context.now ?? Date.now)();
-    const last = context.cooldowns.get(groupId);
-    const cooldownMs = groupConfig.cooldown * 1000;
-    if (last && now - last < cooldownMs) {
-      return false;
-    }
-    context.cooldowns.set(groupId, now);
+  if (groupConfig.triggerMode === "mention") {
+    return false;
   }
-
-  return true;
+  const selfId = message.selfId ?? "";
+  if (botKeywordMatches.size > 0 && !botKeywordMatches.has(selfId)) {
+    return false;
+  }
+  return keywordMatched;
 }
 
 function mentionsSelf(message: SessionEvent): boolean {
@@ -48,7 +30,7 @@ function mentionsSelf(message: SessionEvent): boolean {
   return message.elements.some(
     (element) =>
       element.type === "mention" && element.userId === message.selfId,
-  );
+  ) || mentionsSelfInContent(message);
 }
 
 export function matchesKeywords(content: string, keywords: string[]): boolean {
@@ -57,6 +39,18 @@ export function matchesKeywords(content: string, keywords: string[]): boolean {
   }
   const lowered = content.toLowerCase();
   return keywords.some((keyword) => lowered.includes(keyword.toLowerCase()));
+}
+
+function mentionsSelfInContent(message: SessionEvent): boolean {
+  if (!message.selfId) {
+    return false;
+  }
+  if (message.platform !== "discord") {
+    return false;
+  }
+  const escaped = message.selfId.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+  const pattern = new RegExp(`<@!?${escaped}>`, "g");
+  return pattern.test(message.content);
 }
 
 export function extractSessionKey(input: string): {

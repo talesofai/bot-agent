@@ -92,14 +92,15 @@ services:
   #   depends_on:
   #     - luckylillia
   #   volumes:
-  #     - ../../data/groups:/data/groups
+  #     - ../../data:/data
   #     - ../../configs:/app/configs
   #   env_file:
   #     - ../../configs/.env
   #     - ../../configs/secrets/.env
   #   environment:
   #     - PLATFORM=qq
-  #     - MILKY_URL=ws://luckylillia:3000
+  #     - REDIS_URL=redis://redis:6379
+  #     - LLBOT_REGISTRY_PREFIX=llbot:registry
   #     - DISCORD_TOKEN=your-token # 规划
   #     - DISCORD_APPLICATION_ID=your-app-id # 规划
 ```
@@ -124,6 +125,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 - `deployments/k8s/pmhq-deployment.yaml`
 - `deployments/k8s/llbot-deployment.yaml`
 - `deployments/k8s/llbot-service.yaml`
+- `deployments/k8s/redis.yaml`
 
 ## Secret 管理（推荐）
 
@@ -201,6 +203,8 @@ spec:
 
 ### LLBot Deployment
 
+LLBot 仅负责 QQ 客户端与 WebUI。主服务通过 Redis 注册表发现 llbot，并建立 WS 连接；每个 llbot Pod 内需要运行注册器定期写入 `llbot:registry:{botId}`。为了允许主服务直连，`onlyLocalhost` 必须关闭。建议将 `/data` 挂载为 RWX（NAS），用于 `groups/`、`router/`、`bots/`。
+
 ```yaml
 # deployments/k8s/llbot-deployment.yaml
 apiVersion: apps/v1
@@ -250,8 +254,10 @@ spec:
           env:
             - name: PLATFORM
               value: "qq"
-            - name: MILKY_URL
-              value: "ws://luckylillia:3000"
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+            - name: LLBOT_REGISTRY_PREFIX
+              value: "llbot:registry"
             - name: DISCORD_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -271,8 +277,7 @@ spec:
                   key: OPENAI_API_KEY
           volumeMounts:
             - name: data
-              mountPath: /data/groups
-              subPath: groups
+              mountPath: /data
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -283,6 +288,7 @@ spec:
 
 ```bash
 kubectl apply -f deployments/k8s/bot-namespace.yaml
+kubectl apply -f deployments/k8s/redis.yaml
 kubectl apply -f deployments/k8s/llbot-pvc.yaml
 kubectl apply -f deployments/k8s/llbot-secret.yaml
 kubectl apply -f deployments/k8s/llbot-configmap.yaml

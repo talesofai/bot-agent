@@ -22,6 +22,19 @@
 
 一旦 TypeScript 应用就绪，请在此处添加具体的 `bun run` 脚本。
 
+## 部署要点与注意事项（K8s）
+
+- 仅在 `bot` 命名空间操作；集群级资源由运维负责。
+- 运行形态：`llbot` 为 StatefulSet，单 Pod 内含 `luckylillia` + `pmhq` 两个容器。
+- 访问方式：使用独立域名 `llbot-0.talesofai.cn`/`llbot-1...`，不使用路径前缀；每个域名指向对应 Service。
+- 服务划分：
+  - `llbot`（headless）为 StatefulSet 提供稳定网络标识。
+  - `llbot-0`/`llbot-1`/`llbot-2` 为单 Pod WebUI 路由服务。
+- Pod 索引从 0 开始，域名与 Service 同名。
+- 镜像来源：YAML 保持社区可用（不使用talesofai），部署时用 `kubectl set image` 切到 `registry.cn-shanghai.aliyuncs.com/talesofai/...`。
+- 资源限制：均需设置 requests/limits，避免调度失败。
+- 证书与 DNS：新增域名需要配置 DNS 指向 Ingress IP 并确保证书覆盖相应域名。
+
 ## 代码风格与命名约定
 
 - 已选定 TypeScript 作为开发语言（详见 `docs/adr/001-language-selection.md`）。

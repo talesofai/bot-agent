@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: llbot
+  namespace: bot
+spec:
+  serviceName: llbot-0-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: llbot
+  template:
+    metadata:
+      labels:
+        app: llbot
+    spec:
+      containers:
+        - name: luckylillia
+          image: linyuchen/llbot:latest
+          command:
+            - /bin/sh
+            - /config/llbot-entrypoint.sh
+          env:
+            - name: ENABLE_WEBUI
+              value: "true"
+            - name: WEBUI_PORT
+              value: "3080"
+            - name: WEBUI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: WEBUI_TOKEN
+            - name: pmhq_host
+              value: "127.0.0.1"
+          ports:
+            - containerPort: 3000
+            - containerPort: 3080
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          volumeMounts:
+            - name: data
+              mountPath: /app/llbot/data
+              subPath: llbot-data
+            - name: data
+              mountPath: /root/.config/QQ
+              subPath: qq
+            - name: llbot-config
+              mountPath: /config
+        - name: pmhq
+          image: linyuchen/pmhq:latest
+          ports:
+            - containerPort: 13000
+          securityContext:
+            privileged: true
+          env:
+            - name: ENABLE_HEADLESS
+              value: "false"
+            - name: AUTO_LOGIN_QQ
+              value: ""
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /app/llbot/data
+              subPath: llbot-data
+            - name: data
+              mountPath: /root/.config/QQ
+              subPath: qq
+      volumes:
+        - name: llbot-config
+          configMap:
+            name: llbot-config
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi

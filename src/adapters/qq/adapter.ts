@@ -33,7 +33,7 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
     const url = options.url;
     if (!url) {
       throw new Error(
-        "QQAdapter requires MILKY_URL to be configured (received empty or undefined url)",
+        "QQAdapter requires a Milky WebSocket URL (received empty or undefined url)",
       );
     }
     super();

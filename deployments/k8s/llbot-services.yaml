@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: llbot-0-headless
+  namespace: bot
+spec:
+  clusterIP: None
+  selector:
+    app: llbot
+  ports:
+    - name: webui
+      port: 3080
+      targetPort: 3080
+    - name: milky
+      port: 3000
+      targetPort: 3000
+    - name: pmhq
+      port: 13000
+      targetPort: 13000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llbot-0
+  namespace: bot
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: llbot-0
+  ports:
+    - name: webui
+      port: 3080
+      targetPort: 3080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llbot-1
+  namespace: bot
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: llbot-1
+  ports:
+    - name: webui
+      port: 3080
+      targetPort: 3080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llbot-2
+  namespace: bot
+spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: llbot-2
+  ports:
+    - name: webui
+      port: 3080
+      targetPort: 3080

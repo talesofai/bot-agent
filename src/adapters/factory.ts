@@ -6,7 +6,7 @@
 
 import type { PlatformAdapter } from "../types/platform";
 import type { AppConfig } from "../config";
-import { QQAdapter } from "./qq/index";
+import { QQAdapterPool } from "./qq/index";
 
 /**
  * Creates a platform adapter based on the provided configuration.
@@ -14,7 +14,11 @@ import { QQAdapter } from "./qq/index";
 export function createAdapter(config: AppConfig): PlatformAdapter {
   switch (config.PLATFORM) {
     case "qq":
-      return new QQAdapter({ url: config.MILKY_URL });
+      return new QQAdapterPool({
+        redisUrl: config.REDIS_URL,
+        registryPrefix: config.LLBOT_REGISTRY_PREFIX,
+        refreshIntervalSec: config.LLBOT_REGISTRY_REFRESH_SEC,
+      });
     case "discord":
       // TODO: Implement Discord adapter
       throw new Error("Discord adapter not implemented yet");

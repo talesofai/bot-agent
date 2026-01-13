@@ -207,13 +207,14 @@ speaking_style: 年轻人网络用语
 enabled: true
 
 # 触发方式
-triggerMode: mention # mention | keyword | all
-keywords: # keyword 模式的触发词
+triggerMode: mention # mention | keyword
+keywords: # keyword 模式的触发词（群级）
   - "小助手"
   - "机器人"
-
-# 冷却时间（群级，防止刷屏）
-cooldown: 5
+keywordRouting: # 关键词路由开关（群级）
+  enableGlobal: true # 是否响应全局关键词
+  enableGroup: true # 是否响应群关键词
+  enableBot: true # 是否允许机器人关键词
 
 # 每个用户最大会话数
 maxSessions: 1

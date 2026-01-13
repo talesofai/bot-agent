@@ -10,12 +10,11 @@ const envSchema = z
     PLATFORM: z.enum(["qq", "discord"]).default("qq"),
     /** Path to env file */
     CONFIG_PATH: z.string().optional(),
-    // QQ platform configuration
-    MILKY_URL: z.string().url().optional(),
     // Discord platform configuration
     DISCORD_TOKEN: z.string().optional(),
     DISCORD_APPLICATION_ID: z.string().optional(),
     GROUPS_DATA_DIR: z.string().default("/data/groups"),
+    DATA_DIR: z.string().optional(),
     OPENCODE_MODEL: z.string().default("claude-sonnet-4-20250514"),
     LOG_LEVEL: z.string().default("info"),
     LOG_FORMAT: z.string().default("json"),
@@ -24,16 +23,12 @@ const envSchema = z
     SERVICE_ROLE: z.enum(["all", "adapter", "worker"]).default("all"),
     HTTP_PORT: z.coerce.number().int().min(1).default(8080),
     DEFAULT_GROUP_ID: z.string().optional(),
+    LLBOT_REGISTRY_PREFIX: z.string().default("llbot:registry"),
+    LLBOT_REGISTRY_TTL_SEC: z.coerce.number().int().min(1).default(30),
+    LLBOT_REGISTRY_REFRESH_SEC: z.coerce.number().int().min(1).default(10),
   })
   .superRefine((data, ctx) => {
     const requiresAdapterConfig = data.SERVICE_ROLE !== "worker";
-    if (requiresAdapterConfig && data.PLATFORM === "qq" && !data.MILKY_URL) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "MILKY_URL is required for QQ platform",
-        path: ["MILKY_URL"],
-      });
-    }
     if (
       requiresAdapterConfig &&
       data.PLATFORM === "discord" &&

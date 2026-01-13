@@ -12,7 +12,6 @@ describe("GroupStore", () => {
     // Create a unique temp directory for each test
     testDir = join(tmpdir(), `group-store-test-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
-    process.env.MILKY_URL ??= "http://localhost:3000";
     if (!GroupStore) {
       ({ GroupStore } = await import("../group"));
     }
@@ -96,7 +95,6 @@ triggerMode: keyword
 keywords:
   - bot
   - help
-cooldown: 5
 `,
       );
 
@@ -106,7 +104,6 @@ cooldown: 5
       expect(group!.config.enabled).toBe(true);
       expect(group!.config.triggerMode).toBe("keyword");
       expect(group!.config.keywords).toEqual(["bot", "help"]);
-      expect(group!.config.cooldown).toBe(5);
     });
 
     test("should load maxSessions from config", async () => {

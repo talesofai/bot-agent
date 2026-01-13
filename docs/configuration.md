@@ -44,8 +44,14 @@ OPENCODE_MODEL=claude-sonnet-4-20250514
 # 平台选择: qq | discord
 PLATFORM=qq
 
-# LuckyLilliaBot Milky WebSocket 地址
-MILKY_URL=ws://localhost:3000
+# llbot Redis 注册表前缀
+LLBOT_REGISTRY_PREFIX=llbot:registry
+
+# 注册 TTL（秒）
+LLBOT_REGISTRY_TTL_SEC=30
+
+# 注册刷新间隔（秒）
+LLBOT_REGISTRY_REFRESH_SEC=10
 
 # Discord 平台配置（规划）
 DISCORD_TOKEN=
@@ -54,7 +60,7 @@ DISCORD_APPLICATION_ID=
 # WebSocket 重连配置（当前使用内置默认值）
 ```
 
-> `SERVICE_ROLE=worker` 时可不提供平台连接配置；否则 `PLATFORM=qq` 必须提供 `MILKY_URL`，`PLATFORM=discord` 必须提供 `DISCORD_TOKEN`。
+> `SERVICE_ROLE=worker` 时可不提供平台连接配置；否则 `PLATFORM=qq` 需要 Redis 注册表可用，`PLATFORM=discord` 必须提供 `DISCORD_TOKEN`。
 >
 > Discord Adapter 当前仍是占位实现，`SERVICE_ROLE=adapter/all` 且 `PLATFORM=discord` 时会直接报错。
 
@@ -86,6 +92,9 @@ APP_VERSION=
 ```env
 # 群数据目录
 GROUPS_DATA_DIR=/data/groups
+
+# 数据根目录（用于 router/bots 等）
+DATA_DIR=/data
 ```
 
 `GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置与会话历史。
@@ -118,9 +127,11 @@ server:
   host: 0.0.0.0
   port: 8080
 
-# Milky 连接配置
-milky:
-  url: ${MILKY_URL}
+# llbot Redis 注册表配置
+llbotRegistry:
+  prefix: ${LLBOT_REGISTRY_PREFIX:-llbot:registry}
+  ttlSeconds: ${LLBOT_REGISTRY_TTL_SEC:-30}
+  refreshSeconds: ${LLBOT_REGISTRY_REFRESH_SEC:-10}
 
 # Agent 配置
 agent:
@@ -195,11 +206,14 @@ logging:
 ```yaml
 # 群特定配置
 enabled: true # 是否启用 AI 回复
-triggerMode: mention # 触发方式: mention, keyword, all
-keywords: # keyword 模式的触发词
+triggerMode: mention # 触发方式: mention | keyword
+keywords: # keyword 模式的触发词（群级）
   - "小助手"
   - "机器人"
-cooldown: 5 # 群级冷却时间（秒）
+keywordRouting: # 关键词路由开关（群级）
+  enableGlobal: true # 是否响应全局关键词
+  enableGroup: true # 是否响应群关键词
+  enableBot: true # 是否允许机器人关键词
 maxSessions: 1 # 每个用户最大会话数
 model: claude-sonnet-4-20250514 # 覆盖 OPENCODE_MODEL（可选）
 
@@ -208,6 +222,32 @@ adminUsers:
   - "123456789" # QQ 号
   - "987654321"
 ```
+
+关键词路由规则：全局/群关键词由群内所有 Bot 回复；机器人关键词仅对应 Bot 回复。
+群级开关由 `keywordRouting` 控制，机器人级开关可在机器人配置中进一步细化。
+
+### 全局关键词配置
+
+```yaml
+# /data/router/global.yaml
+keywords:
+  - "生成图像"
+  - "画图"
+```
+
+### 机器人关键词配置
+
+```yaml
+# /data/bots/{bot_id}/config.yaml
+keywords:
+  - "小布小布"
+keywordRouting:
+  enableGlobal: true # 是否响应全局关键词
+  enableGroup: true # 是否响应群关键词
+  enableBot: true # 是否使用机器人关键词
+```
+
+`bot_id` 为平台账号 ID（QQ 号或 Discord ID）。
 
 ## 配置热更新
 

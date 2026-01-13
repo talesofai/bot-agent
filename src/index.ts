@@ -1,15 +1,22 @@
 import { getConfig } from "./config";
 import { logger } from "./logger";
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { createAdapter } from "./adapters/index";
 
 import type { Bot, SessionEvent, SessionElement } from "./types/index";
 import { BullmqResponseQueue, BullmqSessionQueue } from "./queue";
 import { SessionManager, buildSessionId } from "./session";
 import { GroupStore } from "./store";
+import { RouterStore } from "./store/router";
 import { ResponseWorker, ShellOpencodeRunner, SessionWorker } from "./worker";
 import { startHttpServer, type HttpServer } from "./http/server";
-import { extractSessionKey, shouldEnqueue } from "./entry/trigger";
+import {
+  extractSessionKey,
+  matchesKeywords,
+  shouldEnqueue,
+} from "./entry/trigger";
+import { EchoTracker } from "./entry/echo";
 
 const config = getConfig();
 
@@ -38,6 +45,8 @@ const bot: Bot | null = adapter
   : null;
 const sessionManager = new SessionManager();
 const groupStore = adapter ? new GroupStore() : null;
+const dataRoot = config.DATA_DIR ?? path.dirname(config.GROUPS_DATA_DIR);
+const routerStore = adapter ? new RouterStore({ dataDir: dataRoot }) : null;
 if (groupStore) {
   groupStore
     .init()
@@ -48,7 +57,6 @@ if (groupStore) {
       logger.error({ err }, "Failed to initialize GroupStore");
     });
 }
-const groupCooldowns = new Map<string, number>();
 const sessionQueueName = "session-jobs";
 const responseQueueName = "session-responses";
 const sessionQueue = new BullmqSessionQueue({
@@ -106,6 +114,8 @@ startHttpServer({ logger })
   });
 
 // Register message handler
+const echoTracker = new EchoTracker();
+
 if (adapter && groupStore) {
   adapter.onEvent(async (message: SessionEvent) => {
     const groupId = config.DEFAULT_GROUP_ID ?? message.channelId;
@@ -114,14 +124,58 @@ if (adapter && groupStore) {
     if (!groupConfig || !groupConfig.enabled) {
       return;
     }
+    const routerSnapshot = await routerStore?.getSnapshot();
+    const globalKeywords = routerSnapshot?.globalKeywords ?? [];
+    const botConfigs = routerSnapshot?.botConfigs ?? new Map();
+    const defaultRouting = {
+      enableGlobal: true,
+      enableGroup: true,
+      enableBot: true,
+    };
+    const groupRouting = groupConfig.keywordRouting ?? defaultRouting;
+    const selfId = message.selfId ?? "";
+    const botConfig = selfId ? botConfigs.get(selfId) : undefined;
+    const botRouting = botConfig?.keywordRouting ?? defaultRouting;
+    const effectiveRouting = {
+      enableGlobal: groupRouting.enableGlobal && botRouting.enableGlobal,
+      enableGroup: groupRouting.enableGroup && botRouting.enableGroup,
+      enableBot: groupRouting.enableBot && botRouting.enableBot,
+    };
+    const keywordCandidates: string[] = [];
+    if (effectiveRouting.enableGlobal) {
+      keywordCandidates.push(...globalKeywords);
+    }
+    if (effectiveRouting.enableGroup) {
+      keywordCandidates.push(...groupConfig.keywords);
+    }
+    if (effectiveRouting.enableBot) {
+      keywordCandidates.push(...(botConfig?.keywords ?? []));
+    }
+    const keywordMatched = matchesKeywords(message.content, keywordCandidates);
+    const botKeywordMatches = new Set<string>();
+    if (groupRouting.enableBot) {
+      for (const [botId, config] of botConfigs) {
+        if (!config.keywordRouting.enableBot) {
+          continue;
+        }
+        if (matchesKeywords(message.content, config.keywords)) {
+          botKeywordMatches.add(botId);
+        }
+      }
+    }
     if (
       !shouldEnqueue({
-        groupId,
         groupConfig,
         message,
-        context: { cooldowns: groupCooldowns },
+        keywordMatched,
+        botKeywordMatches,
       })
     ) {
+      if (echoTracker.shouldEcho(message)) {
+        await adapter.sendMessage(message, message.content, {
+          elements: message.elements,
+        });
+      }
       return;
     }
     const { key, content } = extractSessionKey(message.content);
@@ -136,6 +190,7 @@ if (adapter && groupStore) {
         id: message.messageId,
         channelId: message.channelId,
         userId: message.userId,
+        botId: message.selfId,
         contentHash,
         contentLength: logContent.length,
       },

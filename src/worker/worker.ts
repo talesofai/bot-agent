@@ -217,11 +217,7 @@ export class SessionWorker {
   ): Promise<void> {
     const entries: HistoryEntry[] = [];
 
-    const hasUserEntry =
-      session.content &&
-      this.hasMatchingUserEntry(historyEntries ?? [], session.content, output);
-
-    if (session.content && !hasUserEntry) {
+    if (session.content) {
       entries.push({
         role: "user",
         content: session.content,
@@ -229,16 +225,15 @@ export class SessionWorker {
       });
     }
 
-    const hasAssistantEntry =
-      output &&
-      historyEntries?.some(
-        (entry) => entry.role === "assistant" && entry.content === output,
-      );
-
-    if (historyEntries && historyEntries.length > 0) {
-      entries.push(...historyEntries);
+    const nonUserEntries =
+      historyEntries?.filter((entry) => entry.role !== "user") ?? [];
+    if (nonUserEntries.length > 0) {
+      entries.push(...nonUserEntries);
     }
 
+    const hasAssistantEntry = nonUserEntries.some(
+      (entry) => entry.role === "assistant",
+    );
     if (!hasAssistantEntry && output) {
       entries.push({
         role: "assistant",
@@ -250,35 +245,6 @@ export class SessionWorker {
     for (const entry of entries) {
       await this.sessionManager.appendHistory(sessionInfo, entry);
     }
-  }
-
-  private hasMatchingUserEntry(
-    historyEntries: HistoryEntry[],
-    input: string,
-    output?: string,
-  ): boolean {
-    if (historyEntries.length === 0) {
-      return false;
-    }
-    let assistantIndex = -1;
-    if (output !== undefined) {
-      for (let i = historyEntries.length - 1; i >= 0; i -= 1) {
-        const entry = historyEntries[i];
-        if (entry.role === "assistant" && entry.content === output) {
-          assistantIndex = i;
-          break;
-        }
-      }
-    }
-    const startIndex =
-      assistantIndex >= 0 ? assistantIndex - 1 : historyEntries.length - 1;
-    for (let i = startIndex; i >= 0; i -= 1) {
-      const entry = historyEntries[i];
-      if (entry.role === "user") {
-        return entry.content === input;
-      }
-    }
-    return false;
   }
 
   private mapJob(job: Job<SessionJobData>): SessionJob {

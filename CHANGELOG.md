@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+## [0.0.18] - 2026-01-13
+
+### Changed
+
+- 平台消息模型改为 SessionEvent 并更新 QQ 适配与队列
+- 开发计划文档对齐 SessionEvent 抽象
+- 增加 opencode 集成测试并补充运行说明
+- 增加 response worker Redis 集成测试并补充运行说明
+- 增加 session worker Redis 集成测试
+- 开发文档更新 Session 事件结构
+- 开发文档补充 OPENCODE_BIN 用法
+
 ## [0.0.17] - 2026-01-13
 
 ### Fixed
@@ -111,13 +123,6 @@
 - 快速开始文档补充会话 key 前缀说明
 - 配置文档说明 cooldown 为群级冷却
 - API 文档补充 cooldown 为群级冷却
-- 增加 opencode 集成测试并补充运行说明
-- 开发文档补充 OPENCODE_BIN 用法
-- 增加 response worker Redis 集成测试并补充运行说明
-- 增加 session worker Redis 集成测试
-- 开发文档更新 Session 事件结构
-- 开发计划文档对齐 SessionEvent 抽象
-- 平台消息模型改为 SessionEvent 并更新 QQ 适配与队列
 - Agent customization 文档标注角色配置路径为规划
 - Agent customization 文档补充技能示例为格式说明
 - 开发计划文档标注 Discord 技术栈为规划

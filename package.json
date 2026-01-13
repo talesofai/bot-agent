@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "llbot:registrar": "bun run src/llbot-registrar.ts",
+    "clean:sessions": "bun run src/bin/clean-sessions.ts",
     "build": "bun build ./src/index.ts --outdir ./dist --target node",
     "start": "bun run dist/index.js",
     "test": "bun test src",

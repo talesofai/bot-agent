@@ -13,6 +13,7 @@ export interface LlbotRegistrarOptions {
   botId: string;
   wsUrl: string;
   platform: string;
+  indexKey?: string;
   ttlSec?: number;
   refreshIntervalSec?: number;
   logger?: Logger;
@@ -23,6 +24,7 @@ export class LlbotRegistrar {
   private redis: RedisClient;
   private key: string;
   private payloadBase: { wsUrl: string; platform: string };
+  private indexKey: string;
   private ttlSec: number | null;
   private refreshIntervalSec: number;
   private logger: Logger;
@@ -39,6 +41,7 @@ export class LlbotRegistrar {
       options.redis ??
       new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.key = `${options.prefix}:${options.botId}`;
+    this.indexKey = options.indexKey ?? `${options.prefix}:index`;
     this.payloadBase = { wsUrl: options.wsUrl, platform: options.platform };
     this.ttlSec = ttlSec;
     this.refreshIntervalSec = refreshIntervalSec;
@@ -80,6 +83,7 @@ export class LlbotRegistrar {
       } else {
         await this.redis.set(this.key, payload);
       }
+      await this.redis.sadd(this.indexKey, this.key);
     } catch (err) {
       this.logger.error({ err }, "Failed to refresh llbot registry entry");
     } finally {

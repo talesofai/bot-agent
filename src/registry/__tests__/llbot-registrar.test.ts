@@ -32,9 +32,13 @@ describe("LlbotRegistrar", () => {
 
   test("writes registry entry with ttl", async () => {
     const setCalls: unknown[][] = [];
+    const saddCalls: unknown[][] = [];
     const mockRedis = {
       set: mock(async (...args: unknown[]) => {
         setCalls.push(args);
+      }),
+      sadd: mock(async (...args: unknown[]) => {
+        saddCalls.push(args);
       }),
       quit: mock(async () => {}),
     };
@@ -65,13 +69,20 @@ describe("LlbotRegistrar", () => {
       platform: "qq",
     });
     expect(typeof parsed.lastSeenAt).toBe("string");
+    expect(saddCalls).toEqual([
+      ["llbot:registry:index", "llbot:registry:bot-1"],
+    ]);
   });
 
   test("writes registry entry without ttl when ttl is zero", async () => {
     const setCalls: unknown[][] = [];
+    const saddCalls: unknown[][] = [];
     const mockRedis = {
       set: mock(async (...args: unknown[]) => {
         setCalls.push(args);
+      }),
+      sadd: mock(async (...args: unknown[]) => {
+        saddCalls.push(args);
       }),
       quit: mock(async () => {}),
     };
@@ -92,6 +103,9 @@ describe("LlbotRegistrar", () => {
 
     expect(setCalls.length).toBe(1);
     expect(setCalls[0].length).toBe(2);
+    expect(saddCalls).toEqual([
+      ["llbot:registry:index", "llbot:registry:bot-2"],
+    ]);
   });
 
   test("logs refresh errors and keeps running", async () => {
@@ -99,6 +113,7 @@ describe("LlbotRegistrar", () => {
       set: mock(async () => {
         throw new Error("redis down");
       }),
+      sadd: mock(async () => {}),
       quit: mock(async () => {}),
     };
     const logger = createMockLogger();

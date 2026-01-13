@@ -12,6 +12,7 @@ export interface LlbotRegistryEntry {
 export interface LlbotRegistryOptions {
   redisUrl: string;
   prefix: string;
+  indexKey?: string;
   refreshIntervalSec?: number;
   logger?: Logger;
 }
@@ -23,6 +24,7 @@ export type RegistryUpdateHandler = (
 export class LlbotRegistry {
   private redis: IORedis;
   private prefix: string;
+  private indexKey: string;
   private logger: Logger;
   private refreshIntervalSec: number;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -32,6 +34,7 @@ export class LlbotRegistry {
   constructor(options: LlbotRegistryOptions) {
     this.redis = new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.prefix = options.prefix;
+    this.indexKey = options.indexKey ?? `${options.prefix}:index`;
     this.refreshIntervalSec = options.refreshIntervalSec ?? 10;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "llbot-registry",
@@ -76,35 +79,28 @@ export class LlbotRegistry {
 
   private async listEntries(): Promise<Map<string, LlbotRegistryEntry>> {
     const entries = new Map<string, LlbotRegistryEntry>();
-    const keyPrefix = `${this.prefix}:`;
-    let cursor = "0";
-
-    do {
-      const [nextCursor, keys] = await this.redis.scan(
-        cursor,
-        "MATCH",
-        `${keyPrefix}*`,
-        "COUNT",
-        "100",
-      );
-      cursor = nextCursor;
-      if (keys.length === 0) {
+    const keys = await this.redis.smembers(this.indexKey);
+    if (keys.length === 0) {
+      return entries;
+    }
+    const values = await this.redis.mget(keys);
+    const staleKeys: string[] = [];
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      const value = values[i];
+      if (!value) {
+        staleKeys.push(key);
         continue;
       }
-      const values = await this.redis.mget(keys);
-      for (let i = 0; i < keys.length; i += 1) {
-        const key = keys[i];
-        const value = values[i];
-        if (!value) {
-          continue;
-        }
-        const botId = key.slice(keyPrefix.length);
-        const entry = this.parseEntry(botId, value);
-        if (entry) {
-          entries.set(botId, entry);
-        }
+      const botId = key.slice(`${this.prefix}:`.length);
+      const entry = this.parseEntry(botId, value);
+      if (entry) {
+        entries.set(botId, entry);
       }
-    } while (cursor !== "0");
+    }
+    if (staleKeys.length > 0) {
+      await this.redis.srem(this.indexKey, staleKeys);
+    }
 
     return entries;
   }

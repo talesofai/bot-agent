@@ -15,6 +15,7 @@ interface QQAdapterPoolOptions {
   redisUrl: string;
   registryPrefix: string;
   refreshIntervalSec?: number;
+  registryTtlSec?: number;
   logger?: Logger;
 }
 
@@ -41,6 +42,7 @@ export class QQAdapterPool implements PlatformAdapter {
       redisUrl: options.redisUrl,
       prefix: options.registryPrefix,
       refreshIntervalSec: options.refreshIntervalSec,
+      ttlSec: options.registryTtlSec,
       logger: this.logger,
     });
   }

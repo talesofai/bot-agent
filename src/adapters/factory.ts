@@ -18,6 +18,7 @@ export function createAdapter(config: AppConfig): PlatformAdapter {
         redisUrl: config.REDIS_URL,
         registryPrefix: config.LLBOT_REGISTRY_PREFIX,
         refreshIntervalSec: config.LLBOT_REGISTRY_REFRESH_SEC,
+        registryTtlSec: config.LLBOT_REGISTRY_TTL_SEC,
       });
     case "discord":
       // TODO: Implement Discord adapter

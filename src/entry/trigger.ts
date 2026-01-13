@@ -1,26 +1,34 @@
 import type { GroupConfig } from "../types/group";
 import type { SessionEvent } from "../types";
 
+export interface KeywordMatch {
+  global: boolean;
+  group: boolean;
+  bot: Set<string>;
+}
+
 export interface TriggerInput {
   groupConfig: GroupConfig;
   message: SessionEvent;
-  keywordMatched: boolean;
-  botKeywordMatches: Set<string>;
+  keywordMatch: KeywordMatch;
 }
 
 export function shouldEnqueue(input: TriggerInput): boolean {
-  const { groupConfig, message, keywordMatched, botKeywordMatches } = input;
+  const { groupConfig, message, keywordMatch } = input;
   if (mentionsSelf(message)) {
     return true;
   }
   if (groupConfig.triggerMode === "mention") {
     return false;
   }
-  const selfId = message.selfId ?? "";
-  if (botKeywordMatches.size > 0 && !botKeywordMatches.has(selfId)) {
+  if (keywordMatch.global || keywordMatch.group) {
+    return true;
+  }
+  if (keywordMatch.bot.size === 0) {
     return false;
   }
-  return keywordMatched;
+  const selfId = message.selfId ?? "";
+  return keywordMatch.bot.has(selfId);
 }
 
 function mentionsSelf(message: SessionEvent): boolean {

@@ -104,11 +104,8 @@ export class GroupFileRepository {
       const parsed = parseYaml(content);
       return GroupConfigSchema.parse(parsed);
     } catch (err) {
-      this.logger.warn(
-        { err, configPath },
-        "Failed to parse config, using defaults",
-      );
-      return { ...DEFAULT_GROUP_CONFIG };
+      this.logger.error({ err, configPath }, "Failed to parse config");
+      throw err;
     }
   }
 

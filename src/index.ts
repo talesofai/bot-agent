@@ -141,17 +141,12 @@ if (adapter && groupStore) {
       enableGroup: groupRouting.enableGroup && botRouting.enableGroup,
       enableBot: groupRouting.enableBot && botRouting.enableBot,
     };
-    const keywordCandidates: string[] = [];
-    if (effectiveRouting.enableGlobal) {
-      keywordCandidates.push(...globalKeywords);
-    }
-    if (effectiveRouting.enableGroup) {
-      keywordCandidates.push(...groupConfig.keywords);
-    }
-    if (effectiveRouting.enableBot) {
-      keywordCandidates.push(...(botConfig?.keywords ?? []));
-    }
-    const keywordMatched = matchesKeywords(message.content, keywordCandidates);
+    const globalMatch =
+      effectiveRouting.enableGlobal &&
+      matchesKeywords(message.content, globalKeywords);
+    const groupMatch =
+      effectiveRouting.enableGroup &&
+      matchesKeywords(message.content, groupConfig.keywords);
     const botKeywordMatches = new Set<string>();
     if (groupRouting.enableBot) {
       for (const [botId, config] of botConfigs) {
@@ -167,8 +162,11 @@ if (adapter && groupStore) {
       !shouldEnqueue({
         groupConfig,
         message,
-        keywordMatched,
-        botKeywordMatches,
+        keywordMatch: {
+          global: globalMatch,
+          group: groupMatch,
+          bot: botKeywordMatches,
+        },
       })
     ) {
       if (echoTracker.shouldEcho(message)) {

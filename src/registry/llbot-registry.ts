@@ -13,6 +13,7 @@ export interface LlbotRegistryOptions {
   redisUrl: string;
   prefix: string;
   refreshIntervalSec?: number;
+  ttlSec?: number;
   logger?: Logger;
 }
 
@@ -25,6 +26,7 @@ export class LlbotRegistry {
   private prefix: string;
   private logger: Logger;
   private refreshIntervalSec: number;
+  private ttlSec: number | null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private refreshInFlight = false;
   private onUpdate: RegistryUpdateHandler | null = null;
@@ -33,6 +35,7 @@ export class LlbotRegistry {
     this.redis = new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.prefix = options.prefix;
     this.refreshIntervalSec = options.refreshIntervalSec ?? 10;
+    this.ttlSec = options.ttlSec ?? null;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "llbot-registry",
     });
@@ -100,7 +103,7 @@ export class LlbotRegistry {
         }
         const botId = key.slice(keyPrefix.length);
         const entry = this.parseEntry(botId, value);
-        if (entry) {
+        if (entry && this.isEntryFresh(entry)) {
           entries.set(botId, entry);
         }
       }
@@ -127,5 +130,31 @@ export class LlbotRegistry {
       typeof data.lastSeenAt === "string" ? data.lastSeenAt : undefined;
 
     return { botId, wsUrl, platform, lastSeenAt };
+  }
+
+  private isEntryFresh(entry: LlbotRegistryEntry): boolean {
+    if (!this.ttlSec) {
+      return true;
+    }
+    if (!entry.lastSeenAt) {
+      this.logger.warn(
+        { botId: entry.botId },
+        "Registry entry missing lastSeenAt",
+      );
+      return false;
+    }
+    const timestamp = Date.parse(entry.lastSeenAt);
+    if (Number.isNaN(timestamp)) {
+      this.logger.warn(
+        { botId: entry.botId, lastSeenAt: entry.lastSeenAt },
+        "Registry entry has invalid lastSeenAt",
+      );
+      return false;
+    }
+    const ageMs = Date.now() - timestamp;
+    if (ageMs > this.ttlSec * 1000) {
+      return false;
+    }
+    return true;
   }
 }

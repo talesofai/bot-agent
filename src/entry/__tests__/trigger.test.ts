@@ -35,8 +35,11 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatched: false,
-      botKeywordMatches: new Set(),
+      keywordMatch: {
+        global: false,
+        group: false,
+        bot: new Set(),
+      },
     });
     expect(allowed).toBe(true);
   });
@@ -53,8 +56,11 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatched: false,
-      botKeywordMatches: new Set(["bot-2"]),
+      keywordMatch: {
+        global: false,
+        group: false,
+        bot: new Set(["bot-2"]),
+      },
     });
     expect(allowed).toBe(true);
   });
@@ -65,8 +71,26 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatched: true,
-      botKeywordMatches: new Set(),
+      keywordMatch: {
+        global: false,
+        group: true,
+        bot: new Set(),
+      },
+    });
+    expect(allowed).toBe(true);
+  });
+
+  test("global keyword is not blocked by other bot keywords", () => {
+    const message = { ...baseMessage, content: "global-key bot-a" };
+    const config = makeConfig({ triggerMode: "keyword" });
+    const allowed = shouldEnqueue({
+      groupConfig: config,
+      message,
+      keywordMatch: {
+        global: true,
+        group: false,
+        bot: new Set(["bot-2"]),
+      },
     });
     expect(allowed).toBe(true);
   });
@@ -77,8 +101,11 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatched: true,
-      botKeywordMatches: new Set(["bot-2"]),
+      keywordMatch: {
+        global: false,
+        group: false,
+        bot: new Set(["bot-2"]),
+      },
     });
     expect(allowed).toBe(false);
   });
@@ -89,8 +116,11 @@ describe("shouldEnqueue", () => {
     const allowed = shouldEnqueue({
       groupConfig: config,
       message,
-      keywordMatched: true,
-      botKeywordMatches: new Set([baseMessage.selfId]),
+      keywordMatch: {
+        global: false,
+        group: false,
+        bot: new Set([baseMessage.selfId]),
+      },
     });
     expect(allowed).toBe(true);
   });

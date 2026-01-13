@@ -37,64 +37,71 @@ describe("opencode integration", () => {
       const session = await sessionManager.createSession(groupId, userId, {
         key,
       });
-      const now = new Date().toISOString();
-      const userEntry: HistoryEntry = {
-        role: "user",
-        content: "Hello",
-        createdAt: now,
-      };
-      await sessionManager.appendHistory(session, userEntry);
-
-      const history = await sessionManager.readHistory(session, {
-        maxEntries: 20,
-      });
-      const agentPrompt = await sessionManager.getAgentPrompt(groupId);
-      const systemPrompt = buildSystemPrompt(agentPrompt);
-      const prompt = buildOpencodePrompt({
-        systemPrompt,
-        history,
-        input: "Say hi in one short sentence.",
-      });
       const model = process.env.OPENCODE_MODEL ?? "glm-4.7";
       const launcher = new OpencodeLauncher();
-      const launchSpec = launcher.buildLaunchSpec(session, prompt, model);
-      if (process.env.OPENCODE_BIN) {
-        launchSpec.command = process.env.OPENCODE_BIN;
-      }
-
       const runner = new ShellOpencodeRunner();
-      const job: SessionJob = {
-        id: "opencode-integration",
-        data: {
-          groupId,
-          sessionId: session.meta.sessionId,
-          userId,
-          key,
-          payload: {
-            input: prompt,
-            channelId: "channel-1",
-            channelType: "group",
-          },
-        },
-      };
-      const result = await runner.run({
-        job,
-        session,
-        history,
-        launchSpec,
-      });
-      const createdAt = new Date().toISOString();
-      if (result.historyEntries?.length) {
-        for (const entry of result.historyEntries) {
-          await sessionManager.appendHistory(session, entry);
-        }
-      } else if (result.output) {
+
+      const runTurn = async (input: string): Promise<void> => {
+        const now = new Date().toISOString();
         await sessionManager.appendHistory(session, {
-          role: "assistant",
-          content: result.output,
-          createdAt,
+          role: "user",
+          content: input,
+          createdAt: now,
         });
-      }
+        const history = await sessionManager.readHistory(session, {
+          maxEntries: 20,
+        });
+        const agentPrompt = await sessionManager.getAgentPrompt(groupId);
+        const systemPrompt = buildSystemPrompt(agentPrompt);
+        const prompt = buildOpencodePrompt({
+          systemPrompt,
+          history,
+          input,
+        });
+        const launchSpec = launcher.buildLaunchSpec(session, prompt, model);
+        if (process.env.OPENCODE_BIN) {
+          launchSpec.command = process.env.OPENCODE_BIN;
+        }
+        const job: SessionJob = {
+          id: "opencode-integration",
+          data: {
+            groupId,
+            sessionId: session.meta.sessionId,
+            userId,
+            key,
+            payload: {
+              input: prompt,
+              channelId: "channel-1",
+              channelType: "group",
+            },
+          },
+        };
+        const result = await runner.run({
+          job,
+          session,
+          history,
+          launchSpec,
+        });
+        const createdAt = new Date().toISOString();
+        if (result.historyEntries?.length) {
+          for (const entry of result.historyEntries) {
+            await sessionManager.appendHistory(session, entry);
+          }
+          return;
+        }
+        if (result.output) {
+          await sessionManager.appendHistory(session, {
+            role: "assistant",
+            content: result.output,
+            createdAt,
+          });
+          return;
+        }
+        throw new Error("Opencode returned no output");
+      };
+
+      await runTurn("Say hi in one short sentence.");
+      await runTurn("Now answer in one short sentence.");
 
       const updated = await sessionManager.readHistory(session, {
         maxEntries: 50,
@@ -102,7 +109,7 @@ describe("opencode integration", () => {
       const assistantMessages = updated.filter(
         (entry) => entry.role === "assistant",
       );
-      expect(assistantMessages.length).toBeGreaterThan(0);
+      expect(assistantMessages.length).toBeGreaterThanOrEqual(2);
       const lastMessage = assistantMessages[assistantMessages.length - 1];
       expect(lastMessage.content.trim().length).toBeGreaterThan(0);
     } finally {

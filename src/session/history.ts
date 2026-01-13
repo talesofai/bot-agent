@@ -133,9 +133,24 @@ export class HistoryStore {
         const buffer = Buffer.allocUnsafe(readSize);
         const { bytesRead } = await file.read(buffer, 0, readSize, position);
         const slice = buffer.subarray(0, bytesRead);
+        const newLines = countNewlines(slice);
+        const totalLines = linesFound + newLines;
+
+        if (totalLines > maxEntries) {
+          const keepLines = maxEntries - linesFound;
+          const trimmed =
+            keepLines > 0 ? trimToLastLines(slice, keepLines) : null;
+          if (trimmed && trimmed.length > 0) {
+            chunks.unshift(trimmed);
+            totalBytes += trimmed.length;
+          }
+          linesFound = maxEntries;
+          break;
+        }
+
         chunks.unshift(slice);
         totalBytes += bytesRead;
-        linesFound += countNewlines(slice);
+        linesFound = totalLines;
         if (totalBytes >= maxBytes) {
           break;
         }
@@ -150,10 +165,22 @@ export class HistoryStore {
 
 function countNewlines(buffer: Buffer): number {
   let count = 0;
-  for (const byte of buffer) {
-    if (byte === 10) {
-      count += 1;
-    }
+  let offset = buffer.length;
+  while ((offset = buffer.lastIndexOf(10, offset - 1)) !== -1) {
+    count += 1;
   }
   return count;
+}
+
+function trimToLastLines(buffer: Buffer, keepLines: number): Buffer {
+  let position = buffer.length - 1;
+  let newlineIndex = -1;
+  for (let i = 0; i < keepLines; i += 1) {
+    newlineIndex = buffer.lastIndexOf(10, position);
+    if (newlineIndex === -1) {
+      return buffer;
+    }
+    position = newlineIndex - 1;
+  }
+  return buffer.subarray(newlineIndex + 1);
 }

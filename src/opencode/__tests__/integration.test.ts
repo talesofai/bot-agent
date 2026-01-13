@@ -76,10 +76,18 @@ describe("opencode integration", () => {
             sessionId: session.meta.sessionId,
             userId,
             key,
-            payload: {
-              input: prompt,
+            session: {
+              type: "message",
+              platform: "test",
+              selfId: "bot-1",
+              userId,
+              guildId: "group-1",
               channelId: "channel-1",
-              channelType: "group",
+              messageId: "msg-1",
+              content: prompt,
+              elements: [{ type: "text", text: prompt }],
+              timestamp: Date.now(),
+              extras: {},
             },
           },
         };

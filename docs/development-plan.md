@@ -60,30 +60,38 @@
 ```typescript
 interface PlatformAdapter {
   platform: string; // 'qq' | 'discord'
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  onMessage(handler: MessageHandler): void;
-  onConnect(handler: ConnectionHandler): void;
-  onDisconnect(handler: ConnectionHandler): void;
-  sendMessage(options: SendMessageOptions): Promise<void>;
+  connect(bot: Bot): Promise<void>;
+  disconnect(bot: Bot): Promise<void>;
+  onEvent(handler: MessageHandler): void;
+  sendMessage(
+    session: SessionEvent,
+    content: string,
+    options?: SendMessageOptions,
+  ): Promise<void>;
   getBotUserId(): string | null;
 }
 ```
 
-### UnifiedMessage 统一消息格式
+### SessionEvent 统一事件格式
 
 ```typescript
-interface UnifiedMessage {
-  id: string;
+interface SessionEvent {
+  type: "message";
   platform: string;
-  channelId: string; // 群号 / 频道 ID
-  channelType: "group" | "private";
+  selfId: string;
   userId: string;
-  sender: { nickname; displayName; role };
+  guildId?: string;
+  channelId: string; // 群号 / 频道 ID
+  messageId?: string;
   content: string;
-  mentionsBot: boolean;
+  elements: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; url: string }
+    | { type: "mention"; userId: string }
+    | { type: "quote"; messageId: string }
+  >;
   timestamp: number;
-  raw: unknown; // 平台原始数据
+  extras: Record<string, unknown>; // 平台原始数据
 }
 ```
 
@@ -113,7 +121,7 @@ interface UnifiedMessage {
 | 初始化 TypeScript 项目       |        | ⬜   |
 | 配置 ESLint + Prettier       |        | ⬜   |
 | 定义 PlatformAdapter 接口    |        | ⬜   |
-| 定义 UnifiedMessage 类型     |        | ⬜   |
+| 定义 SessionEvent 类型       |        | ⬜   |
 | 实现配置加载（dotenv + zod） |        | ⬜   |
 | 实现 Logger 模块（pino）     |        | ⬜   |
 

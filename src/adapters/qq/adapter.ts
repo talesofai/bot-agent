@@ -1,9 +1,11 @@
 import { EventEmitter } from "node:events";
 import type { Logger } from "pino";
 import type {
+  Bot,
   PlatformAdapter,
   MessageHandler,
   SendMessageOptions,
+  SessionEvent,
 } from "../../types/platform";
 import { MilkyConnection } from "./connection";
 import { parseMessage } from "./parser";
@@ -24,6 +26,7 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
   private sender: MessageSender;
   private logger: Logger;
   private botUserId: string | null = null;
+  private bot: Bot | null = null;
   private isShuttingDown = false;
 
   constructor(options: QQAdapterOptions = {}) {
@@ -42,6 +45,10 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
       onEvent: this.handleEvent.bind(this),
       onBotId: (id: string) => {
         this.botUserId = id;
+        if (this.bot) {
+          this.bot.selfId = id;
+          this.bot.status = "connected";
+        }
         this.logger.info({ botId: id }, "Bot ID received");
       },
     });
@@ -61,58 +68,54 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
     this.sender = new MessageSender(this.connection, this.logger);
   }
 
-  async connect(): Promise<void> {
+  async connect(bot: Bot): Promise<void> {
+    this.bot = bot;
     this.isShuttingDown = false; // Reset in case of reconnection after previous disconnect
     this.logger.info("Connecting to Milky server...");
     await this.connection.connect();
     this.logger.info("Connected to Milky server");
   }
 
-  async disconnect(): Promise<void> {
+  async disconnect(bot: Bot): Promise<void> {
     this.isShuttingDown = true;
+    bot.status = "disconnected";
     this.logger.info("Disconnecting from Milky server...");
     await this.connection.disconnect();
     this.logger.info("Disconnected from Milky server");
   }
 
-  onMessage(handler: MessageHandler): void {
-    this.on("message", handler);
+  onEvent(handler: MessageHandler): void {
+    this.on("event", handler);
   }
 
-  async sendMessage(options: SendMessageOptions): Promise<void> {
-    await this.sender.send(options);
+  async sendMessage(
+    session: SessionEvent,
+    content: string,
+    options?: SendMessageOptions,
+  ): Promise<void> {
+    await this.sender.send(session, content, options);
   }
 
   getBotUserId(): string | null {
     return this.botUserId;
   }
 
-  /** Register a handler called when connection is established (including reconnects) */
-  onConnect(handler: () => void): void {
-    this.on("connect", handler);
-  }
-
-  /** Register a handler called when connection is lost */
-  onDisconnect(handler: () => void): void {
-    this.on("disconnect", handler);
-  }
-
   private async handleEvent(event: unknown): Promise<void> {
     try {
-      const message = parseMessage(event, this.botUserId);
+      const message = parseMessage(event);
       if (message) {
-        this.logger.debug({ messageId: message.id }, "Message received");
-        await this.emitMessage(message);
+        this.logger.debug({ messageId: message.messageId }, "Message received");
+        await this.emitEvent(message);
       }
     } catch (err) {
       this.logger.error({ err, event }, "Failed to parse event");
     }
   }
 
-  private async emitMessage(
+  private async emitEvent(
     message: Parameters<MessageHandler>[0],
   ): Promise<void> {
-    const handlers = this.listeners("message") as MessageHandler[];
+    const handlers = this.listeners("event") as MessageHandler[];
     for (const handler of handlers) {
       try {
         await handler(message);

@@ -4,7 +4,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import pino from "pino";
 
-import type { ResponseQueue, SessionJob } from "../../queue";
+import type { ResponseJob, ResponseJobData, ResponseQueue } from "../../queue";
 import { BullmqSessionQueue } from "../../queue";
 import { SessionManager, buildSessionId } from "../../session";
 import type { SessionActivityTracker } from "../../session";
@@ -22,8 +22,8 @@ class FakeRunner implements OpencodeRunner {
 }
 
 class MemoryResponseQueue implements ResponseQueue {
-  private resolver?: (job: SessionJob["data"]) => void;
-  private promise: Promise<SessionJob["data"]>;
+  private resolver?: (job: ResponseJobData) => void;
+  private promise: Promise<ResponseJobData>;
 
   constructor() {
     this.promise = new Promise((resolve) => {
@@ -31,14 +31,14 @@ class MemoryResponseQueue implements ResponseQueue {
     });
   }
 
-  async enqueue(jobData: SessionJob["data"]): Promise<SessionJob> {
+  async enqueue(jobData: ResponseJobData): Promise<ResponseJob> {
     this.resolver?.(jobData);
     return { id: "response-job", data: jobData };
   }
 
   async close(): Promise<void> {}
 
-  async waitForJob(timeoutMs: number): Promise<SessionJob["data"]> {
+  async waitForJob(timeoutMs: number): Promise<ResponseJobData> {
     return withTimeout(this.promise, timeoutMs);
   }
 }
@@ -100,10 +100,18 @@ describe("session worker integration", () => {
         sessionId,
         userId,
         key,
-        payload: {
-          input: "Hello there",
+        session: {
+          type: "message",
+          platform: "test",
+          selfId: "bot-1",
+          userId,
+          guildId: groupId,
           channelId: "channel-1",
-          channelType: "group",
+          messageId: "msg-1",
+          content: "Hello there",
+          elements: [{ type: "text", text: "Hello there" }],
+          timestamp: Date.now(),
+          extras: {},
         },
       });
 

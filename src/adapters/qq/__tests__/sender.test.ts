@@ -2,7 +2,7 @@ import { describe, expect, test, mock, beforeEach } from "bun:test";
 import type { Logger } from "pino";
 import type { MilkyConnection } from "../connection";
 import { MessageSender } from "../sender";
-import type { SendMessageOptions } from "../../../types/platform";
+import type { SendMessageOptions, SessionEvent } from "../../../types/platform";
 
 const createMockLogger = () => {
   const mockLogger = {
@@ -31,38 +31,44 @@ describe("MessageSender", () => {
     return new MessageSender(connection, mockLogger);
   };
 
-  test("should require channelType", async () => {
-    const sender = createSender();
-    const options = {
-      channelId: "123",
-      content: "hello",
-    } as SendMessageOptions;
-
-    await expect(sender.send(options)).rejects.toThrow(
-      "channelType is required",
-    );
-  });
-
   test("should require channelId", async () => {
     const sender = createSender();
-    const options = {
+    const session: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "bot-1",
+      userId: "user-1",
+      guildId: "group-1",
       channelId: "",
-      channelType: "group",
+      messageId: "msg-1",
       content: "hello",
+      elements: [{ type: "text", text: "hello" }],
+      timestamp: 0,
+      extras: {},
     };
 
-    await expect(sender.send(options)).rejects.toThrow("channelId is required");
+    await expect(sender.send(session, "hello")).rejects.toThrow(
+      "channelId is required",
+    );
   });
 
   test("should send group message with string id", async () => {
     const sender = createSender();
-    const options: SendMessageOptions = {
+    const session: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "bot-1",
+      userId: "user-1",
+      guildId: "456",
       channelId: "456",
-      channelType: "group",
+      messageId: "msg-1",
       content: "hi",
+      elements: [{ type: "text", text: "hi" }],
+      timestamp: 0,
+      extras: {},
     };
 
-    await sender.send(options);
+    await sender.send(session, "hi");
 
     expect(sendRequestMock).toHaveBeenCalledTimes(1);
     expect(sendRequestMock).toHaveBeenCalledWith("send_group_msg", {
@@ -71,19 +77,29 @@ describe("MessageSender", () => {
     });
   });
 
-  test("should send private message with attachments", async () => {
+  test("should send private message with elements", async () => {
     const sender = createSender();
-    const options: SendMessageOptions = {
+    const session: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "bot-1",
+      userId: "user-1",
       channelId: "789",
-      channelType: "private",
+      messageId: "msg-1",
       content: "hello",
-      attachments: [
+      elements: [{ type: "text", text: "hello" }],
+      timestamp: 0,
+      extras: {},
+    };
+    const options: SendMessageOptions = {
+      elements: [
+        { type: "text", text: "hello" },
         { type: "image", url: "https://example.com/a.png" },
-        { type: "file", url: "https://example.com/a.txt", name: "a.txt" },
+        { type: "quote", messageId: "msg-9" },
       ],
     };
 
-    await sender.send(options);
+    await sender.send(session, "hello", options);
 
     expect(sendRequestMock).toHaveBeenCalledTimes(1);
     expect(sendRequestMock).toHaveBeenCalledWith("send_private_msg", {
@@ -91,7 +107,7 @@ describe("MessageSender", () => {
       message: [
         { type: "text", data: { text: "hello" } },
         { type: "image", data: { file: "https://example.com/a.png" } },
-        { type: "text", data: { text: "\n[File: a.txt]" } },
+        { type: "text", data: { text: "\n[Quote:msg-9]" } },
       ],
     });
   });

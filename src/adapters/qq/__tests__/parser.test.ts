@@ -24,18 +24,20 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
-    expect(result!.id).toBe("12345");
+    expect(result!.messageId).toBe("12345");
     expect(result!.platform).toBe("qq");
     expect(result!.channelId).toBe("987654321");
     expect(result!.userId).toBe("123456789");
-    expect(result!.sender.nickname).toBe("TestUser");
-    expect(result!.sender.displayName).toBe("Test Display Name");
-    expect(result!.sender.role).toBe("member");
+    expect(result!.selfId).toBe("111111111");
+    expect(result!.guildId).toBe("987654321");
     expect(result!.content).toBe("Hello World!");
-    expect(result!.mentionsBot).toBe(false);
+    expect(result!.elements).toEqual([
+      { type: "text", text: "Hello " },
+      { type: "text", text: "World!" },
+    ]);
     expect(result!.timestamp).toBe(1704067200000);
   });
 
@@ -55,11 +57,12 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
     expect(result!.channelId).toBe("123456789");
     expect(result!.content).toBe("Private message");
+    expect(result!.guildId).toBeUndefined();
   });
 
   test("should detect bot mention correctly", () => {
@@ -82,10 +85,13 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
-    expect(result!.mentionsBot).toBe(true);
+    expect(result!.elements).toEqual([
+      { type: "mention", userId: "111111111" },
+      { type: "text", text: " Help me" },
+    ]);
     expect(result!.content).toBe("Help me");
   });
 
@@ -95,15 +101,15 @@ describe("parseMessage", () => {
       meta_event_type: "heartbeat",
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).toBeNull();
   });
 
   test("should return null for invalid event", () => {
-    expect(parseMessage(null, "111111111")).toBeNull();
-    expect(parseMessage(undefined, "111111111")).toBeNull();
-    expect(parseMessage({}, "111111111")).toBeNull();
+    expect(parseMessage(null)).toBeNull();
+    expect(parseMessage(undefined)).toBeNull();
+    expect(parseMessage({})).toBeNull();
   });
 
   test("should handle empty message array", () => {
@@ -123,7 +129,7 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
     expect(result!.content).toBe("");
@@ -145,7 +151,7 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
     expect(result!.content).toBe("Fallback content");
@@ -166,13 +172,13 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
     expect(result!.content).toBe("Hello from string");
   });
 
-  test("should include channelType in parsed message", () => {
+  test("should set guildId for group messages only", () => {
     const groupEvent = {
       post_type: "message",
       message_type: "group",
@@ -196,14 +202,14 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const groupResult = parseMessage(groupEvent, "111111111");
-    const privateResult = parseMessage(privateEvent, "111111111");
+    const groupResult = parseMessage(groupEvent);
+    const privateResult = parseMessage(privateEvent);
 
-    expect(groupResult!.channelType).toBe("group");
-    expect(privateResult!.channelType).toBe("private");
+    expect(groupResult!.guildId).toBe("987654321");
+    expect(privateResult!.guildId).toBeUndefined();
   });
 
-  test("should detect bot mention in raw_message fallback", () => {
+  test("should parse mentions from raw_message fallback", () => {
     const event = {
       post_type: "message",
       message_type: "group",
@@ -216,14 +222,17 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
-    expect(result!.mentionsBot).toBe(true);
+    expect(result!.elements).toEqual([
+      { type: "mention", userId: "111111111" },
+      { type: "text", text: "Help me" },
+    ]);
     expect(result!.content).toBe("Help me");
   });
 
-  test("should detect bot mention in raw_message with extra CQ params", () => {
+  test("should parse mentions with extra CQ params", () => {
     const event = {
       post_type: "message",
       message_type: "group",
@@ -236,10 +245,13 @@ describe("parseMessage", () => {
       self_id: 111111111,
     };
 
-    const result = parseMessage(event, "111111111");
+    const result = parseMessage(event);
 
     expect(result).not.toBeNull();
-    expect(result!.mentionsBot).toBe(true);
+    expect(result!.elements[0]).toEqual({
+      type: "mention",
+      userId: "111111111",
+    });
   });
 });
 

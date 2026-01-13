@@ -1,24 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
 import { DEFAULT_GROUP_CONFIG, type GroupConfig } from "../../types/group";
-import type { UnifiedMessage } from "../../types/platform";
+import type { SessionEvent } from "../../types/platform";
 import { extractSessionKey, shouldEnqueue } from "../trigger";
 
-const baseMessage: UnifiedMessage = {
-  id: "msg-1",
+const baseMessage: SessionEvent = {
+  type: "message",
   platform: "qq",
+  selfId: "bot-1",
   channelId: "group-1",
-  channelType: "group",
+  guildId: "group-1",
   userId: "user-1",
-  sender: {
-    nickname: "tester",
-    displayName: "Tester",
-    role: "member",
-  },
+  messageId: "msg-1",
   content: "hello",
-  mentionsBot: false,
+  elements: [{ type: "text", text: "hello" }],
   timestamp: 0,
-  raw: {},
+  extras: {},
 };
 
 function makeConfig(overrides: Partial<GroupConfig>): GroupConfig {
@@ -27,7 +24,13 @@ function makeConfig(overrides: Partial<GroupConfig>): GroupConfig {
 
 describe("shouldEnqueue", () => {
   test("matches mention mode", () => {
-    const message = { ...baseMessage, mentionsBot: true };
+    const message = {
+      ...baseMessage,
+      elements: [
+        { type: "mention", userId: baseMessage.selfId },
+        { type: "text", text: baseMessage.content },
+      ],
+    };
     const config = makeConfig({ triggerMode: "mention" });
     const allowed = shouldEnqueue({
       groupId: "group-1",
@@ -53,7 +56,13 @@ describe("shouldEnqueue", () => {
   test("respects cooldown for non-admin users", () => {
     let now = 1000;
     const context = { cooldowns: new Map<string, number>(), now: () => now };
-    const message = { ...baseMessage, mentionsBot: true };
+    const message = {
+      ...baseMessage,
+      elements: [
+        { type: "mention", userId: baseMessage.selfId },
+        { type: "text", text: baseMessage.content },
+      ],
+    };
     const config = makeConfig({ triggerMode: "mention", cooldown: 10 });
     expect(
       shouldEnqueue({
@@ -77,7 +86,14 @@ describe("shouldEnqueue", () => {
   test("admin bypasses cooldown after trigger match", () => {
     let now = 1000;
     const context = { cooldowns: new Map<string, number>(), now: () => now };
-    const message = { ...baseMessage, mentionsBot: true, userId: "admin-1" };
+    const message = {
+      ...baseMessage,
+      userId: "admin-1",
+      elements: [
+        { type: "mention", userId: baseMessage.selfId },
+        { type: "text", text: baseMessage.content },
+      ],
+    };
     const config = makeConfig({
       triggerMode: "mention",
       cooldown: 10,

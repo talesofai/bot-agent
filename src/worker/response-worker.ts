@@ -64,14 +64,15 @@ export class ResponseWorker {
   }
 
   private async processJob(job: Job<ResponseJobData>): Promise<void> {
-    const { channelId, channelType, content, platform, messageId } = job.data;
-    await this.adapter.sendMessage({
-      channelId,
-      channelType,
-      content,
-    });
+    const { content, session } = job.data;
+    await this.adapter.sendMessage(session, content);
     this.logger.info(
-      { jobId: job.id, channelId, platform, messageId },
+      {
+        jobId: job.id,
+        channelId: session.channelId,
+        platform: session.platform,
+        messageId: session.messageId,
+      },
       "Response sent",
     );
   }

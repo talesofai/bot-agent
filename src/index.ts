@@ -3,7 +3,7 @@ import { logger } from "./logger";
 import { createHash } from "node:crypto";
 import { createAdapter } from "./adapters/index";
 
-import type { UnifiedMessage } from "./types/index";
+import type { Bot, SessionEvent, SessionElement } from "./types/index";
 import { BullmqResponseQueue, BullmqSessionQueue } from "./queue";
 import { SessionManager, buildSessionId } from "./session";
 import { GroupStore } from "./store";
@@ -23,6 +23,19 @@ logger.info(
 );
 
 const adapter = config.SERVICE_ROLE === "worker" ? null : createAdapter(config);
+const bot: Bot | null = adapter
+  ? {
+      platform: adapter.platform,
+      selfId: "",
+      status: "disconnected",
+      capabilities: {
+        canEditMessage: false,
+        canDeleteMessage: false,
+        canSendRichContent: false,
+      },
+      adapter,
+    }
+  : null;
 const sessionManager = new SessionManager();
 const groupStore = adapter ? new GroupStore() : null;
 if (groupStore) {
@@ -94,7 +107,7 @@ startHttpServer({ logger })
 
 // Register message handler
 if (adapter && groupStore) {
-  adapter.onMessage(async (message: UnifiedMessage) => {
+  adapter.onEvent(async (message: SessionEvent) => {
     const groupId = config.DEFAULT_GROUP_ID ?? message.channelId;
     const group = await groupStore.getGroup(groupId);
     const groupConfig = group?.config;
@@ -120,40 +133,24 @@ if (adapter && groupStore) {
       .slice(0, 12);
     logger.info(
       {
-        id: message.id,
+        id: message.messageId,
         channelId: message.channelId,
         userId: message.userId,
         contentHash,
         contentLength: logContent.length,
-        mentionsBot: message.mentionsBot,
       },
       "Message received",
     );
+
+    const session = applySessionKey(message, content);
 
     await sessionQueue.enqueue({
       groupId,
       userId: message.userId,
       key,
       sessionId: buildSessionId(message.userId, key),
-      payload: {
-        input: content,
-        channelId: message.channelId,
-        messageId: message.id,
-        channelType: message.channelType,
-        platform: message.platform,
-      },
+      session,
     });
-  });
-}
-
-// Register connection event handlers for observability
-if (adapter) {
-  adapter.onConnect(() => {
-    logger.info("Bot agent is running (connected)");
-  });
-
-  adapter.onDisconnect(() => {
-    logger.warn("Bot agent disconnected, reconnecting...");
   });
 }
 
@@ -177,8 +174,8 @@ const shutdown = async () => {
       await responseQueue.close();
     }
     await sessionQueue.close();
-    if (adapter) {
-      await adapter.disconnect();
+    if (adapter && bot) {
+      await adapter.disconnect(bot);
     }
   } catch (err) {
     logger.error({ err }, "Error during disconnect");
@@ -191,12 +188,54 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 // Start the adapter with automatic reconnection handling
-if (adapter) {
-  adapter.connect().catch((err) => {
+if (adapter && bot) {
+  adapter.connect(bot).catch((err) => {
     // Log the initial failure, reconnect will be attempted automatically
     logger.warn(
       { err },
       "Initial connection failed, reconnect will be attempted",
     );
   });
+}
+
+function applySessionKey(message: SessionEvent, content: string): SessionEvent {
+  if (content === message.content) {
+    return message;
+  }
+  const elements = stripPrefixFromElements(
+    message.elements,
+    message.content,
+    content,
+  );
+  return { ...message, content, elements };
+}
+
+function stripPrefixFromElements(
+  elements: SessionElement[],
+  rawContent: string,
+  cleanedContent: string,
+): SessionElement[] {
+  const prefixIndex = rawContent.indexOf(cleanedContent);
+  if (prefixIndex <= 0) {
+    return elements;
+  }
+  let offset = prefixIndex;
+  const updated: SessionElement[] = [];
+  for (const element of elements) {
+    if (offset === 0) {
+      updated.push(element);
+      continue;
+    }
+    if (element.type !== "text") {
+      updated.push(element);
+      continue;
+    }
+    const trimmed = element.text.slice(offset).trimStart();
+    offset = 0;
+    if (!trimmed) {
+      continue;
+    }
+    updated.push({ ...element, text: trimmed });
+  }
+  return updated.length > 0 ? updated : elements;
 }

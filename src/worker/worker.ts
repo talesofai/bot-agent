@@ -105,7 +105,7 @@ export class SessionWorker {
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
-    const { sessionId, groupId, userId, key, payload } = job.data;
+    const { sessionId, groupId, userId, key, session } = job.data;
     const lockKey = `session:lock:${groupId}:${sessionId}`;
 
     // 1. Acquire Lock
@@ -149,7 +149,7 @@ export class SessionWorker {
       const prompt = buildOpencodePrompt({
         systemPrompt,
         history,
-        input: payload.input,
+        input: session.content,
       });
       const launchSpec = this.launcher.buildLaunchSpec(
         sessionInfo,
@@ -168,7 +168,7 @@ export class SessionWorker {
       // 6. Append History
       await this.appendHistoryFromJob(
         sessionInfo,
-        payload,
+        session,
         result.historyEntries,
         result.output,
       );
@@ -211,20 +211,20 @@ export class SessionWorker {
 
   private async appendHistoryFromJob(
     sessionInfo: SessionInfo,
-    payload: SessionJobData["payload"],
+    session: SessionJobData["session"],
     historyEntries?: HistoryEntry[],
     output?: string,
   ): Promise<void> {
     const entries: HistoryEntry[] = [];
 
     const hasUserEntry =
-      payload?.input &&
-      this.hasMatchingUserEntry(historyEntries ?? [], payload.input, output);
+      session.content &&
+      this.hasMatchingUserEntry(historyEntries ?? [], session.content, output);
 
-    if (payload?.input && !hasUserEntry) {
+    if (session.content && !hasUserEntry) {
       entries.push({
         role: "user",
-        content: payload.input,
+        content: session.content,
         createdAt: new Date().toISOString(),
       });
     }
@@ -294,14 +294,8 @@ export class SessionWorker {
       return;
     }
     await this.responseQueue.enqueue({
-      platform: jobData.payload.platform,
-      channelId: jobData.payload.channelId,
-      channelType: jobData.payload.channelType,
-      messageId: jobData.payload.messageId,
       content: output,
-      groupId: jobData.groupId,
-      userId: jobData.userId,
-      sessionId: jobData.sessionId,
+      session: jobData.session,
     });
   }
 

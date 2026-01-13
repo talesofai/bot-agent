@@ -1,47 +1,52 @@
-export type ChannelType = "group" | "private";
+export type SessionElement =
+  | { type: "text"; text: string }
+  | { type: "image"; url: string }
+  | { type: "mention"; userId: string }
+  | { type: "quote"; messageId: string };
+
+export interface SessionEvent<TExtras = Record<string, unknown>> {
+  type: "message";
+  platform: string;
+  selfId: string;
+  userId: string;
+  guildId?: string;
+  channelId: string;
+  messageId?: string;
+  content: string;
+  elements: SessionElement[];
+  timestamp: number;
+  extras: TExtras;
+}
+
+export interface BotCapabilities {
+  canEditMessage: boolean;
+  canDeleteMessage: boolean;
+  canSendRichContent: boolean;
+}
+
+export interface Bot {
+  platform: string;
+  selfId: string;
+  status: "connected" | "disconnected";
+  capabilities: BotCapabilities;
+  adapter: PlatformAdapter;
+}
 
 export interface SendMessageOptions {
-  channelId: string;
-  /** Required: specifies whether to send to a group or private chat */
-  channelType: ChannelType;
-  content: string;
-  attachments?: Array<{
-    type: "image" | "file";
-    url: string;
-    name?: string;
-  }>;
+  elements?: SessionElement[];
 }
 
-export type MessageHandler = (message: UnifiedMessage) => Promise<void> | void;
-
-export interface UnifiedMessage<T = Record<string, unknown>> {
-  id: string;
-  platform: string;
-  channelId: string;
-  channelType: ChannelType;
-  userId: string;
-  sender: {
-    nickname: string;
-    displayName: string;
-    role: string;
-  };
-  content: string;
-  mentionsBot: boolean;
-  timestamp: number;
-  raw: T;
-}
-
-export type ConnectionHandler = () => void;
+export type MessageHandler = (session: SessionEvent) => Promise<void> | void;
 
 export interface PlatformAdapter {
   platform: string;
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  onMessage(handler: MessageHandler): void;
-  /** Register a handler called when connection is established (including reconnects) */
-  onConnect(handler: ConnectionHandler): void;
-  /** Register a handler called when connection is lost unexpectedly */
-  onDisconnect(handler: ConnectionHandler): void;
-  sendMessage(options: SendMessageOptions): Promise<void>;
+  connect(bot: Bot): Promise<void>;
+  disconnect(bot: Bot): Promise<void>;
+  onEvent(handler: MessageHandler): void;
+  sendMessage(
+    session: SessionEvent,
+    content: string,
+    options?: SendMessageOptions,
+  ): Promise<void>;
   getBotUserId(): string | null;
 }

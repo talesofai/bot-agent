@@ -89,20 +89,26 @@ interface PlatformAdapter {
 }
 ```
 
-统一消息结构：
+统一消息结构（Session）：
 
 ```typescript
-interface UnifiedMessage {
-  id: string;
+interface SessionEvent {
+  type: "message";
   platform: string;
-  channelId: string;
-  channelType: "group" | "private";
+  selfId: string;
   userId: string;
-  sender: { nickname: string; displayName: string; role: string };
+  guildId?: string;
+  channelId: string;
+  messageId?: string;
   content: string;
-  mentionsBot: boolean;
+  elements: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; url: string }
+    | { type: "mention"; userId: string }
+    | { type: "quote"; messageId: string }
+  >;
   timestamp: number;
-  raw: unknown;
+  extras: Record<string, unknown>;
 }
 ```
 

@@ -1,16 +1,10 @@
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis from "ioredis";
-import type { ChannelType } from "../types/platform";
+import type { SessionEvent } from "../types/platform";
 
 export interface ResponseJobData {
-  platform?: string;
-  channelId: string;
-  channelType: ChannelType;
-  messageId?: string;
   content: string;
-  groupId?: string;
-  userId?: string;
-  sessionId?: string;
+  session: SessionEvent;
 }
 
 export interface ResponseJob {

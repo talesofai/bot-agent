@@ -1,4 +1,4 @@
-import type { UnifiedMessage } from "../../types/platform";
+import type { SessionElement, SessionEvent } from "../../types/platform";
 
 /**
  * Milky event types
@@ -27,34 +27,31 @@ interface MilkyMessageSegment {
 }
 
 /**
- * Parse Milky event into UnifiedMessage
+ * Parse Milky event into SessionEvent
  */
 export function parseMessage(
   event: unknown,
-  botUserId: string | null,
-): UnifiedMessage<MilkyMessageEvent> | null {
+): SessionEvent<MilkyMessageEvent> | null {
   if (!isMessageEvent(event)) {
     return null;
   }
 
-  const { segments, mentionsBot } = normalizeSegments(event, botUserId);
-  const content = extractTextFromSegments(segments);
+  const { elements } = normalizeSegments(event);
+  const content = extractTextFromElements(elements);
 
   return {
-    id: String(event.message_id),
+    type: "message",
     platform: "qq",
+    selfId: String(event.self_id),
     channelId: String(event.group_id ?? event.user_id),
-    channelType: event.message_type,
     userId: String(event.user_id),
-    sender: {
-      nickname: event.sender.nickname,
-      displayName: event.sender.card || event.sender.nickname,
-      role: event.sender.role ?? "member",
-    },
+    guildId:
+      event.message_type === "group" ? String(event.group_id) : undefined,
+    messageId: String(event.message_id),
     content,
-    mentionsBot,
+    elements,
     timestamp: event.time * 1000,
-    raw: event,
+    extras: event,
   };
 }
 
@@ -71,83 +68,72 @@ function isMessageEvent(event: unknown): event is MilkyMessageEvent {
   );
 }
 
-function normalizeSegments(
-  event: MilkyMessageEvent,
-  botUserId: string | null,
-): { segments: MilkyMessageSegment[]; mentionsBot: boolean } {
+function normalizeSegments(event: MilkyMessageEvent): {
+  elements: SessionElement[];
+} {
   const { message, raw_message } = event;
   if (Array.isArray(message)) {
     return {
-      segments: message,
-      mentionsBot: checkMentionsBotInSegments(message, botUserId),
+      elements: mapSegmentsToElements(message),
     };
   }
   if (typeof message === "string") {
+    const mentions = extractMentions(message);
+    const text = parseRawMessage(message);
     return {
-      segments: wrapTextAsSegments(parseRawMessage(message)),
-      mentionsBot: checkMentionsBotInRaw(message, botUserId),
+      elements: buildElementsFromRaw(text, mentions),
     };
   }
   if (typeof raw_message === "string") {
+    const mentions = extractMentions(raw_message);
+    const text = parseRawMessage(raw_message);
     return {
-      segments: wrapTextAsSegments(parseRawMessage(raw_message)),
-      mentionsBot: checkMentionsBotInRaw(raw_message, botUserId),
+      elements: buildElementsFromRaw(text, mentions),
     };
   }
-  return { segments: [], mentionsBot: false };
+  return { elements: [] };
 }
 
-function extractTextFromSegments(message: MilkyMessageSegment[]): string {
-  const textParts: string[] = [];
-  for (const seg of message) {
+function mapSegmentsToElements(
+  segments: MilkyMessageSegment[],
+): SessionElement[] {
+  const elements: SessionElement[] = [];
+  for (const seg of segments) {
     if (seg.type === "text" && typeof seg.data.text === "string") {
-      textParts.push(seg.data.text);
+      elements.push({ type: "text", text: seg.data.text });
+      continue;
+    }
+    if (seg.type === "image" && typeof seg.data.file === "string") {
+      elements.push({ type: "image", url: seg.data.file });
+      continue;
+    }
+    if (seg.type === "at" && seg.data.qq !== undefined) {
+      elements.push({ type: "mention", userId: String(seg.data.qq) });
     }
   }
-  return textParts.join("").trim();
+  return elements;
 }
 
-function wrapTextAsSegments(text: string): MilkyMessageSegment[] {
-  if (!text) {
-    return [];
+function buildElementsFromRaw(
+  text: string,
+  mentions: string[],
+): SessionElement[] {
+  const elements: SessionElement[] = [];
+  for (const userId of mentions) {
+    elements.push({ type: "mention", userId });
   }
-  return [
-    {
-      type: "text",
-      data: { text },
-    },
-  ];
+  if (text) {
+    elements.push({ type: "text", text });
+  }
+  return elements;
 }
 
-function checkMentionsBotInSegments(
-  message: MilkyMessageSegment[],
-  botUserId: string | null,
-): boolean {
-  if (!botUserId) {
-    return false;
-  }
-  for (const seg of message) {
-    if (seg.type === "at") {
-      const qq = seg.data.qq;
-      if (String(qq) === botUserId) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function checkMentionsBotInRaw(
-  rawMessage: string,
-  botUserId: string | null,
-): boolean {
-  if (!botUserId) {
-    return false;
-  }
-  // Check for CQ:at format with optional extra params: [CQ:at,qq=123456] or [CQ:at,qq=123456,name=xxx]
-  // Match qq= anywhere in the CQ:at segment
-  const atPattern = getAtPattern(botUserId);
-  return atPattern.test(rawMessage);
+function extractTextFromElements(elements: SessionElement[]): string {
+  return elements
+    .filter((element) => element.type === "text")
+    .map((element) => element.text)
+    .join("")
+    .trim();
 }
 
 /**
@@ -158,14 +144,13 @@ export function parseRawMessage(rawMessage: string): string {
   return rawMessage.replace(/\[CQ:[^\]]+\]/g, "").trim();
 }
 
-const atPatternCache = new Map<string, RegExp>();
-
-function getAtPattern(botUserId: string): RegExp {
-  const cached = atPatternCache.get(botUserId);
-  if (cached) {
-    return cached;
+function extractMentions(rawMessage: string): string[] {
+  const mentions: string[] = [];
+  const pattern = /\[CQ:at,[^\]]*qq=([0-9]+)[^\]]*\]/g;
+  let match: RegExpExecArray | null = pattern.exec(rawMessage);
+  while (match) {
+    mentions.push(match[1]);
+    match = pattern.exec(rawMessage);
   }
-  const pattern = new RegExp(`\\[CQ:at,[^\\]]*qq=${botUserId}[^\\]]*\\]`);
-  atPatternCache.set(botUserId, pattern);
-  return pattern;
+  return mentions;
 }

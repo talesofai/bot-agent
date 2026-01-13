@@ -3,50 +3,35 @@ import pino from "pino";
 
 import { BullmqResponseQueue } from "../../queue/response-queue";
 import type {
-  ConnectionHandler,
+  Bot,
   MessageHandler,
   PlatformAdapter,
-  SendMessageOptions,
 } from "../../types/platform";
 import { ResponseWorker } from "../response-worker";
 
 class MockAdapter implements PlatformAdapter {
   platform = "mock";
-  private connectHandlers: ConnectionHandler[] = [];
-  private disconnectHandlers: ConnectionHandler[] = [];
   private messageHandlers: MessageHandler[] = [];
-  private onSend?: (options: SendMessageOptions) => void;
+  private onSend?: (content: string) => void;
 
-  setSendHandler(handler: (options: SendMessageOptions) => void): void {
+  setSendHandler(handler: (content: string) => void): void {
     this.onSend = handler;
   }
 
-  async connect(): Promise<void> {
-    for (const handler of this.connectHandlers) {
-      handler();
-    }
-  }
+  async connect(_bot: Bot): Promise<void> {}
 
-  async disconnect(): Promise<void> {
-    for (const handler of this.disconnectHandlers) {
-      handler();
-    }
-  }
+  async disconnect(_bot: Bot): Promise<void> {}
 
-  onMessage(handler: MessageHandler): void {
+  onEvent(handler: MessageHandler): void {
     this.messageHandlers.push(handler);
   }
 
-  onConnect(handler: ConnectionHandler): void {
-    this.connectHandlers.push(handler);
-  }
-
-  onDisconnect(handler: ConnectionHandler): void {
-    this.disconnectHandlers.push(handler);
-  }
-
-  async sendMessage(options: SendMessageOptions): Promise<void> {
-    this.onSend?.(options);
+  async sendMessage(
+    _session: Parameters<MessageHandler>[0],
+    content: string,
+    _options?: Parameters<PlatformAdapter["sendMessage"]>[2],
+  ): Promise<void> {
+    this.onSend?.(content);
   }
 
   getBotUserId(): string | null {
@@ -92,25 +77,31 @@ describe("response worker integration", () => {
       logger,
     });
 
-    const received = new Promise<SendMessageOptions>((resolve) => {
+    const received = new Promise<string>((resolve) => {
       adapter.setSendHandler(resolve);
     });
 
     try {
       responseWorker.start();
       await responseQueue.enqueue({
-        channelId: "channel-1",
-        channelType: "group",
         content: "hello from response worker",
-        groupId: "group-1",
-        userId: "user-1",
-        sessionId: "session-1",
+        session: {
+          type: "message",
+          platform: "mock",
+          selfId: "bot-1",
+          userId: "user-1",
+          guildId: "group-1",
+          channelId: "channel-1",
+          messageId: "msg-1",
+          content: "hello",
+          elements: [{ type: "text", text: "hello" }],
+          timestamp: Date.now(),
+          extras: {},
+        },
       });
 
       const message = await withTimeout(received, 5000);
-      expect(message.channelId).toBe("channel-1");
-      expect(message.channelType).toBe("group");
-      expect(message.content).toBe("hello from response worker");
+      expect(message).toBe("hello from response worker");
     } finally {
       await responseWorker.stop();
       await responseQueue.close();

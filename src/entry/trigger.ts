@@ -1,5 +1,5 @@
 import type { GroupConfig } from "../types/group";
-import type { UnifiedMessage } from "../types";
+import type { SessionEvent } from "../types";
 
 export interface TriggerContext {
   cooldowns: Map<string, number>;
@@ -9,7 +9,7 @@ export interface TriggerContext {
 export interface TriggerInput {
   groupId: string;
   groupConfig: GroupConfig;
-  message: UnifiedMessage;
+  message: SessionEvent;
   context: TriggerContext;
 }
 
@@ -17,7 +17,7 @@ export function shouldEnqueue(input: TriggerInput): boolean {
   const { groupId, groupConfig, message, context } = input;
   const triggerMatched =
     groupConfig.triggerMode === "mention"
-      ? message.mentionsBot
+      ? mentionsSelf(message)
       : groupConfig.triggerMode === "keyword"
         ? matchesKeywords(message.content, groupConfig.keywords)
         : groupConfig.triggerMode === "all";
@@ -39,6 +39,16 @@ export function shouldEnqueue(input: TriggerInput): boolean {
   }
 
   return true;
+}
+
+function mentionsSelf(message: SessionEvent): boolean {
+  if (!message.selfId) {
+    return false;
+  }
+  return message.elements.some(
+    (element) =>
+      element.type === "mention" && element.userId === message.selfId,
+  );
 }
 
 export function matchesKeywords(content: string, keywords: string[]): boolean {

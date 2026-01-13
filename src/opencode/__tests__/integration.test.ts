@@ -6,15 +6,11 @@ import pino from "pino";
 
 import type { SessionJob } from "../../queue";
 import type { HistoryEntry } from "../../types/session";
-import { SessionManager, type SessionActivityTracker } from "../../session";
+import { SessionManager } from "../../session";
 import { OpencodeLauncher } from "../launcher";
 import { ShellOpencodeRunner } from "../../worker/runner";
 import { buildSystemPrompt } from "../system-prompt";
 import { buildOpencodePrompt } from "../prompt";
-
-class MemoryActivityIndex implements SessionActivityTracker {
-  async recordActivity(): Promise<void> {}
-}
 
 const integrationEnabled = process.env.OPENCODE_INTEGRATION === "1";
 const integrationTest = integrationEnabled ? test : test.skip;
@@ -23,11 +19,9 @@ describe("opencode integration", () => {
   integrationTest("runs opencode and writes history", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "opencode-test-"));
     const logger = pino({ level: "silent" });
-    const activityIndex = new MemoryActivityIndex();
     const sessionManager = new SessionManager({
       dataDir: tempDir,
       logger,
-      activityIndex,
     });
     const groupId = "group-1";
     const userId = "user-1";

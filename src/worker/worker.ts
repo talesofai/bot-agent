@@ -10,6 +10,7 @@ import { buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
+import { SessionActivityIndex } from "../session/activity-index";
 
 export interface SessionWorkerOptions {
   id: string;
@@ -43,6 +44,7 @@ export class SessionWorker {
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
   private responseQueue?: ResponseQueue;
+  private activityIndex: SessionActivityIndex;
   private workerConnection: IORedis;
   private lockConnection: IORedis;
   private historyMaxEntries?: number;
@@ -67,6 +69,11 @@ export class SessionWorker {
     this.requeueDelayMs = options.limits?.requeueDelayMs ?? 2000;
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
+
+    this.activityIndex = new SessionActivityIndex({
+      redisUrl: options.redis.url,
+      logger: this.logger,
+    });
 
     this.workerConnection = new IORedis(options.redis.url, {
       maxRetriesPerRequest: null,
@@ -108,6 +115,7 @@ export class SessionWorker {
     await this.worker.close();
     await this.workerConnection.quit();
     await this.lockConnection.quit();
+    await this.activityIndex.close();
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
@@ -139,10 +147,12 @@ export class SessionWorker {
     try {
       // 2. Ensure Session Exists
       sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
+      await this.recordActivity(sessionInfo);
 
       // 3. Update Status
       await this.sessionManager.updateStatus(sessionInfo, "running");
       statusUpdated = true;
+      await this.recordActivity(sessionInfo);
 
       // 4. Prepare Context
       const history = await this.sessionManager.readHistory(sessionInfo, {
@@ -178,6 +188,7 @@ export class SessionWorker {
         result.historyEntries,
         result.output,
       );
+      await this.recordActivity(sessionInfo);
       await this.enqueueResponse(job.data, result.output);
     } catch (err) {
       this.logger.error({ err, sessionId }, "Error processing session job");
@@ -250,6 +261,17 @@ export class SessionWorker {
 
     for (const entry of entries) {
       await this.sessionManager.appendHistory(sessionInfo, entry);
+    }
+  }
+
+  private async recordActivity(sessionInfo: SessionInfo): Promise<void> {
+    try {
+      await this.activityIndex.recordActivity({
+        groupId: sessionInfo.meta.groupId,
+        sessionId: sessionInfo.meta.sessionId,
+      });
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to record session activity");
     }
   }
 

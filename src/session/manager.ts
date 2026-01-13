@@ -1,6 +1,5 @@
 import type { Logger } from "pino";
 
-import { getConfig } from "../config";
 import { logger as defaultLogger } from "../logger";
 import { GroupFileRepository } from "../store/repository";
 import type { GroupConfig } from "../types/group";
@@ -12,25 +11,16 @@ import type {
 } from "../types/session";
 import { HistoryStore, type HistoryReadOptions } from "./history";
 import { SessionRepository } from "./repository";
-import {
-  SessionActivityIndex,
-  type SessionActivityKey,
-} from "./activity-index";
+import { getConfig } from "../config";
 
 export interface SessionManagerOptions {
   dataDir?: string;
   logger?: Logger;
-  redisUrl?: string;
-  activityIndex?: SessionActivityTracker;
 }
 
 export interface CreateSessionOptions {
   key?: number;
   maxSessions?: number;
-}
-
-export interface SessionActivityTracker {
-  recordActivity(key: SessionActivityKey, timestampMs?: number): Promise<void>;
 }
 
 export class SessionManager {
@@ -39,8 +29,6 @@ export class SessionManager {
   private groupRepository: GroupFileRepository;
   private sessionRepository: SessionRepository;
   private historyStore: HistoryStore;
-  private activityIndex: SessionActivityTracker;
-
   constructor(options: SessionManagerOptions = {}) {
     this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
     this.logger = (options.logger ?? defaultLogger).child({
@@ -55,15 +43,6 @@ export class SessionManager {
       logger: this.logger,
     });
     this.historyStore = new HistoryStore(this.logger);
-    if (options.activityIndex) {
-      this.activityIndex = options.activityIndex;
-    } else {
-      const redisUrl = options.redisUrl ?? getConfig().REDIS_URL;
-      this.activityIndex = new SessionActivityIndex({
-        redisUrl,
-        logger: this.logger,
-      });
-    }
   }
 
   async createSession(
@@ -95,10 +74,6 @@ export class SessionManager {
       if (existing.meta.ownerId !== userId) {
         throw new Error("Session ownership mismatch");
       }
-      await this.activityIndex.recordActivity({
-        groupId: existing.meta.groupId,
-        sessionId: existing.meta.sessionId,
-      });
       return existing;
     }
 
@@ -114,10 +89,6 @@ export class SessionManager {
     };
 
     const session = await this.sessionRepository.createSession(meta);
-    await this.activityIndex.recordActivity({
-      groupId: meta.groupId,
-      sessionId: meta.sessionId,
-    });
     return session;
   }
 
@@ -138,10 +109,6 @@ export class SessionManager {
       updatedAt: new Date().toISOString(),
     };
     const session = await this.sessionRepository.updateMeta(updated);
-    await this.activityIndex.recordActivity({
-      groupId: updated.groupId,
-      sessionId: updated.sessionId,
-    });
     return session;
   }
 
@@ -164,10 +131,6 @@ export class SessionManager {
     entry: HistoryEntry,
   ): Promise<void> {
     await this.historyStore.appendHistory(sessionInfo.historyPath, entry);
-    await this.activityIndex.recordActivity({
-      groupId: sessionInfo.meta.groupId,
-      sessionId: sessionInfo.meta.sessionId,
-    });
   }
 
   private async ensureGroupDir(groupId: string): Promise<void> {

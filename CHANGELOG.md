@@ -41,6 +41,7 @@
 - 历史记录输出增加精确时间与星期信息
 - 历史读取改为全量读取并截断末尾行
 - Worker 配置参数分组，减少构造函数噪音
+- SessionManager 移除可注入 activity tracker，改由 Worker 记录活跃度
 
 ### Fixed
 

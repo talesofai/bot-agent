@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SessionManager } from "../manager";
-import type { SessionActivityKey } from "../activity-index";
 
 function makeTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "session-manager-test-"));
@@ -18,9 +17,6 @@ describe("SessionManager", () => {
     const tempDir = makeTempDir();
     const manager = new SessionManager({
       dataDir: tempDir,
-      activityIndex: {
-        recordActivity: async (_key: SessionActivityKey) => {},
-      },
     });
     await expect(
       manager.createSession("group-1", "user-1", { key: 2, maxSessions: 2 }),
@@ -32,9 +28,6 @@ describe("SessionManager", () => {
     const tempDir = makeTempDir();
     const manager = new SessionManager({
       dataDir: tempDir,
-      activityIndex: {
-        recordActivity: async (_key: SessionActivityKey) => {},
-      },
     });
     await expect(
       manager.createSession("group-1", "user-1", { key: -1, maxSessions: 2 }),
@@ -46,9 +39,6 @@ describe("SessionManager", () => {
     const tempDir = makeTempDir();
     const manager = new SessionManager({
       dataDir: tempDir,
-      activityIndex: {
-        recordActivity: async (_key: SessionActivityKey) => {},
-      },
     });
     const session = await manager.createSession("group-1", "user-1", {
       key: 0,

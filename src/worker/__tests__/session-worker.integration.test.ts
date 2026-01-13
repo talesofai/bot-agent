@@ -7,13 +7,8 @@ import pino from "pino";
 import type { ResponseJob, ResponseJobData, ResponseQueue } from "../../queue";
 import { BullmqSessionQueue } from "../../queue";
 import { SessionManager, buildSessionId } from "../../session";
-import type { SessionActivityTracker } from "../../session";
 import type { OpencodeRunner, OpencodeRunResult } from "../runner";
 import { SessionWorker } from "../worker";
-
-class MemoryActivityIndex implements SessionActivityTracker {
-  async recordActivity(): Promise<void> {}
-}
 
 class FakeRunner implements OpencodeRunner {
   async run(): Promise<OpencodeRunResult> {
@@ -73,7 +68,6 @@ describe("session worker integration", () => {
     const sessionManager = new SessionManager({
       dataDir: tempDir,
       logger,
-      activityIndex: new MemoryActivityIndex(),
     });
     const worker = new SessionWorker({
       id: "session-test",

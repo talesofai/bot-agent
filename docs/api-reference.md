@@ -19,7 +19,7 @@ GET /health
 ```json
 {
   "status": "ok",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "uptime": "2h30m15s"
 }
 ```

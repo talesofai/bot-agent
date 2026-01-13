@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [0.0.19] - 2026-01-13
+
+### Changed
+
+- K8s 资源统一使用 `bot` 命名空间并调整 PVC 名称
+- WebUI Token 生成与启动过程强制非空配置
+- 示例配置默认 Token 置空，避免误用默认值
+- 部署文档同步 `bot-namespace.yaml` 与命名空间变更
+
+### Added
+
+- `pmhq` Service 与端口声明，完善 K8s 内部通信
+
 ## [0.0.18] - 2026-01-13
 
 ### Changed

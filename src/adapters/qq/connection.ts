@@ -19,6 +19,7 @@ const DEFAULT_RECONNECT: ReconnectConfig = {
   maxDelay: 60000,
   multiplier: 2,
 };
+const CONNECT_TIMEOUT_MS = 15000;
 
 type ConnectionState =
   | "disconnected"
@@ -273,6 +274,10 @@ export class MilkyConnection extends EventEmitter {
       return Promise.resolve();
     }
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error("WebSocket connection timed out"));
+      }, CONNECT_TIMEOUT_MS);
       const onConnect = () => {
         cleanup();
         resolve();
@@ -282,6 +287,7 @@ export class MilkyConnection extends EventEmitter {
         reject(err);
       };
       const cleanup = () => {
+        clearTimeout(timeout);
         this.off("connect", onConnect);
         this.off("connect_error", onError);
       };

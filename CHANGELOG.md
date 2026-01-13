@@ -34,6 +34,7 @@
 - 新增 adapter/worker 部署清单示例
 - 部署文档更新 adapter/worker 与清理任务应用命令
 - 文档更新本地启动与日志查看命令
+- Docker Compose 补充 adapter/worker 启动示例
 
 ### Fixed
 

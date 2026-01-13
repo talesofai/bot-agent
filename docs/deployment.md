@@ -85,41 +85,41 @@ services:
     depends_on:
       - pmhq
 
-  # opencode-bot-agent-adapter:
-  #   image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest # 镜像占位
-  #   container_name: opencode-bot-agent-adapter
-  #   restart: unless-stopped
-  #   command: ["bun", "run", "start:adapter"]
-  #   depends_on:
-  #     - luckylillia
-  #     - redis
-  #   volumes:
-  #     - ../../data:/data
-  #     - ../../configs:/app/configs
-  #   env_file:
-  #     - ../../configs/.env
-  #     - ../../configs/secrets/.env
-  #   environment:
-  #     - PLATFORM=qq
-  #     - REDIS_URL=redis://redis:6379
-  #     - LLBOT_REGISTRY_PREFIX=llbot:registry
-  #     - DISCORD_TOKEN=your-token # 规划
-  #     - DISCORD_APPLICATION_ID=your-app-id # 规划
-  # opencode-bot-agent-worker:
-  #   image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest # 镜像占位
-  #   container_name: opencode-bot-agent-worker
-  #   restart: unless-stopped
-  #   command: ["bun", "run", "start:worker"]
-  #   depends_on:
-  #     - redis
-  #   volumes:
-  #     - ../../data:/data
-  #     - ../../configs:/app/configs
-  #   env_file:
-  #     - ../../configs/.env
-  #     - ../../configs/secrets/.env
-  #   environment:
-  #     - REDIS_URL=redis://redis:6379
+  opencode-bot-agent-adapter:
+    image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest # 镜像占位
+    container_name: opencode-bot-agent-adapter
+    restart: unless-stopped
+    command: ["bun", "run", "start:adapter"]
+    depends_on:
+      - luckylillia
+      - redis
+    volumes:
+      - ../../data:/data
+      - ../../configs:/app/configs
+    env_file:
+      - ../../configs/.env
+      - ../../configs/secrets/.env
+    environment:
+      - PLATFORM=qq
+      - REDIS_URL=redis://redis:6379
+      - LLBOT_REGISTRY_PREFIX=llbot:registry
+      - DISCORD_TOKEN=your-token # 规划
+      - DISCORD_APPLICATION_ID=your-app-id # 规划
+  opencode-bot-agent-worker:
+    image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest # 镜像占位
+    container_name: opencode-bot-agent-worker
+    restart: unless-stopped
+    command: ["bun", "run", "start:worker"]
+    depends_on:
+      - redis
+    volumes:
+      - ../../data:/data
+      - ../../configs:/app/configs
+    env_file:
+      - ../../configs/.env
+      - ../../configs/secrets/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
 ```
 
 当前使用公开镜像 `linyuchen/pmhq` 与 `linyuchen/llbot`。

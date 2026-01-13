@@ -32,6 +32,7 @@
 - 增加会话清理 CronJob 示例
 - 拆分 adapter 与 worker 启动入口，移除 `SERVICE_ROLE`
 - 新增 adapter/worker 部署清单示例
+- 部署文档更新 adapter/worker 与清理任务应用命令
 
 ### Fixed
 

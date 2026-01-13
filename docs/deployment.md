@@ -331,6 +331,9 @@ kubectl apply -f deployments/k8s/llbot-secret.yaml
 kubectl apply -f deployments/k8s/llbot-configmap.yaml
 kubectl apply -f deployments/k8s/llbot-deployment.yaml
 kubectl apply -f deployments/k8s/llbot-service.yaml
+kubectl apply -f deployments/k8s/opencode-bot-agent-adapter.yaml
+kubectl apply -f deployments/k8s/opencode-bot-agent-worker.yaml
+kubectl apply -f deployments/k8s/session-cleaner-cronjob.yaml
 ```
 
 如果你的节点是 ARM 架构，请使用 amd64 节点运行或自行构建对应架构镜像。

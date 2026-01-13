@@ -169,16 +169,14 @@ Be friendly and concise.
       expect(group).toBeNull();
     });
 
-    test("should use defaults for invalid config", async () => {
+    test("should reject invalid config", async () => {
       const groupPath = join(testDir, "invalid-config");
       mkdirSync(groupPath, { recursive: true });
       writeFileSync(join(groupPath, "config.yaml"), "invalid: yaml: content:");
 
       const group = await store.loadGroup("invalid-config");
 
-      expect(group).not.toBeNull();
-      expect(group!.config.enabled).toBe(true);
-      expect(group!.config.triggerMode).toBe("mention");
+      expect(group).toBeNull();
     });
   });
 

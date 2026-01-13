@@ -13,26 +13,30 @@ export class EchoTracker {
     if (!message.guildId) {
       return false;
     }
-    if (ratePercent <= 0) {
+    const key = `${message.selfId}:${message.guildId}`;
+    if (message.selfId && message.userId === message.selfId) {
+      this.states.delete(key);
       return false;
     }
     if (hasAnyMention(message)) {
-      return false;
-    }
-    if (message.selfId && message.userId === message.selfId) {
+      this.states.delete(key);
       return false;
     }
     const signature = buildSignature(message);
     if (!signature) {
+      this.states.delete(key);
       return false;
     }
-    const key = `${message.selfId}:${message.guildId}`;
     const state = this.states.get(key);
     if (!state || state.signature !== signature) {
       this.states.set(key, { signature, streak: 1, echoed: false });
       return false;
     }
     state.streak += 1;
+    // Keep tracking streaks even when echo is disabled to avoid stale state.
+    if (ratePercent <= 0) {
+      return false;
+    }
     if (state.streak < 2 || state.echoed) {
       return false;
     }

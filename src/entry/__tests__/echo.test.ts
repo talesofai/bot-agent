@@ -34,13 +34,34 @@ describe("EchoTracker", () => {
     expect(tracker.shouldEcho(message, 30)).toBe(false);
   });
 
+  test("mentions break streaks", () => {
+    const tracker = new EchoTracker();
+    const originalRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
+      expect(
+        tracker.shouldEcho(
+          {
+            ...baseMessage,
+            elements: [{ type: "mention", userId: "someone" }],
+            content: "@someone hello",
+          },
+          30,
+        ),
+      ).toBe(false);
+      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+
   test("respects echo rate", () => {
     const tracker = new EchoTracker();
     const originalRandom = Math.random;
     Math.random = () => 0;
     try {
       expect(tracker.shouldEcho(baseMessage, 0)).toBe(false);
-      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
       expect(tracker.shouldEcho(baseMessage, 30)).toBe(true);
     } finally {
       Math.random = originalRandom;

@@ -2,10 +2,7 @@ export { SessionManager } from "./manager";
 export type { SessionManagerOptions, CreateSessionOptions } from "./manager";
 export { SessionRepository } from "./repository";
 export type { SessionRepositoryOptions } from "./repository";
-export {
-  RedisActivityRecorder,
-  NoopActivityRecorder,
-} from "./activity-recorder";
+export { RedisActivityRecorder } from "./activity-recorder";
 export type { ActivityRecorder } from "./activity-recorder";
 
 export { HistoryStore } from "./history";

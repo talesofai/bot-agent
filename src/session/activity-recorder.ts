@@ -22,9 +22,3 @@ export class RedisActivityRecorder implements ActivityRecorder {
     await this.index.close();
   }
 }
-
-export class NoopActivityRecorder implements ActivityRecorder {
-  async record(): Promise<void> {}
-
-  async close(): Promise<void> {}
-}

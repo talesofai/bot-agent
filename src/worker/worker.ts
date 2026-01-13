@@ -29,7 +29,6 @@ export interface SessionWorkerOptions {
   launcher?: OpencodeLauncher;
   runner: OpencodeRunner;
   logger: Logger;
-  activityRecorder?: ActivityRecorder;
   limits?: {
     historyEntries?: number;
     historyBytes?: number;
@@ -72,12 +71,10 @@ export class SessionWorker {
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
-    this.activityRecorder =
-      options.activityRecorder ??
-      new RedisActivityRecorder({
-        redisUrl: options.redis.url,
-        logger: this.logger,
-      });
+    this.activityRecorder = new RedisActivityRecorder({
+      redisUrl: options.redis.url,
+      logger: this.logger,
+    });
 
     this.workerConnection = new IORedis(options.redis.url, {
       maxRetriesPerRequest: null,

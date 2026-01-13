@@ -65,8 +65,8 @@ export class ShellOpencodeRunner implements OpencodeRunner {
     if (parsed) {
       return parsed;
     }
-    const output = trimmedOut || trimmedErr;
-    return output ? { output } : {};
+    const detail = trimmedOut || trimmedErr || "empty output";
+    throw new Error(`Opencode returned non-JSON output: ${detail}`);
   }
 }
 

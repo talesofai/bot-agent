@@ -24,13 +24,10 @@ describe("parseOpencodeOutput", () => {
     expect(result).toEqual({ output: "done" });
   });
 
-  test("parses last JSON line when logs are mixed", () => {
+  test("returns null for non-json output", () => {
     const createdAt = "2026-01-13T00:00:00.000Z";
-    const raw = ["log line", '{"content":"ok","role":"assistant"}'].join("\n");
+    const raw = "log line";
     const result = parseOpencodeOutput(raw, createdAt);
-    expect(result?.output).toBe("ok");
-    expect(result?.historyEntries).toEqual([
-      { role: "assistant", content: "ok", createdAt },
-    ]);
+    expect(result).toBeNull();
   });
 });

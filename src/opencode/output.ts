@@ -12,8 +12,7 @@ export function parseOpencodeOutput(
   if (!raw) {
     return null;
   }
-  const parsed =
-    tryParseJson(raw) ?? tryParseJson(findLastJsonLine(raw.trim()));
+  const parsed = tryParseJson(raw.trim());
   if (!parsed) {
     return null;
   }
@@ -37,19 +36,6 @@ function tryParseJson(raw: string | null): unknown | null {
   } catch {
     return null;
   }
-}
-
-function findLastJsonLine(raw: string): string | null {
-  const lines = raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    if (lines[i].startsWith("{") || lines[i].startsWith("[")) {
-      return lines[i];
-    }
-  }
-  return null;
 }
 
 function extractHistoryEntries(

@@ -21,12 +21,6 @@ const DEFAULT_RECONNECT: ReconnectConfig = {
 };
 const CONNECT_TIMEOUT_MS = 15000;
 
-type ConnectionState =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "reconnecting";
-
 export class MilkyConnection extends EventEmitter {
   private ws: WebSocket | null = null;
   private url: string;
@@ -34,11 +28,12 @@ export class MilkyConnection extends EventEmitter {
   private onEvent: (event: unknown) => Promise<void>;
   private onBotId?: (id: string) => void;
 
-  private state: ConnectionState = "disconnected";
+  private connected = false;
   private shouldReconnect = true;
   private reconnectAttempt = 0;
   private reconnectConfig: ReconnectConfig;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectPromise: Promise<void> | null = null;
   private readonly textDecoder = new TextDecoder();
 
   private responseCallbacks = new Map<
@@ -66,11 +61,19 @@ export class MilkyConnection extends EventEmitter {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    if (this.state === "connected") {
+    if (this.connected) {
       return;
     }
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
     this.openSocket();
-    await this.waitForConnect();
+    this.connectPromise = this.waitForConnect();
+    try {
+      await this.connectPromise;
+    } finally {
+      this.connectPromise = null;
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -82,19 +85,22 @@ export class MilkyConnection extends EventEmitter {
     if (this.ws) {
       this.closeSocket();
     }
-    this.state = "disconnected";
+    if (this.connectPromise) {
+      this.emit("connect_error", new Error("WebSocket disconnected"));
+    }
+    this.connected = false;
     this.cancelPendingRequests();
   }
 
   isConnected(): boolean {
-    return this.state === "connected";
+    return this.connected;
   }
 
   async sendRequest(
     action: string,
     params: Record<string, unknown> = {},
   ): Promise<unknown> {
-    if (!this.ws || this.state !== "connected") {
+    if (!this.ws || !this.connected) {
       throw new Error("WebSocket not connected");
     }
 
@@ -201,7 +207,7 @@ export class MilkyConnection extends EventEmitter {
   }
 
   private handleOpen = (): void => {
-    this.state = "connected";
+    this.connected = true;
     this.reconnectAttempt = 0;
     this.logger.info("WebSocket connected");
     this.emit("connect");
@@ -210,25 +216,22 @@ export class MilkyConnection extends EventEmitter {
   private handleError = (event: Event): void => {
     const err = new Error(`WebSocket error: ${event.type}`);
     this.logger.error({ err }, "WebSocket error");
-    if (this.state === "connecting" || this.state === "reconnecting") {
+    if (!this.connected) {
       this.emit("connect_error", err);
     }
     this.ws?.close();
   };
 
   private handleClose = (): void => {
-    const wasConnected = this.state === "connected";
-    const wasConnecting =
-      this.state === "connecting" || this.state === "reconnecting";
-
-    this.state = "disconnected";
+    const wasConnected = this.connected;
+    this.connected = false;
     this.detachSocket();
     this.cancelPendingRequests();
 
     if (wasConnected) {
       this.logger.warn("WebSocket closed");
       this.emit("disconnect");
-    } else if (wasConnecting) {
+    } else {
       const err = new Error("WebSocket closed before connection established");
       this.logger.error({ err }, "Connection failed");
       this.emit("connect_error", err);
@@ -238,10 +241,7 @@ export class MilkyConnection extends EventEmitter {
   };
 
   private openSocket(): void {
-    if (this.state === "connected") {
-      return;
-    }
-    if (this.state === "connecting" || this.state === "reconnecting") {
+    if (this.connected) {
       return;
     }
     if (this.ws) {
@@ -259,7 +259,6 @@ export class MilkyConnection extends EventEmitter {
       return;
     }
 
-    this.state = this.reconnectAttempt > 0 ? "reconnecting" : "connecting";
     this.logger.debug({ url: this.url }, "Opening WebSocket connection");
 
     this.ws = new WebSocketImpl(this.url);
@@ -270,7 +269,7 @@ export class MilkyConnection extends EventEmitter {
   }
 
   private waitForConnect(): Promise<void> {
-    if (this.state === "connected") {
+    if (this.connected) {
       return Promise.resolve();
     }
     return new Promise((resolve, reject) => {

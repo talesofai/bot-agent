@@ -26,8 +26,12 @@ const responseQueue = new BullmqResponseQueue({
 
 const worker = new SessionWorker({
   id: "worker-1",
-  queueName: sessionQueueName,
-  redisUrl: config.REDIS_URL,
+  redis: {
+    url: config.REDIS_URL,
+  },
+  queue: {
+    name: sessionQueueName,
+  },
   sessionManager,
   runner: new ShellOpencodeRunner(),
   logger,

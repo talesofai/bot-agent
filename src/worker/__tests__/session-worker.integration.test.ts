@@ -77,8 +77,12 @@ describe("session worker integration", () => {
     });
     const worker = new SessionWorker({
       id: "session-test",
-      queueName,
-      redisUrl,
+      redis: {
+        url: redisUrl,
+      },
+      queue: {
+        name: queueName,
+      },
       sessionManager,
       runner: new FakeRunner(),
       logger,

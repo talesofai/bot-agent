@@ -28,19 +28,25 @@ export class SessionWorkerPool {
     this.logger = options.logger.child({ component: "session-worker-pool" });
     this.worker = new SessionWorker({
       id: "pool",
-      queueName: options.queueName,
-      redisUrl: options.redisUrl,
+      redis: {
+        url: options.redisUrl,
+      },
+      queue: {
+        name: options.queueName,
+        concurrency: options.size,
+        prefix: options.prefix,
+        stalledIntervalMs: options.stalledIntervalMs,
+        maxStalledCount: options.maxStalledCount,
+      },
       sessionManager: options.sessionManager,
       runner: options.runner,
       logger: this.logger,
-      prefix: options.prefix,
-      concurrency: options.size,
-      requeueDelayMs: options.requeueDelayMs,
-      historyMaxEntries: options.historyMaxEntries,
-      historyMaxBytes: options.historyMaxBytes,
-      sessionLockTtlSeconds: options.sessionLockTtlSeconds,
-      stalledIntervalMs: options.stalledIntervalMs,
-      maxStalledCount: options.maxStalledCount,
+      limits: {
+        historyEntries: options.historyMaxEntries,
+        historyBytes: options.historyMaxBytes,
+        lockTtlSeconds: options.sessionLockTtlSeconds,
+        requeueDelayMs: options.requeueDelayMs,
+      },
     });
   }
 

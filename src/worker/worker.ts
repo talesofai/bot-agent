@@ -13,20 +13,26 @@ import type { HistoryEntry, SessionInfo } from "../types/session";
 
 export interface SessionWorkerOptions {
   id: string;
-  queueName: string;
-  redisUrl: string;
+  redis: {
+    url: string;
+  };
+  queue: {
+    name: string;
+    concurrency?: number;
+    prefix?: string;
+    stalledIntervalMs?: number;
+    maxStalledCount?: number;
+  };
   sessionManager: SessionManager;
   launcher?: OpencodeLauncher;
   runner: OpencodeRunner;
   logger: Logger;
-  concurrency?: number;
-  prefix?: string;
-  requeueDelayMs?: number;
-  historyMaxEntries?: number;
-  historyMaxBytes?: number;
-  sessionLockTtlSeconds?: number;
-  stalledIntervalMs?: number;
-  maxStalledCount?: number;
+  limits?: {
+    historyEntries?: number;
+    historyBytes?: number;
+    lockTtlSeconds?: number;
+    requeueDelayMs?: number;
+  };
   responseQueue?: ResponseQueue;
 }
 
@@ -55,29 +61,29 @@ export class SessionWorker {
     this.launcher = options.launcher ?? new OpencodeLauncher();
     this.runner = options.runner;
     this.responseQueue = options.responseQueue;
-    this.historyMaxEntries = options.historyMaxEntries;
-    this.historyMaxBytes = options.historyMaxBytes;
-    this.sessionLockTtlSeconds = options.sessionLockTtlSeconds ?? 600;
-    this.requeueDelayMs = options.requeueDelayMs ?? 2000;
-    this.stalledIntervalMs = options.stalledIntervalMs ?? 30_000;
-    this.maxStalledCount = options.maxStalledCount ?? 1;
+    this.historyMaxEntries = options.limits?.historyEntries;
+    this.historyMaxBytes = options.limits?.historyBytes;
+    this.sessionLockTtlSeconds = options.limits?.lockTtlSeconds ?? 600;
+    this.requeueDelayMs = options.limits?.requeueDelayMs ?? 2000;
+    this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
+    this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
-    this.workerConnection = new IORedis(options.redisUrl, {
+    this.workerConnection = new IORedis(options.redis.url, {
       maxRetriesPerRequest: null,
     });
-    this.lockConnection = new IORedis(options.redisUrl, {
+    this.lockConnection = new IORedis(options.redis.url, {
       maxRetriesPerRequest: null,
     });
 
     this.worker = new Worker<SessionJobData>(
-      options.queueName,
+      options.queue.name,
       async (job: Job<SessionJobData>) => {
         return this.processJob(job);
       },
       {
         connection: this.workerConnection,
-        concurrency: options.concurrency ?? 1,
-        prefix: options.prefix,
+        concurrency: options.queue.concurrency ?? 1,
+        prefix: options.queue.prefix,
         autorun: false,
         stalledInterval: this.stalledIntervalMs,
         maxStalledCount: this.maxStalledCount,

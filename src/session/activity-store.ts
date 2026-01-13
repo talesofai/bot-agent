@@ -1,7 +1,7 @@
 import IORedis from "ioredis";
 import type { Logger } from "pino";
 
-export interface SessionActivityIndexOptions {
+export interface SessionActivityStoreOptions {
   redisUrl: string;
   logger: Logger;
   key?: string;
@@ -12,16 +12,16 @@ export interface SessionActivityKey {
   sessionId: string;
 }
 
-export class SessionActivityIndex {
+export class SessionActivityStore {
   private redis: IORedis;
   private logger: Logger;
   private key: string;
 
-  constructor(options: SessionActivityIndexOptions) {
+  constructor(options: SessionActivityStoreOptions) {
     this.redis = new IORedis(options.redisUrl, {
       maxRetriesPerRequest: null,
     });
-    this.logger = options.logger.child({ component: "session-activity-index" });
+    this.logger = options.logger.child({ component: "session-activity-store" });
     this.key = options.key ?? "session:last-active";
   }
 

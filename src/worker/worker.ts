@@ -10,7 +10,7 @@ import { buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
-import { SessionActivityIndex } from "../session/activity-index";
+import { SessionActivityStore } from "../session/activity-store";
 
 export interface SessionWorkerOptions {
   id: string;
@@ -44,7 +44,7 @@ export class SessionWorker {
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
   private responseQueue?: ResponseQueue;
-  private activityIndex: SessionActivityIndex;
+  private activityIndex: SessionActivityStore;
   private workerConnection: IORedis;
   private lockConnection: IORedis;
   private historyMaxEntries?: number;
@@ -70,7 +70,7 @@ export class SessionWorker {
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
-    this.activityIndex = new SessionActivityIndex({
+    this.activityIndex = new SessionActivityStore({
       redisUrl: options.redis.url,
       logger: this.logger,
     });

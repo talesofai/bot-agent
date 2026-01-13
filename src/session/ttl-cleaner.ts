@@ -5,9 +5,9 @@ import type { Logger } from "pino";
 import { getConfig } from "../config";
 import type { SessionMeta, SessionStatus } from "../types/session";
 import {
-  SessionActivityIndex,
+  SessionActivityStore,
   type SessionActivityKey,
-} from "./activity-index";
+} from "./activity-store";
 
 export interface SessionTtlCleanerOptions {
   dataDir?: string;
@@ -20,7 +20,7 @@ export class SessionTtlCleaner {
   private dataDir: string;
   private logger: Logger;
   private ttlMs: number;
-  private activityIndex: SessionActivityIndex | null;
+  private activityIndex: SessionActivityStore | null;
 
   constructor(options: SessionTtlCleanerOptions) {
     this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
@@ -28,7 +28,7 @@ export class SessionTtlCleaner {
     this.ttlMs = options.ttlMs ?? 30 * 24 * 60 * 60 * 1000;
     const redisUrl = options.redisUrl ?? getConfig().REDIS_URL;
     this.activityIndex = redisUrl
-      ? new SessionActivityIndex({
+      ? new SessionActivityStore({
           redisUrl,
           logger: this.logger,
         })

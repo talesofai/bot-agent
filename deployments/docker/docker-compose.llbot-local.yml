@@ -1,4 +1,15 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: opencode-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ../../data/redis:/data
+    networks:
+      - llbot_net
+
   pmhq:
     image: linyuchen/pmhq:latest
     platform: linux/amd64
@@ -38,6 +49,41 @@ services:
       - ../../scripts/llbot-entrypoint.sh:/config/llbot-entrypoint.sh:ro
     depends_on:
       - pmhq
+    networks:
+      - llbot_net
+
+  opencode-bot-agent-adapter:
+    image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+    container_name: opencode-bot-agent-adapter
+    command: ["bun", "run", "start:adapter"]
+    env_file:
+      - ../../configs/.env
+      - ../../configs/secrets/.env
+    environment:
+      - PLATFORM=qq
+      - REDIS_URL=redis://redis:6379
+      - LLBOT_REGISTRY_PREFIX=llbot:registry
+    volumes:
+      - ../../data:/data
+    depends_on:
+      - redis
+      - luckylillia
+    networks:
+      - llbot_net
+
+  opencode-bot-agent-worker:
+    image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+    container_name: opencode-bot-agent-worker
+    command: ["bun", "run", "start:worker"]
+    env_file:
+      - ../../configs/.env
+      - ../../configs/secrets/.env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ../../data:/data
+    depends_on:
+      - redis
     networks:
       - llbot_net
 

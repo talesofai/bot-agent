@@ -130,6 +130,7 @@ services:
 ```bash
 cd /opt/opencode-bot-agent
 docker compose -f deployments/docker/docker-compose.yml up -d
+docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 ```
 
 ## Kubernetes 部署（规划）
@@ -158,6 +159,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 
 ```bash
 docker compose -f deployments/docker/docker-compose.yml up -d
+docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 ```
 
 ### Kubernetes

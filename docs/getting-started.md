@@ -47,7 +47,7 @@ OPENAI_API_KEY=sk-xxx
 ## 步骤 3：启动 LuckyLilliaBot
 
 ```bash
-docker compose -f deployments/docker/docker-compose.yml up -d
+docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 ```
 
 ## 步骤 4：扫码登录
@@ -61,7 +61,7 @@ http://localhost:3080
 如果需要查看 LuckyLilliaBot 日志获取二维码：
 
 ```bash
-docker compose -f deployments/docker/docker-compose.yml logs luckylillia
+docker compose -f deployments/docker/docker-compose.llbot-local.yml logs luckylillia
 ```
 
 使用 QQ 扫码登录。登录成功后，session 会被持久化。
@@ -114,5 +114,5 @@ AI 回复可用性取决于 Bot Agent 是否已连接并完成配置。
 
 ```bash
 # 只看 LuckyLilliaBot
-docker compose -f deployments/docker/docker-compose.yml logs -f luckylillia
+docker compose -f deployments/docker/docker-compose.llbot-local.yml logs -f luckylillia
 ```

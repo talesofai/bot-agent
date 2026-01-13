@@ -39,19 +39,19 @@ PR 评论触发示例：
 
 ## 本地运行（推荐）
 
-使用 Docker Compose 启动 LuckyLilliaBot：
+使用 Docker Compose 启动 LuckyLilliaBot（含 Redis + Agent）：
 
 ```bash
 cp configs/example.env configs/.env
 export CONFIG_PATH=configs/.env
 ./scripts/init-secrets.sh
-docker compose -f deployments/docker/docker-compose.yml up -d
+docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 ```
 
 查看日志：
 
 ````bash
-docker compose -f deployments/docker/docker-compose.yml logs -f luckylillia
+docker compose -f deployments/docker/docker-compose.llbot-local.yml logs -f luckylillia
 
 本地启动 Adapter 与 Worker：
 

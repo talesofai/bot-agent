@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+## [0.0.20] - 2026-01-13
+
+### Changed
+
+- 重构 QQ 适配为基于 Redis 注册表的多 Bot 连接池
+- 触发路由改为 mention 优先 + 关键词路由开关组合策略
+- 群配置移除 cooldown 与 triggerMode=all
+- 配置与文档补齐 llbot 注册表与数据目录说明
+- K8s 资源补齐 llbot StatefulSet 与多实例 Service
+
+### Added
+
+- Redis 注册表读取模块
+- 关键词路由配置加载与缓存存储
+- 复读触发检测
+- Redis 部署模板与多 Bot 架构 ADR
+
 ## [0.0.19] - 2026-01-13
 
 ### Changed

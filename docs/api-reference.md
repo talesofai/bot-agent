@@ -19,7 +19,7 @@ GET /health
 ```json
 {
   "status": "ok",
-  "version": "0.0.19",
+  "version": "0.0.20",
   "uptime": "2h30m15s"
 }
 ```
@@ -70,7 +70,11 @@ GET /api/v1/groups/{group_id}
     "enabled": true,
     "triggerMode": "mention",
     "keywords": ["小助手"],
-    "cooldown": 5,
+    "keywordRouting": {
+      "enableGlobal": true,
+      "enableGroup": true,
+      "enableBot": true
+    },
     "adminUsers": ["123456789"],
     "maxSessions": 1,
     "model": "claude-sonnet-4-20250514"
@@ -86,7 +90,7 @@ GET /api/v1/groups/{group_id}
 }
 ```
 
-说明：`cooldown` 为群级冷却时间（秒）。
+说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词。
 
 #### 更新群配置
 
@@ -98,7 +102,11 @@ Content-Type: application/json
   "enabled": true,
   "triggerMode": "mention",
   "keywords": ["小助手"],
-  "cooldown": 5,
+  "keywordRouting": {
+    "enableGlobal": true,
+    "enableGroup": true,
+    "enableBot": true
+  },
   "adminUsers": ["123456789"],
   "maxSessions": 1
 }

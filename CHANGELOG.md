@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Discord 适配器（discord.js），补齐多平台支持
+
 ## [0.0.22] - 2026-01-14
 
 ### Added

@@ -7,6 +7,7 @@
 import type { PlatformAdapter } from "../types/platform";
 import type { AppConfig } from "../config";
 import { QQAdapterPool } from "./qq/index";
+import { DiscordAdapter } from "./discord";
 
 /**
  * Creates a platform adapter based on the provided configuration.
@@ -20,8 +21,9 @@ export function createAdapter(config: AppConfig): PlatformAdapter {
         refreshIntervalSec: config.LLBOT_REGISTRY_REFRESH_SEC,
       });
     case "discord":
-      // TODO: Implement Discord adapter
-      throw new Error("Discord adapter not implemented yet");
+      return new DiscordAdapter({
+        token: config.DISCORD_TOKEN,
+      });
     default:
       throw new Error(`Unknown platform: ${config.PLATFORM}`);
   }

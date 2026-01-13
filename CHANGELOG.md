@@ -113,6 +113,7 @@
 - API 文档补充 cooldown 为群级冷却
 - 增加 opencode 集成测试并补充运行说明
 - 开发文档补充 OPENCODE_BIN 用法
+- 增加 response worker Redis 集成测试并补充运行说明
 - Agent customization 文档标注角色配置路径为规划
 - Agent customization 文档补充技能示例为格式说明
 - 开发计划文档标注 Discord 技术栈为规划

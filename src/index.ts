@@ -17,6 +17,7 @@ import {
   shouldEnqueue,
 } from "./entry/trigger";
 import { EchoTracker } from "./entry/echo";
+import { resolveEchoRate } from "./entry/echo-rate";
 
 const config = getConfig();
 
@@ -137,8 +138,11 @@ if (adapter && groupStore) {
     const selfId = message.selfId ?? "";
     const botConfig = selfId ? botConfigs.get(selfId) : undefined;
     const botRouting = botConfig?.keywordRouting ?? defaultRouting;
-    const effectiveEchoRate =
-      botConfig?.echoRate ?? groupConfig.echoRate ?? globalEchoRate;
+    const effectiveEchoRate = resolveEchoRate(
+      botConfig?.echoRate,
+      groupConfig.echoRate,
+      globalEchoRate,
+    );
     const effectiveRouting = {
       enableGlobal: groupRouting.enableGlobal && botRouting.enableGlobal,
       enableGroup: groupRouting.enableGroup && botRouting.enableGroup,

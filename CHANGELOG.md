@@ -11,6 +11,7 @@
 
 - llbot 注册器脚本，定期写入注册表并设置 TTL
 - 复读概率配置 `echoRate`（全局/群/机器人可回退）
+- echoRate 回退与 llbot 注册器刷新路径的测试覆盖
 
 ### Changed
 

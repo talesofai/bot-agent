@@ -2,6 +2,11 @@ import IORedis from "ioredis";
 import type { Logger } from "pino";
 import { logger as defaultLogger } from "../logger";
 
+interface RedisClient {
+  set: (...args: unknown[]) => Promise<unknown>;
+  quit: () => Promise<unknown>;
+}
+
 export interface LlbotRegistrarOptions {
   redisUrl: string;
   prefix: string;
@@ -11,10 +16,11 @@ export interface LlbotRegistrarOptions {
   ttlSec?: number;
   refreshIntervalSec?: number;
   logger?: Logger;
+  redis?: RedisClient;
 }
 
 export class LlbotRegistrar {
-  private redis: IORedis;
+  private redis: RedisClient;
   private key: string;
   private payloadBase: { wsUrl: string; platform: string };
   private ttlSec: number | null;
@@ -29,7 +35,9 @@ export class LlbotRegistrar {
     if (ttlSec && refreshIntervalSec >= ttlSec) {
       throw new Error("llbot registrar refresh interval must be less than ttl");
     }
-    this.redis = new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
+    this.redis =
+      options.redis ??
+      new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.key = `${options.prefix}:${options.botId}`;
     this.payloadBase = { wsUrl: options.wsUrl, platform: options.platform };
     this.ttlSec = ttlSec;

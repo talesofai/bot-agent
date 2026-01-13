@@ -50,21 +50,31 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 
 查看日志：
 
-```bash
+````bash
 docker compose -f deployments/docker/docker-compose.yml logs -f luckylillia
+
+本地启动 Adapter 与 Worker：
+
+```bash
+bun run start:adapter
+bun run start:worker
+````
+
 ```
 
 ## 项目结构
 
 ```
+
 opencode-bot-agent/
-├── src/                   # TypeScript 源码（含测试）
-├── configs/               # 配置文件
-├── deployments/           # 部署配置
-├── docs/                  # 文档
-└── data/                  # 运行时数据（群目录）
-    └── groups/{group_id}/
-```
+├── src/ # TypeScript 源码（含测试）
+├── configs/ # 配置文件
+├── deployments/ # 部署配置
+├── docs/ # 文档
+└── data/ # 运行时数据（群目录）
+└── groups/{group_id}/
+
+````
 
 ## 代码规范
 
@@ -87,7 +97,7 @@ interface PlatformAdapter {
   sendMessage(options: SendMessageOptions): Promise<void>;
   getBotUserId(): string | null;
 }
-```
+````
 
 统一消息结构（Session）：
 

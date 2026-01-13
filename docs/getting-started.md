@@ -72,7 +72,12 @@ docker compose -f deployments/docker/docker-compose.yml logs luckylillia
 
 你可以在消息开头加 `#<key>` 切换会话编号，例如 `#2 继续刚才的话题`。不提供前缀时默认使用 key 0。
 
-如果你在本机直接运行 `opencode-bot-agent`（非 Docker 网络），请先确保 Redis 可用，并让本地 llbot 将自己的 WS 地址注册到 Redis（例如 `ws://localhost:3000`）。然后在 `configs/.env` 中设置 `REDIS_URL=redis://localhost:6379`，确认 `PLATFORM=qq`，再在另一个终端启动：
+如果你在本机直接运行 `opencode-bot-agent`（非 Docker 网络），请先确保 Redis 可用，并让本地 llbot 将自己的 WS 地址注册到 Redis（例如 `ws://localhost:3000`）。然后在 `configs/.env` 中设置 `REDIS_URL=redis://localhost:6379`，确认 `PLATFORM=qq`，再在两个终端分别启动 Adapter 与 Worker：
+
+```bash
+bun run start:adapter
+bun run start:worker
+```
 
 ```bash
 set -a

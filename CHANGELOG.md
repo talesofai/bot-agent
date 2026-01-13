@@ -33,6 +33,7 @@
 - 拆分 adapter 与 worker 启动入口，移除 `SERVICE_ROLE`
 - 新增 adapter/worker 部署清单示例
 - 部署文档更新 adapter/worker 与清理任务应用命令
+- 文档更新本地启动与日志查看命令
 
 ### Fixed
 

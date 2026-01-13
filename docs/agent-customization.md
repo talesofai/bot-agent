@@ -258,8 +258,8 @@ adminUsers:
 ### 查看日志
 
 ```bash
-# Bot Agent 实现并启用后
-docker compose -f deployments/docker/docker-compose.yml logs -f opencode-bot-agent | grep "group_id=123456789"
+# 本地启动 adapter 后直接查看终端输出
+bun run start:adapter
 ```
 
 ### 测试配置

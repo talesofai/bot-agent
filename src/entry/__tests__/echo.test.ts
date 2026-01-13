@@ -40,8 +40,8 @@ describe("EchoTracker", () => {
     Math.random = () => 0;
     try {
       expect(tracker.shouldEcho(baseMessage, 0)).toBe(false);
-      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
       expect(tracker.shouldEcho(baseMessage, 30)).toBe(true);
+      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
     } finally {
       Math.random = originalRandom;
     }

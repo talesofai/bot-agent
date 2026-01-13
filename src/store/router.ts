@@ -140,9 +140,7 @@ export class RouterStore {
     return botConfigs;
   }
 
-  private async loadBotConfig(
-    path: string,
-  ): Promise<BotKeywordConfig | null> {
+  private async loadBotConfig(path: string): Promise<BotKeywordConfig | null> {
     try {
       const fileStat = await stat(path);
       if (!fileStat.isFile()) {

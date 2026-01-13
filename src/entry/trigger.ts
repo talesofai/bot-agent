@@ -35,10 +35,12 @@ function mentionsSelf(message: SessionEvent): boolean {
   if (!message.selfId) {
     return false;
   }
-  return message.elements.some(
-    (element) =>
-      element.type === "mention" && element.userId === message.selfId,
-  ) || mentionsSelfInContent(message);
+  return (
+    message.elements.some(
+      (element) =>
+        element.type === "mention" && element.userId === message.selfId,
+    ) || mentionsSelfInContent(message)
+  );
 }
 
 export function matchesKeywords(content: string, keywords: string[]): boolean {

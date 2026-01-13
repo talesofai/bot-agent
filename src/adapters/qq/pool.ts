@@ -8,7 +8,10 @@ import type {
   SessionEvent,
 } from "../../types/platform";
 import { logger as defaultLogger } from "../../logger";
-import { LlbotRegistry, type LlbotRegistryEntry } from "../../registry/llbot-registry";
+import {
+  LlbotRegistry,
+  type LlbotRegistryEntry,
+} from "../../registry/llbot-registry";
 import { QQAdapter } from "./adapter";
 
 interface QQAdapterPoolOptions {

@@ -121,12 +121,10 @@ export class LlbotRegistry {
       this.logger.warn({ botId, raw }, "Registry entry missing wsUrl");
       return null;
     }
-    const platform =
-      typeof data.platform === "string" ? data.platform : "qq";
+    const platform = typeof data.platform === "string" ? data.platform : "qq";
     const lastSeenAt =
       typeof data.lastSeenAt === "string" ? data.lastSeenAt : undefined;
 
     return { botId, wsUrl, platform, lastSeenAt };
   }
-
 }

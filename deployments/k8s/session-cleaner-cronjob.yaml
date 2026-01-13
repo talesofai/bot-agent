@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: session-cleaner
+  namespace: bot
+spec:
+  schedule: "0 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: session-cleaner
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: session-cleaner
+              image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+              command:
+                - bun
+                - run
+                - clean:sessions
+              env:
+                - name: GROUPS_DATA_DIR
+                  value: "/data/groups"
+                - name: CLEAN_SESSIONS_TTL_DAYS
+                  value: "30"
+                - name: REDIS_URL
+                  value: "redis://redis:6379"
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: bot-data

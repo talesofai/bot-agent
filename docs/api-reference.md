@@ -75,6 +75,7 @@ GET /api/v1/groups/{group_id}
       "enableGroup": true,
       "enableBot": true
     },
+    "echoRate": null,
     "adminUsers": ["123456789"],
     "maxSessions": 1,
     "model": "claude-sonnet-4-20250514"
@@ -90,7 +91,7 @@ GET /api/v1/groups/{group_id}
 }
 ```
 
-说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词。
+说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词；`echoRate` 为空时继承上一级复读概率。
 
 #### 更新群配置
 
@@ -107,6 +108,7 @@ Content-Type: application/json
     "enableGroup": true,
     "enableBot": true
   },
+  "echoRate": null,
   "adminUsers": ["123456789"],
   "maxSessions": 1
 }

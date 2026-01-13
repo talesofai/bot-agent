@@ -53,6 +53,11 @@ LLBOT_REGISTRY_TTL_SEC=30
 # 注册刷新间隔（秒）
 LLBOT_REGISTRY_REFRESH_SEC=10
 
+# 注册器参数（仅 llbot 注册器使用）
+LLBOT_REGISTRY_BOT_ID=
+LLBOT_REGISTRY_WS_URL=
+LLBOT_PLATFORM=qq
+
 # Discord 平台配置（规划）
 DISCORD_TOKEN=
 DISCORD_APPLICATION_ID=
@@ -214,6 +219,7 @@ keywordRouting: # 关键词路由开关（群级）
   enableGlobal: true # 是否响应全局关键词
   enableGroup: true # 是否响应群关键词
   enableBot: true # 是否允许机器人关键词
+echoRate: null # 复读概率（0-100），空为继承上一级
 maxSessions: 1 # 每个用户最大会话数
 model: claude-sonnet-4-20250514 # 覆盖 OPENCODE_MODEL（可选）
 
@@ -225,6 +231,7 @@ adminUsers:
 
 关键词路由规则：全局/群关键词由群内所有 Bot 回复；机器人关键词仅对应 Bot 回复。
 群级开关由 `keywordRouting` 控制，机器人级开关可在机器人配置中进一步细化。
+复读概率 `echoRate` 由 bot > group > global 依次回退，空值代表继承。
 
 ### 全局关键词配置
 
@@ -233,6 +240,7 @@ adminUsers:
 keywords:
   - "生成图像"
   - "画图"
+echoRate: 30
 ```
 
 ### 机器人关键词配置
@@ -245,6 +253,7 @@ keywordRouting:
   enableGlobal: true # 是否响应全局关键词
   enableGroup: true # 是否响应群关键词
   enableBot: true # 是否使用机器人关键词
+echoRate: null # 复读概率（0-100），空为继承上一级
 ```
 
 `bot_id` 为平台账号 ID（QQ 号或 Discord ID）。

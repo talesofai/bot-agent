@@ -215,6 +215,7 @@ keywordRouting: # 关键词路由开关（群级）
   enableGlobal: true # 是否响应全局关键词
   enableGroup: true # 是否响应群关键词
   enableBot: true # 是否允许机器人关键词
+echoRate: null # 复读概率（0-100），空为继承上一级
 
 # 每个用户最大会话数
 maxSessions: 1

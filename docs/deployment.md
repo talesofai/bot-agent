@@ -205,6 +205,16 @@ spec:
 
 LLBot 仅负责 QQ 客户端与 WebUI。主服务通过 Redis 注册表发现 llbot，并建立 WS 连接；每个 llbot Pod 内需要运行注册器定期写入 `llbot:registry:{botId}`。为了允许主服务直连，`onlyLocalhost` 必须关闭。建议将 `/data` 挂载为 RWX（NAS），用于 `groups/`、`router/`、`bots/`。
 
+注册器可直接运行本仓库脚本（示例）：
+
+```bash
+LLBOT_REGISTRY_BOT_ID=123 \
+LLBOT_REGISTRY_WS_URL=ws://llbot-0-headless:3000 \
+LLBOT_REGISTRY_TTL_SEC=30 \
+LLBOT_REGISTRY_REFRESH_SEC=10 \
+bun run llbot:registrar
+```
+
 ```yaml
 # deployments/k8s/llbot-deployment.yaml
 apiVersion: apps/v1

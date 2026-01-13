@@ -28,6 +28,7 @@ keywordRouting:
   enableGlobal: true
   enableGroup: true
   enableBot: true
+echoRate: null
 adminUsers: []
 maxSessions: 1
 `;

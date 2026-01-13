@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- llbot 注册器脚本，定期写入注册表并设置 TTL
+- 复读概率配置 `echoRate`（全局/群/机器人可回退）
+
+### Changed
+
+- llbot 注册表读取不再依赖 `lastSeenAt` 过滤
+- 复读逻辑跳过所有包含 @ 的消息
+
 ## [0.0.21] - 2026-01-13
 
 ### Fixed

@@ -12,6 +12,7 @@ export const KeywordRoutingSchema = z.object({
 });
 
 export type KeywordRouting = z.infer<typeof KeywordRoutingSchema>;
+export const EchoRateSchema = z.number().int().min(0).max(100);
 
 /**
  * Group configuration schema with zod validation
@@ -25,6 +26,7 @@ export const GroupConfigSchema = z.object({
     enableGroup: true,
     enableBot: true,
   }),
+  echoRate: EchoRateSchema.nullable().default(null),
   adminUsers: z.array(z.string()).default([]),
   maxSessions: z.number().int().min(1).default(1),
   model: z.string().optional(),
@@ -85,6 +87,7 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = {
     enableGroup: true,
     enableBot: true,
   },
+  echoRate: null,
   adminUsers: [],
   maxSessions: 1,
 };

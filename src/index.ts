@@ -126,6 +126,7 @@ if (adapter && groupStore) {
     }
     const routerSnapshot = await routerStore?.getSnapshot();
     const globalKeywords = routerSnapshot?.globalKeywords ?? [];
+    const globalEchoRate = routerSnapshot?.globalEchoRate ?? 30;
     const botConfigs = routerSnapshot?.botConfigs ?? new Map();
     const defaultRouting = {
       enableGlobal: true,
@@ -136,6 +137,8 @@ if (adapter && groupStore) {
     const selfId = message.selfId ?? "";
     const botConfig = selfId ? botConfigs.get(selfId) : undefined;
     const botRouting = botConfig?.keywordRouting ?? defaultRouting;
+    const effectiveEchoRate =
+      botConfig?.echoRate ?? groupConfig.echoRate ?? globalEchoRate;
     const effectiveRouting = {
       enableGlobal: groupRouting.enableGlobal && botRouting.enableGlobal,
       enableGroup: groupRouting.enableGroup && botRouting.enableGroup,
@@ -169,7 +172,7 @@ if (adapter && groupStore) {
         },
       })
     ) {
-      if (echoTracker.shouldEcho(message)) {
+      if (echoTracker.shouldEcho(message, effectiveEchoRate)) {
         await adapter.sendMessage(message, message.content, {
           elements: message.elements,
         });

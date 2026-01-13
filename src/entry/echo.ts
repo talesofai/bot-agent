@@ -9,8 +9,14 @@ interface EchoState {
 export class EchoTracker {
   private states = new Map<string, EchoState>();
 
-  shouldEcho(message: SessionEvent): boolean {
+  shouldEcho(message: SessionEvent, ratePercent: number): boolean {
     if (!message.guildId) {
+      return false;
+    }
+    if (ratePercent <= 0) {
+      return false;
+    }
+    if (hasAnyMention(message)) {
       return false;
     }
     if (message.selfId && message.userId === message.selfId) {
@@ -30,7 +36,8 @@ export class EchoTracker {
     if (state.streak < 2 || state.echoed) {
       return false;
     }
-    if (Math.random() < 0.3) {
+    const chance = Math.min(ratePercent, 100) / 100;
+    if (Math.random() < chance) {
       state.echoed = true;
       return true;
     }
@@ -59,4 +66,17 @@ function normalizeElement(element: SessionElement): Record<string, string> {
     return { type: "mention", userId: element.userId };
   }
   return { type: "quote", messageId: element.messageId };
+}
+
+function hasAnyMention(message: SessionEvent): boolean {
+  if (message.elements.some((element) => element.type === "mention")) {
+    return true;
+  }
+  if (message.platform === "discord") {
+    const pattern = /<@!?[0-9]+>/g;
+    if (pattern.test(message.content)) {
+      return true;
+    }
+  }
+  return message.content.includes("@");
 }

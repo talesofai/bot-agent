@@ -5,13 +5,15 @@ import { parse as parseYaml } from "yaml";
 import type { Logger } from "pino";
 import { logger as defaultLogger } from "../logger";
 import {
+  EchoRateSchema,
   KeywordRoutingSchema,
   type KeywordRouting,
 } from "../types/group";
 
-const KeywordConfigSchema = z
+const GlobalConfigSchema = z
   .object({
     keywords: z.array(z.string()).default([]),
+    echoRate: EchoRateSchema.default(30),
   })
   .passthrough();
 
@@ -23,12 +25,14 @@ const BotConfigSchema = z
       enableGroup: true,
       enableBot: true,
     }),
+    echoRate: EchoRateSchema.nullable().default(null),
   })
   .passthrough();
 
 export interface BotKeywordConfig {
   keywords: string[];
   keywordRouting: KeywordRouting;
+  echoRate: number | null;
 }
 
 export interface RouterStoreOptions {
@@ -39,6 +43,7 @@ export interface RouterStoreOptions {
 
 interface RouterSnapshot {
   globalKeywords: string[];
+  globalEchoRate: number;
   botConfigs: Map<string, BotKeywordConfig>;
 }
 
@@ -73,31 +78,37 @@ export class RouterStore {
     const botsDir = join(this.dataDir, "bots");
     const globalConfigPath = join(routerDir, "global.yaml");
 
-    const [globalKeywords, botConfigs] = await Promise.all([
-      this.loadKeywordsFile(globalConfigPath),
+    const [globalConfig, botConfigs] = await Promise.all([
+      this.loadGlobalConfig(globalConfigPath),
       this.loadBotConfigs(botsDir),
     ]);
 
-    return { globalKeywords, botConfigs };
+    return {
+      globalKeywords: globalConfig.keywords,
+      globalEchoRate: globalConfig.echoRate,
+      botConfigs,
+    };
   }
 
-  private async loadKeywordsFile(path: string): Promise<string[]> {
+  private async loadGlobalConfig(
+    path: string,
+  ): Promise<{ keywords: string[]; echoRate: number }> {
     try {
       const fileStat = await stat(path);
       if (!fileStat.isFile()) {
-        return [];
+        return { keywords: [], echoRate: 30 };
       }
     } catch {
-      return [];
+      return { keywords: [], echoRate: 30 };
     }
     try {
       const content = await readFile(path, "utf-8");
       const parsed = parseYaml(content);
-      const config = KeywordConfigSchema.parse(parsed);
-      return config.keywords;
+      const config = GlobalConfigSchema.parse(parsed);
+      return { keywords: config.keywords, echoRate: config.echoRate };
     } catch (err) {
       this.logger.warn({ err, path }, "Failed to load keywords config");
-      return [];
+      return { keywords: [], echoRate: 30 };
     }
   }
 
@@ -147,6 +158,7 @@ export class RouterStore {
       return {
         keywords: config.keywords,
         keywordRouting: config.keywordRouting,
+        echoRate: config.echoRate,
       };
     } catch (err) {
       this.logger.warn({ err, path }, "Failed to load bot config");

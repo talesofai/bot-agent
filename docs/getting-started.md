@@ -68,7 +68,7 @@ docker compose -f deployments/docker/docker-compose.llbot-local.yml logs luckyli
 
 ## 步骤 5：测试
 
-在 QQ 群中 @机器人 发送消息，确认机器人在线。AI 回复依赖 `opencode-bot-agent` 服务正常运行（当前 `docker-compose.yml` 仅启动 LuckyLilliaBot，需要单独启动 Bot Agent）。
+在 QQ 群中 @机器人 发送消息，确认机器人在线。AI 回复依赖 `opencode-bot-agent` 服务正常运行。
 
 你可以在消息开头加 `#<key>` 切换会话编号，例如 `#2 继续刚才的话题`。不提供前缀时默认使用 key 0。
 

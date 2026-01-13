@@ -36,6 +36,7 @@
 - 文档更新本地启动与日志查看命令
 - Docker Compose 补充 adapter/worker 启动示例
 - llbot-local compose 增加 adapter/worker 与 redis
+- 更新入门文档关于 compose 启动说明
 
 ### Fixed
 

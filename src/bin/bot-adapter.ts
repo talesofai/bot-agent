@@ -38,14 +38,9 @@ const bot: Bot = {
 const groupStore = new GroupStore();
 const dataRoot = config.DATA_DIR ?? path.dirname(config.GROUPS_DATA_DIR);
 const routerStore = new RouterStore({ dataDir: dataRoot });
-groupStore
-  .init()
-  .then(() => {
-    groupStore.startWatching();
-  })
-  .catch((err) => {
-    logger.error({ err }, "Failed to initialize GroupStore");
-  });
+groupStore.init().catch((err) => {
+  logger.error({ err }, "Failed to initialize GroupStore");
+});
 
 const sessionQueue = new BullmqSessionQueue({
   redisUrl: config.REDIS_URL,
@@ -62,7 +57,11 @@ const responseWorker = new ResponseWorker({
 responseWorker.start();
 
 let httpServer: HttpServer | null = null;
-startHttpServer({ logger })
+startHttpServer({
+  logger,
+  onReloadGroup: async (groupId) =>
+    Boolean(await groupStore.reloadGroup(groupId)),
+})
   .then((server) => {
     httpServer = server;
   })
@@ -85,7 +84,6 @@ adapter.onEvent((message) => dispatcher.dispatch(message));
 const shutdown = async () => {
   logger.info("Shutting down...");
   try {
-    await groupStore.stopWatching();
     await responseWorker.stop();
     if (httpServer) {
       httpServer.stop();

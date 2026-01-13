@@ -19,7 +19,6 @@ describe("GroupStore", () => {
   });
 
   afterEach(async () => {
-    await store.stopWatching();
     // Cleanup temp directory
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });

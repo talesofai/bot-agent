@@ -5,15 +5,12 @@ import type { GroupData } from "../types/group";
 import { getConfig } from "../config";
 import { logger as defaultLogger } from "../logger";
 import { GroupFileRepository } from "./repository";
-import { GroupWatcher } from "./watcher";
 
 export interface GroupStoreOptions {
   /** Base directory for group data */
   dataDir?: string;
   /** Custom logger */
   logger?: Logger;
-  /** Debounce delay for hot reload (ms) */
-  debounceMs?: number;
   /** Preload all groups on init */
   preload?: boolean;
   /** Max groups kept in memory */
@@ -25,44 +22,22 @@ type ReloadCallback = (groupId: string) => void;
 export class GroupStore {
   private dataDir: string;
   private logger: Logger;
-  private debounceMs: number;
   private preload: boolean;
   private groups: LRUCache<string, GroupData>;
   private reloadCallbacks: ReloadCallback[] = [];
   private repository: GroupFileRepository;
-  private watcher: GroupWatcher;
 
   constructor(options: GroupStoreOptions = {}) {
     this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "group-store",
     });
-    this.debounceMs = options.debounceMs ?? 300;
     this.preload = options.preload ?? false;
     const cacheSize = options.cacheSize ?? 1000;
     this.groups = new LRUCache({ max: cacheSize });
     this.repository = new GroupFileRepository({
       dataDir: this.dataDir,
       logger: this.logger,
-    });
-    this.watcher = new GroupWatcher({
-      dataDir: this.dataDir,
-      debounceMs: this.debounceMs,
-      logger: this.logger,
-      onChange: async (groupId, filePath) => {
-        this.logger.debug(
-          { groupId, filePath },
-          "Reloading group due to file change",
-        );
-        await this.loadGroup(groupId);
-        for (const callback of this.reloadCallbacks) {
-          try {
-            callback(groupId);
-          } catch (err) {
-            this.logger.error({ err, groupId }, "Reload callback error");
-          }
-        }
-      },
     });
   }
 
@@ -143,17 +118,18 @@ export class GroupStore {
   }
 
   /**
-   * Start watching for file changes
+   * Reload a group and notify listeners
    */
-  startWatching(): void {
-    this.watcher.start();
-  }
-
-  /**
-   * Stop watching for file changes
-   */
-  async stopWatching(): Promise<void> {
-    await this.watcher.stop();
+  async reloadGroup(groupId: string): Promise<GroupData | null> {
+    const group = await this.loadGroup(groupId);
+    for (const callback of this.reloadCallbacks) {
+      try {
+        callback(groupId);
+      } catch (err) {
+        this.logger.error({ err, groupId }, "Reload callback error");
+      }
+    }
+    return group;
   }
 
   private async loadAllGroups(): Promise<void> {

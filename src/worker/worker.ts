@@ -10,7 +10,7 @@ import { buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
-import { RedisActivityRecorder } from "../session/activity-recorder";
+import { SessionActivityIndex } from "../session/activity-index";
 
 export interface SessionWorkerOptions {
   id: string;
@@ -44,7 +44,7 @@ export class SessionWorker {
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
   private responseQueue?: ResponseQueue;
-  private activityRecorder: RedisActivityRecorder;
+  private activityIndex: SessionActivityIndex;
   private workerConnection: IORedis;
   private lockConnection: IORedis;
   private historyMaxEntries?: number;
@@ -70,7 +70,7 @@ export class SessionWorker {
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
-    this.activityRecorder = new RedisActivityRecorder({
+    this.activityIndex = new SessionActivityIndex({
       redisUrl: options.redis.url,
       logger: this.logger,
     });
@@ -115,7 +115,7 @@ export class SessionWorker {
     await this.worker.close();
     await this.workerConnection.quit();
     await this.lockConnection.quit();
-    await this.activityRecorder.close();
+    await this.activityIndex.close();
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
@@ -266,10 +266,10 @@ export class SessionWorker {
 
   private async recordActivity(sessionInfo: SessionInfo): Promise<void> {
     try {
-      await this.activityRecorder.record(
-        sessionInfo.meta.groupId,
-        sessionInfo.meta.sessionId,
-      );
+      await this.activityIndex.recordActivity({
+        groupId: sessionInfo.meta.groupId,
+        sessionId: sessionInfo.meta.sessionId,
+      });
     } catch (err) {
       this.logger.warn({ err }, "Failed to record session activity");
     }

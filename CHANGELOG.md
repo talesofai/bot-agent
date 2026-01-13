@@ -42,7 +42,7 @@
 - 历史读取改为全量读取并截断末尾行
 - Worker 配置参数分组，减少构造函数噪音
 - SessionManager 移除可注入 activity tracker，改由 Worker 记录活跃度
-- 活跃度记录简化为 RedisActivityRecorder
+- 活跃度记录移除 recorder 包装层，直接使用 SessionActivityIndex
 
 ### Fixed
 

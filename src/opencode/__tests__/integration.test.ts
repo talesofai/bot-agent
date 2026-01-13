@@ -34,6 +34,15 @@ describe("opencode integration", () => {
     const key = 0;
 
     try {
+      const opencodeBin = process.env.OPENCODE_BIN ?? "opencode";
+      if (!process.env.OPENCODE_BIN) {
+        const resolved = Bun.which(opencodeBin);
+        if (!resolved) {
+          throw new Error(
+            "Missing opencode binary. Set OPENCODE_BIN or ensure opencode is on PATH.",
+          );
+        }
+      }
       const session = await sessionManager.createSession(groupId, userId, {
         key,
       });
@@ -59,9 +68,7 @@ describe("opencode integration", () => {
           input,
         });
         const launchSpec = launcher.buildLaunchSpec(session, prompt, model);
-        if (process.env.OPENCODE_BIN) {
-          launchSpec.command = process.env.OPENCODE_BIN;
-        }
+        launchSpec.command = opencodeBin;
         const job: SessionJob = {
           id: "opencode-integration",
           data: {

@@ -111,3 +111,4 @@ interface UnifiedMessage {
 - 运行测试：`bun test src`
 - 新增功能需配套测试与日志校验。
 - 集成测试（真实 opencode）：`OPENCODE_INTEGRATION=1 OPENCODE_MODEL=glm-4.7 bun test src`
+- 如需指定二进制路径，可额外设置 `OPENCODE_BIN=/path/to/opencode`。

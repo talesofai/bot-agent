@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-bot-agent-worker
+  namespace: bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opencode-bot-agent-worker
+  template:
+    metadata:
+      labels:
+        app: opencode-bot-agent-worker
+    spec:
+      containers:
+        - name: opencode-bot-agent-worker
+          image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+          command:
+            - bun
+            - run
+            - start:worker
+          env:
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OPENAI_API_KEY
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bot-data

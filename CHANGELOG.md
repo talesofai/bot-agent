@@ -31,6 +31,7 @@
 - 增加独立会话清理脚本 `clean:sessions`
 - 增加会话清理 CronJob 示例
 - 拆分 adapter 与 worker 启动入口，移除 `SERVICE_ROLE`
+- 新增 adapter/worker 部署清单示例
 
 ### Fixed
 

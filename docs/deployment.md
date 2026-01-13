@@ -241,26 +241,29 @@ spec:
 
 ### Bot Agent Deployment
 
+Adapter 与 Worker 分离部署，入口命令分别为 `start:adapter` / `start:worker`。
+
 ```yaml
-# deployments/k8s/opencode-bot-agent.yaml（示例，需自行创建）
+# deployments/k8s/opencode-bot-agent-adapter.yaml（示例）
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: opencode-bot-agent
+  name: opencode-bot-agent-adapter
   namespace: bot
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: opencode-bot-agent
+      app: opencode-bot-agent-adapter
   template:
     metadata:
       labels:
-        app: opencode-bot-agent
+        app: opencode-bot-agent-adapter
     spec:
       containers:
-        - name: opencode-bot-agent
-          image: ghcr.io/talesofai/opencode-bot-agent:latest
+        - name: opencode-bot-agent-adapter
+          image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+          command: ["bun", "run", "start:adapter"]
           env:
             - name: PLATFORM
               value: "qq"
@@ -268,18 +271,42 @@ spec:
               value: "redis://redis:6379"
             - name: LLBOT_REGISTRY_PREFIX
               value: "llbot:registry"
-            - name: DISCORD_TOKEN
+            - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: llbot-secrets
-                  key: DISCORD_TOKEN
-              # 规划
-            - name: DISCORD_APPLICATION_ID
-              valueFrom:
-                secretKeyRef:
-                  name: llbot-secrets
-                  key: DISCORD_APPLICATION_ID
-              # 规划
+                  key: OPENAI_API_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bot-data
+---
+# deployments/k8s/opencode-bot-agent-worker.yaml（示例）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-bot-agent-worker
+  namespace: bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opencode-bot-agent-worker
+  template:
+    metadata:
+      labels:
+        app: opencode-bot-agent-worker
+    spec:
+      containers:
+        - name: opencode-bot-agent-worker
+          image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+          command: ["bun", "run", "start:worker"]
+          env:
+            - name: REDIS_URL
+              value: "redis://redis:6379"
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -24,11 +24,16 @@ export class LlbotRegistrar {
   private refreshInFlight = false;
 
   constructor(options: LlbotRegistrarOptions) {
+    const ttlSec = options.ttlSec ?? 30;
+    const refreshIntervalSec = options.refreshIntervalSec ?? 10;
+    if (ttlSec && refreshIntervalSec >= ttlSec) {
+      throw new Error("llbot registrar refresh interval must be less than ttl");
+    }
     this.redis = new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.key = `${options.prefix}:${options.botId}`;
     this.payloadBase = { wsUrl: options.wsUrl, platform: options.platform };
-    this.ttlSec = options.ttlSec ?? 30;
-    this.refreshIntervalSec = options.refreshIntervalSec ?? 10;
+    this.ttlSec = ttlSec;
+    this.refreshIntervalSec = refreshIntervalSec;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "llbot-registrar",
     });

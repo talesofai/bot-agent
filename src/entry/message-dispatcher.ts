@@ -15,7 +15,6 @@ import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
 import { SessionBufferStore } from "../session/buffer";
-import { buildSessionLockKey } from "../session/utils";
 
 export interface MessageDispatcherOptions {
   adapter: PlatformAdapter;
@@ -141,21 +140,16 @@ export class MessageDispatcher {
       const session = applySessionKey(message, trimmedContent, prefixLength);
       const sessionId = buildSessionId(message.userId, key);
       await this.bufferStore.append(sessionId, session);
-      const lockKey = buildSessionLockKey(groupId, sessionId);
-      const locked = await this.bufferStore.isLocked(lockKey);
-      if (!locked) {
-        await this.sessionQueue.enqueue(
-          {
-            groupId,
-            userId: message.userId,
-            key,
-            sessionId,
-          },
-          { jobId: `trigger:${groupId}:${sessionId}` },
-        );
-      } else {
-        await this.bufferStore.markPending(sessionId);
-      }
+      await this.bufferStore.markPending(sessionId);
+      await this.sessionQueue.enqueue(
+        {
+          groupId,
+          userId: message.userId,
+          key,
+          sessionId,
+        },
+        { jobId: `trigger:${groupId}:${sessionId}` },
+      );
     } catch (err) {
       this.logger.error(
         { err, messageId: message.messageId },

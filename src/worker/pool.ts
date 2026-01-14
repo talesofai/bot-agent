@@ -11,10 +11,8 @@ export interface SessionWorkerPoolOptions {
   runner: OpencodeRunner;
   logger: Logger;
   prefix?: string;
-  requeueDelayMs?: number;
   historyMaxEntries?: number;
   historyMaxBytes?: number;
-  sessionLockTtlSeconds?: number;
   stalledIntervalMs?: number;
   maxStalledCount?: number;
 }
@@ -43,8 +41,6 @@ export class SessionWorkerPool {
       limits: {
         historyEntries: options.historyMaxEntries,
         historyBytes: options.historyMaxBytes,
-        lockTtlSeconds: options.sessionLockTtlSeconds,
-        requeueDelayMs: options.requeueDelayMs,
       },
     });
   }

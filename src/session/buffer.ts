@@ -47,11 +47,6 @@ export class SessionBufferStore {
       .filter((entry): entry is SessionEvent => entry !== null);
   }
 
-  async isLocked(lockKey: string): Promise<boolean> {
-    const exists = await this.redis.exists(lockKey);
-    return exists > 0;
-  }
-
   async markPending(sessionId: string): Promise<void> {
     const key = this.pendingKey(sessionId);
     await this.redis.set(key, "1", "EX", this.pendingTtlSeconds);

@@ -1,7 +1,6 @@
-import { Worker, type Job, DelayedError } from "bullmq";
+import { Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import type { Logger } from "pino";
-import Redlock, { type Lock } from "redlock";
 
 import type { ResponseQueue, SessionJob, SessionJobData } from "../queue";
 import { GroupFileRepository } from "../store/repository";
@@ -15,11 +14,7 @@ import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
 import type { SessionEvent } from "../types/platform";
 import { SessionActivityStore } from "../session/activity-store";
-import {
-  assertValidSessionKey,
-  buildSessionId,
-  buildSessionLockKey,
-} from "../session/utils";
+import { assertValidSessionKey, buildSessionId } from "../session/utils";
 import { assertSafePathSegment } from "../utils/path";
 import { SessionBufferStore } from "../session/buffer";
 
@@ -42,8 +37,6 @@ export interface SessionWorkerOptions {
   limits?: {
     historyEntries?: number;
     historyBytes?: number;
-    lockTtlSeconds?: number;
-    requeueDelayMs?: number;
   };
   responseQueue?: ResponseQueue;
 }
@@ -59,13 +52,9 @@ export class SessionWorker {
   private responseQueue?: ResponseQueue;
   private activityIndex: SessionActivityStore;
   private workerConnection: IORedis;
-  private lockConnection: IORedis;
-  private redlock: Redlock;
   private bufferStore: SessionBufferStore;
   private historyMaxEntries?: number;
   private historyMaxBytes?: number;
-  private sessionLockTtlMs: number;
-  private requeueDelayMs: number;
   private stalledIntervalMs: number;
   private maxStalledCount: number;
 
@@ -88,9 +77,6 @@ export class SessionWorker {
     this.responseQueue = options.responseQueue;
     this.historyMaxEntries = options.limits?.historyEntries;
     this.historyMaxBytes = options.limits?.historyBytes;
-    const lockTtlSeconds = options.limits?.lockTtlSeconds ?? 600;
-    this.sessionLockTtlMs = lockTtlSeconds * 1000;
-    this.requeueDelayMs = options.limits?.requeueDelayMs ?? 2000;
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
@@ -101,14 +87,6 @@ export class SessionWorker {
 
     this.workerConnection = new IORedis(options.redis.url, {
       maxRetriesPerRequest: null,
-    });
-    this.lockConnection = new IORedis(options.redis.url, {
-      maxRetriesPerRequest: null,
-    });
-    this.redlock = new Redlock([this.lockConnection], {
-      retryCount: 0,
-      retryDelay: 0,
-      retryJitter: 0,
     });
     this.bufferStore = new SessionBufferStore({ redisUrl: options.redis.url });
 
@@ -144,33 +122,18 @@ export class SessionWorker {
   async stop(): Promise<void> {
     await this.worker.close();
     await this.workerConnection.quit();
-    await this.lockConnection.quit();
     await this.activityIndex.close();
     await this.bufferStore.close();
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
     const jobData = this.validateJobData(job.data);
-    const lockKey = buildSessionLockKey(jobData.groupId, jobData.sessionId);
-
-    await this.withSessionLock(
-      job,
-      lockKey,
-      jobData.sessionId,
-      async (lockContext) => {
-        await this.processBufferedSession(job, jobData, lockContext);
-      },
-    );
+    await this.processBufferedSession(job, jobData);
   }
 
   private async processBufferedSession(
     job: Job<SessionJobData>,
     jobData: SessionJobData,
-    lockContext: {
-      signal: AbortSignal;
-      assertActive: () => void;
-      isLost: () => boolean;
-    },
   ): Promise<void> {
     let statusUpdated = false;
     let sessionInfo: SessionInfo | null = null;
@@ -201,15 +164,12 @@ export class SessionWorker {
           mergedSession,
         );
 
-        lockContext.assertActive();
         const result = await this.runner.run({
           job: this.mapJob(job),
           session: sessionInfo,
           history,
           launchSpec,
-          signal: lockContext.signal,
         });
-        lockContext.assertActive();
         const output = resolveOutput(result.output);
 
         await this.appendHistoryFromJob(
@@ -224,109 +184,17 @@ export class SessionWorker {
         buffered = await this.drainPendingBuffer(jobData.sessionId);
       }
     } catch (err) {
-      if (err instanceof DelayedError) {
-        this.logger.debug(
-          { sessionId: jobData.sessionId },
-          "Session job delayed",
-        );
-        throw err;
-      }
       this.logger.error(
         { err, sessionId: jobData.sessionId },
         "Error processing session job",
       );
       throw err;
     } finally {
-      if (statusUpdated && sessionInfo && !lockContext.isLost()) {
+      if (statusUpdated && sessionInfo) {
         try {
           await this.updateStatus(sessionInfo, "idle");
         } catch (err) {
           this.logger.warn({ err }, "Failed to update session status to idle");
-        }
-      }
-    }
-  }
-
-  private async withSessionLock<T>(
-    job: Job<SessionJobData>,
-    lockKey: string,
-    sessionId: string,
-    fn: (context: {
-      signal: AbortSignal;
-      assertActive: () => void;
-      isLost: () => boolean;
-    }) => Promise<T>,
-  ): Promise<T> {
-    let lock: Lock | null = null;
-    try {
-      lock = await this.redlock.acquire([lockKey], this.sessionLockTtlMs);
-    } catch (err) {
-      if (!this.isLockBusy(err)) {
-        this.logger.error({ err, lockKey }, "Failed to acquire session lock");
-        throw err;
-      }
-      this.logger.debug({ sessionId }, "Session busy, delaying job");
-      if (!job.token) {
-        throw new Error("Missing BullMQ job token for requeue");
-      }
-      await job.moveToDelayed(Date.now() + this.requeueDelayMs, job.token);
-      throw new DelayedError();
-    }
-
-    let renewTimer: ReturnType<typeof setInterval> | null = null;
-    const abortController = new AbortController();
-    let lockLost = false;
-
-    const stopRenewal = () => {
-      if (renewTimer) {
-        clearInterval(renewTimer);
-        renewTimer = null;
-      }
-    };
-
-    if (lock) {
-      const renewIntervalMs = Math.max(
-        1000,
-        Math.floor(this.sessionLockTtlMs / 2),
-      );
-      renewTimer = setInterval(() => {
-        void (async () => {
-          try {
-            lock = await lock!.extend(this.sessionLockTtlMs);
-          } catch (err) {
-            lockLost = true;
-            if (!abortController.signal.aborted) {
-              abortController.abort();
-            }
-            stopRenewal();
-            this.logger.warn(
-              { err, lockKey, sessionId },
-              "Session lock lost, aborting job",
-            );
-          }
-        })();
-      }, renewIntervalMs);
-    }
-
-    const context = {
-      signal: abortController.signal,
-      assertActive: () => {
-        if (lockLost) {
-          throw new Error("Session lock lost");
-        }
-      },
-      isLost: () => lockLost,
-    };
-
-    try {
-      return await fn(context);
-    } finally {
-      stopRenewal();
-      if (lock) {
-        try {
-          await lock.release();
-        } catch (err) {
-          this.logger.warn({ err }, "Failed to release session lock");
         }
       }
     }
@@ -500,13 +368,6 @@ export class SessionWorker {
       );
     }
   }
-  private isLockBusy(err: unknown): boolean {
-    if (!(err instanceof Error)) {
-      return false;
-    }
-    return err.name === "ExecutionError" || err.name === "ResourceLockedError";
-  }
-
   private validateJobData(jobData: SessionJobData): SessionJobData {
     assertSafePathSegment(jobData.groupId, "groupId");
     assertSafePathSegment(jobData.userId, "userId");

@@ -67,12 +67,6 @@ function mentionsSelf(message: SessionEvent): boolean {
   if (!message.selfId) {
     return false;
   }
-  if (message.platform === "discord") {
-    const mentionUserIds = getDiscordMentionUserIds(message.extras);
-    if (mentionUserIds?.includes(message.selfId)) {
-      return true;
-    }
-  }
   return message.elements.some(
     (element) =>
       element.type === "mention" && element.userId === message.selfId,
@@ -91,20 +85,6 @@ export function normalizeKeywords(keywords: string[]): string[] {
   return keywords
     .map((keyword) => keyword.trim().toLowerCase())
     .filter((keyword) => keyword.length > 0);
-}
-
-function getDiscordMentionUserIds(extras: unknown): string[] | null {
-  if (!extras || typeof extras !== "object") {
-    return null;
-  }
-  const record = extras as { mentionUserIds?: unknown };
-  if (!Array.isArray(record.mentionUserIds)) {
-    return null;
-  }
-  const ids = record.mentionUserIds.filter(
-    (id): id is string => typeof id === "string",
-  );
-  return ids;
 }
 
 export function extractSessionKey(input: string): {

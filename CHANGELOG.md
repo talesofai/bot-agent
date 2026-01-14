@@ -12,6 +12,8 @@
 - trimTextElements 简化为双向扫描与 slice 风格裁剪
 - trimTextElements 改为直接裁剪首尾空白文本节点
 - Discord 解析改为直接使用原始内容与 mentions 列表
+- 触发器移除平台分支，统一依赖元素化 mention 判断
+- Discord 解析补齐 mention 元素，避免核心逻辑读取 extras
 - Discord 发送优先使用缓存并处理 channel fetch 失败
 - EchoTracker 改为 Redis 共享状态，避免本地内存失效
 - Worker 锁逻辑抽离为独立封装，精简业务流程

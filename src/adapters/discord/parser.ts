@@ -7,7 +7,6 @@ export interface DiscordMessageExtras {
   channelId: string;
   guildId?: string;
   authorId: string;
-  mentionUserIds: string[];
 }
 
 export function parseMessage(
@@ -42,15 +41,35 @@ export function parseMessage(
       channelId: message.channelId,
       guildId: message.guildId ?? undefined,
       authorId: message.author.id,
-      mentionUserIds: Array.from(message.mentions.users.keys()),
     },
   };
 }
 
 function buildElements(rawContent: string, message: Message): SessionElement[] {
   const elements: SessionElement[] = [];
+  const mentionIds = new Set(message.mentions.users.keys());
   if (rawContent) {
-    elements.push({ type: "text", text: rawContent });
+    const pattern = /<@!?(\d+)>/g;
+    let lastIndex = 0;
+    for (const match of rawContent.matchAll(pattern)) {
+      const start = match.index ?? 0;
+      if (start > lastIndex) {
+        elements.push({
+          type: "text",
+          text: rawContent.slice(lastIndex, start),
+        });
+      }
+      const userId = match[1];
+      if (userId && mentionIds.has(userId)) {
+        elements.push({ type: "mention", userId });
+      } else {
+        elements.push({ type: "text", text: match[0] });
+      }
+      lastIndex = start + match[0].length;
+    }
+    if (lastIndex < rawContent.length) {
+      elements.push({ type: "text", text: rawContent.slice(lastIndex) });
+    }
   }
   for (const attachment of message.attachments.values()) {
     if (attachment.url) {

@@ -7,17 +7,17 @@
 
 ## [Unreleased]
 
+## [0.0.25] - 2026-01-15
+
 ### Changed
 
-- trimTextElements 简化为双向扫描与 slice 风格裁剪
-- trimTextElements 改为直接裁剪首尾空白文本节点
+- trimTextElements 改为无变异 slice 裁剪，减少分支
 - Discord 解析改为直接使用原始内容与 mentions 列表
 - 触发器移除平台分支，统一依赖元素化 mention 判断
 - Discord 解析补齐 mention 元素，避免核心逻辑读取 extras
 - Adapter 启动路径移除工厂层，直接在入口构造平台适配器
 - SessionManager 拆除为显式仓储与 createSession 辅助函数
 - SessionWorker 拆分缓冲处理与上下文构建，主流程更直观
-- trimTextElements 改为无变异 slice 裁剪，减少分支
 - Worker 去掉 Redlock 续期与锁依赖，依赖队列去重触发
 - Discord 发送优先使用缓存并处理 channel fetch 失败
 - EchoTracker 改为 Redis 共享状态，避免本地内存失效

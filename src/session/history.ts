@@ -87,8 +87,11 @@ function parseHistoryRow(row: HistoryRow): HistoryEntry {
     return base;
   }
   try {
-    const extra = JSON.parse(row.extra) as Record<string, unknown>;
-    return { ...base, ...extra };
+    const parsed = JSON.parse(row.extra);
+    if (isRecord(parsed)) {
+      return { ...base, ...parsed };
+    }
+    return base;
   } catch {
     return base;
   }
@@ -111,4 +114,8 @@ function applyMaxBytes(
     startIndex = i;
   }
   return entries.slice(startIndex);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

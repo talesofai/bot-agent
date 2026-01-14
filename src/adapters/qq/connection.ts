@@ -163,7 +163,11 @@ export class MilkyConnection extends EventEmitter {
         this.logger.warn({ data: parsed }, "Unexpected message payload");
         return;
       }
-      const payload = parsed as Record<string, unknown>;
+      if (!isRecord(parsed)) {
+        this.logger.warn({ data: parsed }, "Unexpected message payload");
+        return;
+      }
+      const payload = parsed;
 
       // Handle response messages
       if ("status" in payload && "echo" in payload) {
@@ -375,4 +379,8 @@ export class MilkyConnection extends EventEmitter {
       this.responseCallbacks.delete(echo);
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

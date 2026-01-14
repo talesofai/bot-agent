@@ -16,6 +16,9 @@
 - 缓冲消息合并格式移至 opencode 提示词构建
 - 注册表监听改为 Redis Pub/Sub 与键事件通知
 - 会话清理只依赖文件系统，移除 Redis 索引
+- Opencode 输出解析改为单次 JSON block 扫描
+- trimTextElements 减少多余分配与空白扫描
+- 历史记录 extra 解析与 QQ payload 解析改为安全对象判断
 
 ## [0.0.25] - 2026-01-15
 

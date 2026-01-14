@@ -13,18 +13,7 @@ export function parseOpencodeOutput(
     return null;
   }
   const parsed = tryParseJson(raw.trim());
-  if (!parsed) {
-    return null;
-  }
-  const entries = extractHistoryEntries(parsed, createdAt);
-  const output = extractOutput(parsed, entries);
-  if (output === null && (!entries || entries.length === 0)) {
-    return null;
-  }
-  return {
-    output: output ?? undefined,
-    historyEntries: entries && entries.length > 0 ? entries : undefined,
-  };
+  return parsed ? extractResult(parsed, createdAt) : null;
 }
 
 function tryParseJson(raw: string | null): unknown | null {
@@ -34,39 +23,16 @@ function tryParseJson(raw: string | null): unknown | null {
   try {
     return JSON.parse(raw);
   } catch {
-    return parseJsonFromLines(raw);
-  }
-}
-
-function parseJsonFromLines(raw: string): unknown | null {
-  const lines = raw.split(/\r?\n/);
-  const nonEmpty = lines.filter((line) => line.trim().length > 0);
-  if (nonEmpty.length === 0) {
-    return null;
-  }
-
-  const tryParse = (candidate: string): unknown | null => {
-    if (!candidate) {
+    const block = findJsonBlock(raw);
+    if (!block) {
       return null;
     }
     try {
-      return JSON.parse(candidate);
+      return JSON.parse(block);
     } catch {
       return null;
     }
-  };
-
-  for (let start = 0; start < nonEmpty.length; start += 1) {
-    let candidate = "";
-    for (let end = start; end < nonEmpty.length; end += 1) {
-      candidate = candidate ? `${candidate}\n${nonEmpty[end]}` : nonEmpty[end];
-      const parsed = tryParse(candidate.trim());
-      if (parsed) {
-        return parsed;
-      }
-    }
   }
-  return null;
 }
 
 function extractHistoryEntries(
@@ -100,6 +66,21 @@ function extractHistoryEntries(
     }
   }
   return null;
+}
+
+function extractResult(
+  parsed: unknown,
+  createdAt: string,
+): OpencodeRunResult | null {
+  const entries = extractHistoryEntries(parsed, createdAt);
+  const output = extractOutput(parsed, entries);
+  if (output === null && (!entries || entries.length === 0)) {
+    return null;
+  }
+  return {
+    output: output ?? undefined,
+    historyEntries: entries && entries.length > 0 ? entries : undefined,
+  };
 }
 
 function mapEntries(items: unknown[], createdAt: string): HistoryEntry[] {
@@ -147,5 +128,56 @@ function extractOutput(
       .find((entry) => entry.role === "assistant");
     return lastAssistant?.content ?? null;
   }
+  return null;
+}
+
+function findJsonBlock(raw: string): string | null {
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{" || ch === "[") {
+      if (start < 0) {
+        start = i;
+      }
+      stack.push(ch);
+      continue;
+    }
+
+    if (ch === "}" || ch === "]") {
+      const last = stack[stack.length - 1];
+      if ((ch === "}" && last === "{") || (ch === "]" && last === "[")) {
+        stack.pop();
+        if (stack.length === 0 && start >= 0) {
+          return raw.slice(start, i + 1);
+        }
+      }
+    }
+  }
+
   return null;
 }

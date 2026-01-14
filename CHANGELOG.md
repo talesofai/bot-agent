@@ -10,6 +10,7 @@
 ### Changed
 
 - trimTextElements 简化为双向扫描与 slice 风格裁剪
+- trimTextElements 改为直接裁剪首尾空白文本节点
 - Discord 解析改为直接使用原始内容与 mentions 列表
 - Worker 锁逻辑抽离为独立封装，精简业务流程
 - 历史记录读取改为 Bun.file slice 读取尾部窗口并按需解析

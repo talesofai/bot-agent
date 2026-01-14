@@ -13,45 +13,41 @@ export function trimTextElements(elements: SessionElement[]): SessionElement[] {
     return [];
   }
 
-  const trimmedLeading: SessionElement[] = [];
-  let started = false;
-  for (const element of elements) {
-    if (element.type !== "text") {
-      trimmedLeading.push(element);
-      continue;
+  const result = elements.map((element) => ({ ...element }));
+
+  while (result.length > 0) {
+    const first = result[0];
+    if (first.type !== "text") {
+      break;
     }
-    if (!started) {
-      const text = element.text.trimStart();
-      if (!text) {
-        continue;
-      }
-      trimmedLeading.push({ ...element, text });
-      started = true;
-      continue;
+    if (first.text.trim()) {
+      break;
     }
-    trimmedLeading.push(element);
+    result.shift();
   }
 
-  const trimmedTrailing: SessionElement[] = [];
-  let ended = false;
-  for (let i = trimmedLeading.length - 1; i >= 0; i -= 1) {
-    const element = trimmedLeading[i];
-    if (element.type !== "text") {
-      trimmedTrailing.push(element);
-      continue;
-    }
-    if (!ended) {
-      const text = element.text.trimEnd();
-      if (!text) {
-        continue;
-      }
-      trimmedTrailing.push({ ...element, text });
-      ended = true;
-      continue;
-    }
-    trimmedTrailing.push(element);
+  if (result[0]?.type === "text") {
+    result[0] = { ...result[0], text: result[0].text.trimStart() };
   }
 
-  trimmedTrailing.reverse();
-  return trimmedTrailing;
+  while (result.length > 0) {
+    const last = result[result.length - 1];
+    if (last.type !== "text") {
+      break;
+    }
+    if (last.text.trim()) {
+      break;
+    }
+    result.pop();
+  }
+
+  if (result[result.length - 1]?.type === "text") {
+    const lastIndex = result.length - 1;
+    result[lastIndex] = {
+      ...result[lastIndex],
+      text: result[lastIndex].text.trimEnd(),
+    };
+  }
+
+  return result;
 }

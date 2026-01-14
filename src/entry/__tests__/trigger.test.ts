@@ -3,8 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_GROUP_CONFIG, type GroupConfig } from "../../types/group";
 import type { SessionEvent } from "../../types/platform";
 import {
-  type BotKeywordConfig,
   extractSessionKey,
+  resolveTriggerRule,
   shouldEnqueue,
 } from "../trigger";
 
@@ -26,12 +26,6 @@ function makeConfig(overrides: Partial<GroupConfig>): GroupConfig {
   return { ...DEFAULT_GROUP_CONFIG, ...overrides };
 }
 
-function makeBotConfigs(
-  configs: Array<[string, BotKeywordConfig]>,
-): Map<string, BotKeywordConfig> {
-  return new Map(configs);
-}
-
 describe("shouldEnqueue", () => {
   test("matches mention mode", () => {
     const message: SessionEvent = {
@@ -42,11 +36,14 @@ describe("shouldEnqueue", () => {
       ],
     };
     const config = makeConfig({ triggerMode: "mention" });
-    const allowed = shouldEnqueue({
+    const rule = resolveTriggerRule({
       groupConfig: config,
-      message,
       globalKeywords: [],
-      botConfigs: makeBotConfigs([]),
+      botConfig: undefined,
+    });
+    const allowed = shouldEnqueue({
+      message,
+      rule,
     });
     expect(allowed).toBe(true);
   });
@@ -60,19 +57,17 @@ describe("shouldEnqueue", () => {
       ],
     };
     const config = makeConfig({ triggerMode: "keyword" });
-    const allowed = shouldEnqueue({
+    const rule = resolveTriggerRule({
       groupConfig: config,
-      message,
       globalKeywords: [],
-      botConfigs: makeBotConfigs([
-        [
-          "bot-2",
-          {
-            keywords: ["bot-a"],
-            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
-          },
-        ],
-      ]),
+      botConfig: {
+        keywords: ["bot-a"],
+        keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+      },
+    });
+    const allowed = shouldEnqueue({
+      message,
+      rule,
     });
     expect(allowed).toBe(true);
   });
@@ -80,11 +75,14 @@ describe("shouldEnqueue", () => {
   test("matches keyword mode", () => {
     const message: SessionEvent = { ...baseMessage, content: "Hello Bot" };
     const config = makeConfig({ triggerMode: "keyword", keywords: ["bot"] });
-    const allowed = shouldEnqueue({
+    const rule = resolveTriggerRule({
       groupConfig: config,
-      message,
       globalKeywords: [],
-      botConfigs: makeBotConfigs([]),
+      botConfig: undefined,
+    });
+    const allowed = shouldEnqueue({
+      message,
+      rule,
     });
     expect(allowed).toBe(true);
   });
@@ -95,19 +93,17 @@ describe("shouldEnqueue", () => {
       content: "global-key bot-a",
     };
     const config = makeConfig({ triggerMode: "keyword" });
-    const allowed = shouldEnqueue({
+    const rule = resolveTriggerRule({
       groupConfig: config,
-      message,
       globalKeywords: ["global-key"],
-      botConfigs: makeBotConfigs([
-        [
-          "bot-2",
-          {
-            keywords: ["bot-a"],
-            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
-          },
-        ],
-      ]),
+      botConfig: {
+        keywords: ["bot-a"],
+        keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+      },
+    });
+    const allowed = shouldEnqueue({
+      message,
+      rule,
     });
     expect(allowed).toBe(true);
   });
@@ -115,19 +111,17 @@ describe("shouldEnqueue", () => {
   test("respects bot keyword ownership", () => {
     const message: SessionEvent = { ...baseMessage, content: "hello bot-a" };
     const config = makeConfig({ triggerMode: "keyword" });
-    const allowed = shouldEnqueue({
+    const rule = resolveTriggerRule({
       groupConfig: config,
-      message,
       globalKeywords: [],
-      botConfigs: makeBotConfigs([
-        [
-          "bot-2",
-          {
-            keywords: ["bot-a"],
-            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
-          },
-        ],
-      ]),
+      botConfig: {
+        keywords: ["bot-b"],
+        keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+      },
+    });
+    const allowed = shouldEnqueue({
+      message,
+      rule,
     });
     expect(allowed).toBe(false);
   });
@@ -135,19 +129,17 @@ describe("shouldEnqueue", () => {
   test("allows bot keyword match for self", () => {
     const message: SessionEvent = { ...baseMessage, content: "hello bot-a" };
     const config = makeConfig({ triggerMode: "keyword" });
-    const allowed = shouldEnqueue({
+    const rule = resolveTriggerRule({
       groupConfig: config,
-      message,
       globalKeywords: [],
-      botConfigs: makeBotConfigs([
-        [
-          baseMessage.selfId,
-          {
-            keywords: ["bot-a"],
-            keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
-          },
-        ],
-      ]),
+      botConfig: {
+        keywords: ["bot-a"],
+        keywordRouting: DEFAULT_GROUP_CONFIG.keywordRouting,
+      },
+    });
+    const allowed = shouldEnqueue({
+      message,
+      rule,
     });
     expect(allowed).toBe(true);
   });

@@ -25,6 +25,7 @@
 - Adapter 启动流程提前失败退出并确保初始化
 - TypeScript 配置与 Redlock 类型补齐
 - trimTextElements 去除 splice 操作并简化裁剪流程
+- 触发规则预先合并关键词，精简 shouldEnqueue 逻辑
 
 ## [0.0.23] - 2026-01-14
 

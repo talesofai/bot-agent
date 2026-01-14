@@ -6,7 +6,11 @@ import type { GroupStore } from "../store";
 import type { RouterStore } from "../store/router";
 import type { BullmqSessionQueue } from "../queue";
 import { buildSessionId } from "../session";
-import { extractSessionKey, shouldEnqueue } from "./trigger";
+import {
+  extractSessionKey,
+  resolveTriggerRule,
+  shouldEnqueue,
+} from "./trigger";
 import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
@@ -70,6 +74,11 @@ export class MessageDispatcher {
       const botConfigs = routerSnapshot?.botConfigs ?? new Map();
       const selfId = message.selfId ?? "";
       const botConfig = selfId ? botConfigs.get(selfId) : undefined;
+      const triggerRule = resolveTriggerRule({
+        groupConfig,
+        globalKeywords,
+        botConfig,
+      });
       const effectiveEchoRate = resolveEchoRate(
         botConfig?.echoRate,
         groupConfig.echoRate,
@@ -78,10 +87,8 @@ export class MessageDispatcher {
 
       if (
         !shouldEnqueue({
-          groupConfig,
           message,
-          globalKeywords,
-          botConfigs,
+          rule: triggerRule,
         })
       ) {
         if (this.echoTracker.shouldEcho(message, effectiveEchoRate)) {

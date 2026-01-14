@@ -1,4 +1,5 @@
 import type { HistoryEntry } from "../types/session";
+import type { SessionEvent } from "../types/platform";
 
 export interface OpencodePromptInput {
   systemPrompt: string;
@@ -36,6 +37,19 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
   return sections.join("\n\n");
 }
 
+export function mergeBufferedMessages(messages: SessionEvent[]): SessionEvent {
+  const last = messages[messages.length - 1];
+  const combined = messages
+    .map((message) => formatBufferedMessage(message))
+    .filter((line) => line.length > 0)
+    .join("\n");
+  return {
+    ...last,
+    content: combined,
+    elements: combined ? [{ type: "text", text: combined }] : [],
+  };
+}
+
 function formatHistoryTimestamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) {
@@ -51,6 +65,12 @@ function formatHistoryTimestamp(iso: string): string {
     parsed.getDay()
   ];
   return `${year}-${month}-${day} ${hour}:${minute}:${second} ${weekday}`;
+}
+
+function formatBufferedMessage(message: SessionEvent): string {
+  const timestamp = new Date(message.timestamp).toISOString();
+  const content = message.content.trim() ? message.content.trim() : "<empty>";
+  return `- [${timestamp}] ${content}`;
 }
 
 function pad2(value: number): string {

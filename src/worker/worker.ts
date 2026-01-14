@@ -8,7 +8,7 @@ import { SessionRepository } from "../session/repository";
 import { HistoryStore } from "../session/history";
 import { createSession } from "../session/session-ops";
 import { OpencodeLauncher } from "../opencode/launcher";
-import { buildOpencodePrompt } from "../opencode/prompt";
+import { buildOpencodePrompt, mergeBufferedMessages } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
@@ -409,23 +409,4 @@ function resolveOutput(output?: string): string | undefined {
     return undefined;
   }
   return output.trim() ? output : undefined;
-}
-
-function mergeBufferedMessages(messages: SessionEvent[]): SessionEvent {
-  const last = messages[messages.length - 1];
-  const combined = messages
-    .map((message) => formatBufferedMessage(message))
-    .filter((line) => line.length > 0)
-    .join("\n");
-  return {
-    ...last,
-    content: combined,
-    elements: combined ? [{ type: "text", text: combined }] : [],
-  };
-}
-
-function formatBufferedMessage(message: SessionEvent): string {
-  const timestamp = new Date(message.timestamp).toISOString();
-  const content = message.content.trim() ? message.content.trim() : "<empty>";
-  return `- [${timestamp}] ${content}`;
 }

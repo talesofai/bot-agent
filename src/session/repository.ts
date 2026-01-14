@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 
 import type { SessionInfo, SessionMeta } from "../types/session";
 import { buildSessionId } from "./utils";
+import { assertSafePathSegment } from "../utils/path";
 
 export interface SessionRepositoryOptions {
   dataDir: string;
@@ -30,6 +31,7 @@ export class SessionRepository {
   }
 
   getGroupPath(groupId: string): string {
+    assertSafePathSegment(groupId, "groupId");
     return join(this.dataDir, groupId);
   }
 
@@ -44,6 +46,9 @@ export class SessionRepository {
     const paths = this.buildSessionPaths(groupId, sessionId);
     const meta = await this.readMeta(paths.metaPath);
     if (!meta) {
+      return null;
+    }
+    if (!this.isMetaConsistent(meta, groupId, sessionId)) {
       return null;
     }
     return this.buildSessionInfo(meta, paths);
@@ -75,6 +80,7 @@ export class SessionRepository {
   }
 
   private buildSessionPaths(groupId: string, sessionId: string): SessionPaths {
+    assertSafePathSegment(sessionId, "sessionId");
     const groupPath = this.getGroupPath(groupId);
     const sessionsPath = join(groupPath, "sessions");
     const sessionPath = join(sessionsPath, sessionId);
@@ -102,7 +108,12 @@ export class SessionRepository {
     }
     try {
       const raw = await readFile(metaPath, "utf-8");
-      return JSON.parse(raw) as SessionMeta;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!isSessionMeta(parsed)) {
+        this.logger.warn({ metaPath }, "Invalid session meta shape");
+        return null;
+      }
+      return parsed;
     } catch (err) {
       this.logger.warn({ err, metaPath }, "Failed to read session meta");
       return null;
@@ -122,4 +133,41 @@ export class SessionRepository {
       return false;
     }
   }
+
+  private isMetaConsistent(
+    meta: SessionMeta,
+    groupId: string,
+    sessionId: string,
+  ): boolean {
+    if (meta.groupId === groupId && meta.sessionId === sessionId) {
+      return true;
+    }
+    this.logger.warn(
+      {
+        metaGroupId: meta.groupId,
+        metaSessionId: meta.sessionId,
+        groupId,
+        sessionId,
+      },
+      "Session meta does not match expected identifiers",
+    );
+    return false;
+  }
+}
+
+function isSessionMeta(value: unknown): value is SessionMeta {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.sessionId === "string" &&
+    typeof obj.groupId === "string" &&
+    typeof obj.ownerId === "string" &&
+    typeof obj.key === "number" &&
+    Number.isInteger(obj.key) &&
+    (obj.status === "idle" || obj.status === "running") &&
+    typeof obj.createdAt === "string" &&
+    typeof obj.updatedAt === "string"
+  );
 }

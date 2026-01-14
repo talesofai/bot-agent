@@ -24,6 +24,24 @@ describe("SessionManager", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
+  test("createSession allows existing session even if maxSessions lowered", async () => {
+    const tempDir = makeTempDir();
+    const manager = new SessionManager({
+      dataDir: tempDir,
+    });
+    await manager.createSession("group-1", "user-1", {
+      key: 1,
+      maxSessions: 2,
+    });
+    await expect(
+      manager.createSession("group-1", "user-1", {
+        key: 1,
+        maxSessions: 1,
+      }),
+    ).resolves.toBeTruthy();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
   test("createSession rejects negative key", async () => {
     const tempDir = makeTempDir();
     const manager = new SessionManager({
@@ -32,6 +50,28 @@ describe("SessionManager", () => {
     await expect(
       manager.createSession("group-1", "user-1", { key: -1, maxSessions: 2 }),
     ).rejects.toThrow("Session key must be a non-negative integer");
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("createSession rejects unsafe groupId", async () => {
+    const tempDir = makeTempDir();
+    const manager = new SessionManager({
+      dataDir: tempDir,
+    });
+    await expect(
+      manager.createSession("../escape", "user-1", { key: 0, maxSessions: 1 }),
+    ).rejects.toThrow("groupId must be a safe path segment");
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("createSession rejects unsafe userId", async () => {
+    const tempDir = makeTempDir();
+    const manager = new SessionManager({
+      dataDir: tempDir,
+    });
+    await expect(
+      manager.createSession("group-1", "user/1", { key: 0, maxSessions: 1 }),
+    ).rejects.toThrow("userId must be a safe path segment");
     rmSync(tempDir, { recursive: true, force: true });
   });
 

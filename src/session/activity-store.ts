@@ -1,5 +1,6 @@
 import IORedis from "ioredis";
 import type { Logger } from "pino";
+import { isSafePathSegment } from "../utils/path";
 
 export interface SessionActivityStoreOptions {
   redisUrl: string;
@@ -35,8 +36,27 @@ export class SessionActivityStore {
 
   async fetchExpired(cutoffMs: number): Promise<SessionKey[]> {
     const members = await this.redis.zrangebyscore(this.key, 0, cutoffMs);
-    const decoded = members.map((member) => this.decodeMember(member));
-    return decoded.filter((entry): entry is SessionKey => entry !== null);
+    const decoded: SessionKey[] = [];
+    const invalidMembers: string[] = [];
+    for (const member of members) {
+      const entry = this.decodeMember(member);
+      if (entry) {
+        decoded.push(entry);
+      } else {
+        invalidMembers.push(member);
+      }
+    }
+    if (invalidMembers.length > 0) {
+      try {
+        await this.redis.zrem(this.key, ...invalidMembers);
+      } catch (err) {
+        this.logger.warn(
+          { err, count: invalidMembers.length },
+          "Failed to remove invalid session activity members",
+        );
+      }
+    }
+    return decoded;
   }
 
   async remove(key: SessionKey): Promise<void> {
@@ -49,6 +69,10 @@ export class SessionActivityStore {
   }
 
   private encodeMember(key: SessionKey): string {
+    if (!isSafePathSegment(key.groupId) || !isSafePathSegment(key.sessionId)) {
+      this.logger.warn({ key }, "Unsafe session activity key");
+      throw new Error("Unsafe session activity key");
+    }
     return `${key.groupId}:${key.sessionId}`;
   }
 
@@ -58,6 +82,11 @@ export class SessionActivityStore {
       this.logger.warn({ member }, "Invalid session activity member");
       return null;
     }
-    return { groupId, sessionId: rest.join(":") };
+    const sessionId = rest.join(":");
+    if (!isSafePathSegment(groupId) || !isSafePathSegment(sessionId)) {
+      this.logger.warn({ member }, "Unsafe session activity member");
+      return null;
+    }
+    return { groupId, sessionId };
   }
 }

@@ -12,6 +12,8 @@ import type {
 import { HistoryStore, type HistoryReadOptions } from "./history";
 import { SessionRepository } from "./repository";
 import { getConfig } from "../config";
+import { assertSafePathSegment } from "../utils/path";
+import { assertValidSessionKey } from "./utils";
 
 export interface SessionManagerOptions {
   dataDir?: string;
@@ -50,20 +52,10 @@ export class SessionManager {
     userId: string,
     options: CreateSessionOptions = {},
   ): Promise<SessionInfo> {
+    assertSafePathSegment(groupId, "groupId");
+    assertSafePathSegment(userId, "userId");
     const key = options.key ?? 0;
-    if (!Number.isInteger(key) || key < 0) {
-      throw new Error("Session key must be a non-negative integer");
-    }
-
-    await this.ensureGroupDir(groupId);
-    const config = await this.getGroupConfig(groupId);
-
-    const maxSessions = options.maxSessions ?? config.maxSessions;
-    this.assertValidMaxSessions(maxSessions);
-
-    if (key >= maxSessions) {
-      throw new Error("Session key exceeds maxSessions for this group");
-    }
+    assertValidSessionKey(key);
 
     const sessionId = this.sessionRepository.getSessionId(userId, key);
     const existing = await this.sessionRepository.loadSession(
@@ -75,6 +67,14 @@ export class SessionManager {
         throw new Error("Session ownership mismatch");
       }
       return existing;
+    }
+
+    const config = await this.getGroupConfig(groupId);
+    const maxSessions = options.maxSessions ?? config.maxSessions;
+    this.assertValidMaxSessions(maxSessions);
+
+    if (key >= maxSessions) {
+      throw new Error("Session key exceeds maxSessions for this group");
     }
 
     const now = new Date().toISOString();
@@ -131,10 +131,6 @@ export class SessionManager {
     entry: HistoryEntry,
   ): Promise<void> {
     await this.historyStore.appendHistory(sessionInfo.historyPath, entry);
-  }
-
-  private async ensureGroupDir(groupId: string): Promise<void> {
-    await this.groupRepository.ensureGroupDir(groupId);
   }
 
   async getGroupConfig(groupId: string): Promise<GroupConfig> {

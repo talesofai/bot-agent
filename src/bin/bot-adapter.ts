@@ -1,6 +1,7 @@
 import path from "node:path";
 import { getConfig } from "../config";
-import { createAdapter } from "../adapters";
+import { DiscordAdapter } from "../adapters/discord";
+import { QQAdapterPool } from "../adapters/qq";
 import { logger } from "../logger";
 import { GroupStore } from "../store";
 import { RouterStore } from "../store/router";
@@ -24,7 +25,23 @@ async function main(): Promise<void> {
     "Bot adapter starting",
   );
 
-  const adapter = createAdapter(config);
+  let adapter;
+  switch (config.PLATFORM) {
+    case "qq":
+      adapter = new QQAdapterPool({
+        redisUrl: config.REDIS_URL,
+        registryPrefix: config.LLBOT_REGISTRY_PREFIX,
+        refreshIntervalSec: config.LLBOT_REGISTRY_REFRESH_SEC,
+      });
+      break;
+    case "discord":
+      adapter = new DiscordAdapter({
+        token: config.DISCORD_TOKEN,
+      });
+      break;
+    default:
+      throw new Error(`Unknown platform: ${config.PLATFORM}`);
+  }
   const bot: Bot = {
     platform: adapter.platform,
     selfId: "",

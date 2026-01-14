@@ -1,5 +1,4 @@
 export { getConfig, resetConfig } from "./config";
-export { createAdapter } from "./adapters";
 export { GroupStore } from "./store";
 export { RouterStore } from "./store/router";
 export { MessageDispatcher } from "./entry/message-dispatcher";

@@ -150,104 +150,101 @@ export class SessionWorker {
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
-    const { sessionId, groupId, userId, key } = this.validateJobData(job.data);
-    const lockKey = buildSessionLockKey(groupId, sessionId);
+    const jobData = this.validateJobData(job.data);
+    const lockKey = buildSessionLockKey(jobData.groupId, jobData.sessionId);
 
-    await this.withSessionLock(job, lockKey, sessionId, async (lockContext) => {
-      let statusUpdated = false;
-      let sessionInfo: SessionInfo | null = null;
+    await this.withSessionLock(
+      job,
+      lockKey,
+      jobData.sessionId,
+      async (lockContext) => {
+        await this.processBufferedSession(job, jobData, lockContext);
+      },
+    );
+  }
 
-      try {
-        let buffered = await this.bufferStore.drain(sessionId);
-        if (buffered.length === 0) {
-          return;
-        }
+  private async processBufferedSession(
+    job: Job<SessionJobData>,
+    jobData: SessionJobData,
+    lockContext: {
+      signal: AbortSignal;
+      assertActive: () => void;
+      isLost: () => boolean;
+    },
+  ): Promise<void> {
+    let statusUpdated = false;
+    let sessionInfo: SessionInfo | null = null;
 
-        // 2. Ensure Session Exists
-        sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
+    try {
+      let buffered = await this.bufferStore.drain(jobData.sessionId);
+      if (buffered.length === 0) {
+        return;
+      }
+
+      sessionInfo = await this.ensureSession(
+        jobData.groupId,
+        jobData.userId,
+        jobData.key,
+        jobData.sessionId,
+      );
+      await this.recordActivity(sessionInfo);
+
+      sessionInfo = await this.updateStatus(sessionInfo, "running");
+      statusUpdated = true;
+      await this.recordActivity(sessionInfo);
+
+      while (buffered.length > 0) {
+        const mergedSession = mergeBufferedMessages(buffered);
+        const { history, launchSpec } = await this.buildPromptContext(
+          jobData.groupId,
+          sessionInfo,
+          mergedSession,
+        );
+
+        lockContext.assertActive();
+        const result = await this.runner.run({
+          job: this.mapJob(job),
+          session: sessionInfo,
+          history,
+          launchSpec,
+          signal: lockContext.signal,
+        });
+        lockContext.assertActive();
+        const output = resolveOutput(result.output);
+
+        await this.appendHistoryFromJob(
+          sessionInfo,
+          mergedSession,
+          result.historyEntries,
+          output,
+        );
         await this.recordActivity(sessionInfo);
+        await this.enqueueResponse(mergedSession, output);
 
-        // 3. Update Status
-        sessionInfo = await this.updateStatus(sessionInfo, "running");
-        statusUpdated = true;
-        await this.recordActivity(sessionInfo);
-
-        while (buffered.length > 0) {
-          const mergedSession = mergeBufferedMessages(buffered);
-
-          // 4. Prepare Context
-          const history = await this.historyStore.readHistory(
-            sessionInfo.historyPath,
-            {
-              maxEntries: this.historyMaxEntries,
-              maxBytes: this.historyMaxBytes,
-            },
-          );
-          const groupConfig = await this.getGroupConfig(groupId);
-          const agentPrompt = await this.getAgentPrompt(groupId);
-          const systemPrompt = buildSystemPrompt(agentPrompt);
-          const promptInput = resolveSessionInput(mergedSession.content);
-          const prompt = buildOpencodePrompt({
-            systemPrompt,
-            history,
-            input: promptInput,
-          });
-          const launchSpec = this.launcher.buildLaunchSpec(
-            sessionInfo,
-            prompt,
-            groupConfig.model,
-          );
-
-          // 5. Run
-          lockContext.assertActive();
-          const result = await this.runner.run({
-            job: this.mapJob(job),
-            session: sessionInfo,
-            history,
-            launchSpec,
-            signal: lockContext.signal,
-          });
-          lockContext.assertActive();
-          const output = resolveOutput(result.output);
-
-          // 6. Append History
-          await this.appendHistoryFromJob(
-            sessionInfo,
-            mergedSession,
-            result.historyEntries,
-            output,
-          );
-          await this.recordActivity(sessionInfo);
-          await this.enqueueResponse(mergedSession, output);
-
-          buffered = await this.bufferStore.drain(sessionId);
-          if (buffered.length === 0) {
-            const pending = await this.bufferStore.consumePending(sessionId);
-            if (pending) {
-              buffered = await this.bufferStore.drain(sessionId);
-            }
-          }
-        }
-      } catch (err) {
-        if (err instanceof DelayedError) {
-          this.logger.debug({ sessionId }, "Session job delayed");
-          throw err;
-        }
-        this.logger.error({ err, sessionId }, "Error processing session job");
+        buffered = await this.drainPendingBuffer(jobData.sessionId);
+      }
+    } catch (err) {
+      if (err instanceof DelayedError) {
+        this.logger.debug(
+          { sessionId: jobData.sessionId },
+          "Session job delayed",
+        );
         throw err;
-      } finally {
-        if (statusUpdated && sessionInfo && !lockContext.isLost()) {
-          try {
-            await this.updateStatus(sessionInfo, "idle");
-          } catch (err) {
-            this.logger.warn(
-              { err },
-              "Failed to update session status to idle",
-            );
-          }
+      }
+      this.logger.error(
+        { err, sessionId: jobData.sessionId },
+        "Error processing session job",
+      );
+      throw err;
+    } finally {
+      if (statusUpdated && sessionInfo && !lockContext.isLost()) {
+        try {
+          await this.updateStatus(sessionInfo, "idle");
+        } catch (err) {
+          this.logger.warn({ err }, "Failed to update session status to idle");
         }
       }
-    });
+    }
   }
 
   private async withSessionLock<T>(
@@ -333,6 +330,49 @@ export class SessionWorker {
         }
       }
     }
+  }
+
+  private async buildPromptContext(
+    groupId: string,
+    sessionInfo: SessionInfo,
+    sessionInput: SessionEvent,
+  ): Promise<{
+    history: HistoryEntry[];
+    launchSpec: ReturnType<OpencodeLauncher["buildLaunchSpec"]>;
+  }> {
+    const history = await this.historyStore.readHistory(
+      sessionInfo.historyPath,
+      {
+        maxEntries: this.historyMaxEntries,
+        maxBytes: this.historyMaxBytes,
+      },
+    );
+    const groupConfig = await this.getGroupConfig(groupId);
+    const agentPrompt = await this.getAgentPrompt(groupId);
+    const systemPrompt = buildSystemPrompt(agentPrompt);
+    const promptInput = resolveSessionInput(sessionInput.content);
+    const prompt = buildOpencodePrompt({
+      systemPrompt,
+      history,
+      input: promptInput,
+    });
+    const launchSpec = this.launcher.buildLaunchSpec(
+      sessionInfo,
+      prompt,
+      groupConfig.model,
+    );
+    return { history, launchSpec };
+  }
+
+  private async drainPendingBuffer(sessionId: string): Promise<SessionEvent[]> {
+    let buffered = await this.bufferStore.drain(sessionId);
+    if (buffered.length === 0) {
+      const pending = await this.bufferStore.consumePending(sessionId);
+      if (pending) {
+        buffered = await this.bufferStore.drain(sessionId);
+      }
+    }
+    return buffered;
   }
 
   private async ensureSession(

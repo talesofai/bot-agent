@@ -170,7 +170,10 @@ export class SessionWorker {
               clearInterval(renewTimer);
               renewTimer = null;
             }
-            this.logger.warn({ err, lockKey }, "Failed to extend session lock");
+            this.logger.warn(
+              { err, lockKey, sessionId },
+              "Session lock lost, aborting job",
+            );
           }
         })();
       }, renewIntervalMs);

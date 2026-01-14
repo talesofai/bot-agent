@@ -9,44 +9,39 @@ export function extractTextFromElements(elements: SessionElement[]): string {
 }
 
 export function trimTextElements(elements: SessionElement[]): SessionElement[] {
-  if (elements.length === 0) {
+  let start = 0;
+  let end = elements.length;
+
+  while (start < end) {
+    const element = elements[start];
+    if (element.type !== "text" || element.text.trim().length > 0) {
+      break;
+    }
+    start += 1;
+  }
+
+  while (end > start) {
+    const element = elements[end - 1];
+    if (element.type !== "text" || element.text.trim().length > 0) {
+      break;
+    }
+    end -= 1;
+  }
+
+  const result = elements.slice(start, end);
+  if (result.length === 0) {
     return [];
   }
 
-  const result = elements.map((element) => ({ ...element }));
-
-  while (result.length > 0) {
-    const first = result[0];
-    if (first.type !== "text") {
-      break;
-    }
-    if (first.text.trim()) {
-      break;
-    }
-    result.shift();
+  const first = result[0];
+  if (first.type === "text") {
+    result[0] = { ...first, text: first.text.trimStart() };
   }
 
-  if (result[0]?.type === "text") {
-    result[0] = { ...result[0], text: result[0].text.trimStart() };
-  }
-
-  while (result.length > 0) {
-    const last = result[result.length - 1];
-    if (last.type !== "text") {
-      break;
-    }
-    if (last.text.trim()) {
-      break;
-    }
-    result.pop();
-  }
-
-  if (result[result.length - 1]?.type === "text") {
-    const lastIndex = result.length - 1;
-    result[lastIndex] = {
-      ...result[lastIndex],
-      text: result[lastIndex].text.trimEnd(),
-    };
+  const lastIndex = result.length - 1;
+  const last = result[lastIndex];
+  if (last.type === "text") {
+    result[lastIndex] = { ...last, text: last.text.trimEnd() };
   }
 
   return result;

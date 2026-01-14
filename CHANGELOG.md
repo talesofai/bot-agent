@@ -17,6 +17,7 @@
 - Adapter 启动路径移除工厂层，直接在入口构造平台适配器
 - SessionManager 拆除为显式仓储与 createSession 辅助函数
 - SessionWorker 拆分缓冲处理与上下文构建，主流程更直观
+- trimTextElements 改为无变异 slice 裁剪，减少分支
 - Discord 发送优先使用缓存并处理 channel fetch 失败
 - EchoTracker 改为 Redis 共享状态，避免本地内存失效
 - Worker 锁逻辑抽离为独立封装，精简业务流程

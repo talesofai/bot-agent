@@ -85,21 +85,26 @@ export class LlbotRegistry {
     }
     const values = await this.redis.mget(keys);
     const staleKeys: string[] = [];
+    const keyPrefix = `${this.prefix}:`;
     for (let i = 0; i < keys.length; i += 1) {
       const key = keys[i];
+      if (!key.startsWith(keyPrefix)) {
+        staleKeys.push(key);
+        continue;
+      }
       const value = values[i];
       if (!value) {
         staleKeys.push(key);
         continue;
       }
-      const botId = key.slice(`${this.prefix}:`.length);
+      const botId = key.slice(keyPrefix.length);
       const entry = this.parseEntry(botId, value);
       if (entry) {
         entries.set(botId, entry);
       }
     }
     if (staleKeys.length > 0) {
-      await this.redis.srem(this.indexKey, staleKeys);
+      await this.redis.srem(this.indexKey, ...staleKeys);
     }
 
     return entries;

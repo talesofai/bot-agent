@@ -1,10 +1,12 @@
-import IORedis from "ioredis";
+import IORedis, { type RedisKey } from "ioredis";
 import type { Logger } from "pino";
 import { logger as defaultLogger } from "../logger";
 
 interface RedisClient {
-  set: (...args: unknown[]) => Promise<unknown>;
-  quit: () => Promise<unknown>;
+  set(key: RedisKey, value: string): Promise<unknown>;
+  set(key: RedisKey, value: string, mode: "EX", ttl: number): Promise<unknown>;
+  sadd(key: RedisKey, member: string): Promise<unknown>;
+  quit(): Promise<unknown>;
 }
 
 export interface LlbotRegistrarOptions {

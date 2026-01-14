@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { RedisKey } from "ioredis";
 import type { Logger } from "pino";
 
 import { LlbotRegistrar } from "../llbot-registrar";
@@ -34,13 +35,16 @@ describe("LlbotRegistrar", () => {
     const setCalls: unknown[][] = [];
     const saddCalls: unknown[][] = [];
     const mockRedis = {
-      set: mock(async (...args: unknown[]) => {
+      set: async (key: RedisKey, value: string, mode?: "EX", ttl?: number) => {
+        const args = mode ? [key, value, mode, ttl] : [key, value];
         setCalls.push(args);
-      }),
-      sadd: mock(async (...args: unknown[]) => {
-        saddCalls.push(args);
-      }),
-      quit: mock(async () => {}),
+        return "OK";
+      },
+      sadd: async (key: RedisKey, member: string) => {
+        saddCalls.push([key, member]);
+        return 1;
+      },
+      quit: async () => "OK",
     };
     const logger = createMockLogger();
     const registrar = new LlbotRegistrar({
@@ -78,13 +82,16 @@ describe("LlbotRegistrar", () => {
     const setCalls: unknown[][] = [];
     const saddCalls: unknown[][] = [];
     const mockRedis = {
-      set: mock(async (...args: unknown[]) => {
+      set: async (key: RedisKey, value: string, mode?: "EX", ttl?: number) => {
+        const args = mode ? [key, value, mode, ttl] : [key, value];
         setCalls.push(args);
-      }),
-      sadd: mock(async (...args: unknown[]) => {
-        saddCalls.push(args);
-      }),
-      quit: mock(async () => {}),
+        return "OK";
+      },
+      sadd: async (key: RedisKey, member: string) => {
+        saddCalls.push([key, member]);
+        return 1;
+      },
+      quit: async () => "OK",
     };
     const registrar = new LlbotRegistrar({
       redisUrl: "redis://localhost:6379",
@@ -110,11 +117,15 @@ describe("LlbotRegistrar", () => {
 
   test("logs refresh errors and keeps running", async () => {
     const mockRedis = {
-      set: mock(async () => {
+      set: async (key: RedisKey, value: string, mode?: "EX", ttl?: number) => {
+        void key;
+        void value;
+        void mode;
+        void ttl;
         throw new Error("redis down");
-      }),
-      sadd: mock(async () => {}),
-      quit: mock(async () => {}),
+      },
+      sadd: async (_key: RedisKey, _member: string) => 1,
+      quit: async () => "OK",
     };
     const logger = createMockLogger();
     const registrar = new LlbotRegistrar({

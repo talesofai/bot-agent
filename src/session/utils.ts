@@ -7,3 +7,10 @@ export function assertValidSessionKey(key: number): void {
     throw new Error("Session key must be a non-negative integer");
   }
 }
+
+export function buildSessionLockKey(
+  groupId: string,
+  sessionId: string,
+): string {
+  return `session:lock:${groupId}:${sessionId}`;
+}

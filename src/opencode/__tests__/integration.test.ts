@@ -69,19 +69,6 @@ describe("opencode integration", () => {
             sessionId: session.meta.sessionId,
             userId,
             key,
-            session: {
-              type: "message",
-              platform: "test",
-              selfId: "bot-1",
-              userId,
-              guildId: "group-1",
-              channelId: "channel-1",
-              messageId: "msg-1",
-              content: prompt,
-              elements: [{ type: "text", text: prompt }],
-              timestamp: Date.now(),
-              extras: {},
-            },
           },
         };
         const result = await runner.run({

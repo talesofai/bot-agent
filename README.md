@@ -61,7 +61,7 @@ opencode-bot-agent/
             ├── skills/    # 群技能（默认技能规划中）
             ├── sessions/  # 会话记录
             │   └── {user}-{key}/
-            │       └── history.jsonl
+            │       └── history.sqlite
             └── assets/    # 群资源
                 └── images/
 ```

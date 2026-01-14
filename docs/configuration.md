@@ -189,7 +189,7 @@ logging:
 │   └── roleplay.md
 ├── sessions/         # 用户会话
 │   └── {user}-{key}/
-│       ├── history.jsonl
+│       ├── history.sqlite
 │       ├── meta.json
 │       └── workspace/
 └── assets/           # 群资源

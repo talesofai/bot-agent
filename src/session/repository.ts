@@ -89,7 +89,7 @@ export class SessionRepository {
       sessionsPath,
       sessionPath,
       metaPath: join(sessionPath, "meta.json"),
-      historyPath: join(sessionPath, "history.jsonl"),
+      historyPath: join(sessionPath, "history.sqlite"),
       workspacePath: join(sessionPath, "workspace"),
     };
   }

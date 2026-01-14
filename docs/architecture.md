@@ -114,7 +114,7 @@ opencode -p "用户消息内容" \
 │   └── roleplay.md   # 角色扮演技能
 ├── sessions/         # 用户会话
 │   └── {user}-{key}/
-│       ├── history.jsonl
+│       ├── history.sqlite
 │       ├── meta.json
 │       └── workspace/
 ├── assets/           # 群资源

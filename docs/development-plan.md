@@ -257,7 +257,7 @@ interface SessionEvent {
 │   └── roleplay.md
 ├── sessions/         # 会话
 │   └── {user}-{key}/
-│       └── history.jsonl
+│       └── history.sqlite
 └── assets/           # 资源
     └── images/
 ```

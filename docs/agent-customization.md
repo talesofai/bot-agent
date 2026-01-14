@@ -22,7 +22,7 @@
 │   └── search.md     # 搜索技能
 ├── sessions/         # 会话（自动管理）
 │   └── {user}-{key}/
-│       └── history.jsonl
+│       └── history.sqlite
 └── assets/           # 资源文件
     ├── images/
     └── characters/   # 角色配置（按需自建）

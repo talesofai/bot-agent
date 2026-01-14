@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Changed
+
+- 会话历史存储切换为 SQLite 文件
+- 历史文件后缀更新为 history.sqlite
+
 ## [0.0.25] - 2026-01-15
 
 ### Changed

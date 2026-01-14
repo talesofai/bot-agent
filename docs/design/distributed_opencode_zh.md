@@ -40,7 +40,7 @@
 │   └── images/
 └── sessions/               # [System RW]
     └── {session_id}/       # [Opencode RW] 用户独占工作区
-        ├── history.jsonl   # 会话历史
+        ├── history.sqlite  # 会话历史
         ├── meta.json       # { sessionId, groupId, ownerId, key, status, createdAt, updatedAt }
         ├── workspace/      # Opencode CWD (工作目录，内部文件按需生成)
 ```

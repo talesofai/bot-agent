@@ -18,71 +18,71 @@ const baseMessage: SessionEvent = {
 };
 
 describe("EchoTracker", () => {
-  test("does not echo for mentions", () => {
-    const tracker = new EchoTracker();
+  test("does not echo for mentions", async () => {
+    const tracker = createTracker();
     const message: SessionEvent = {
       ...baseMessage,
       elements: [{ type: "mention", userId: "someone" }],
       content: "@someone hello",
     };
-    expect(tracker.shouldEcho(message, 30)).toBe(false);
+    expect(await tracker.shouldEcho(message, 30)).toBe(false);
   });
 
-  test("does not echo for direct messages", () => {
-    const tracker = new EchoTracker();
+  test("does not echo for direct messages", async () => {
+    const tracker = createTracker();
     const message = { ...baseMessage, guildId: undefined };
-    expect(tracker.shouldEcho(message, 30)).toBe(false);
+    expect(await tracker.shouldEcho(message, 30)).toBe(false);
   });
 
-  test("mentions break streaks", () => {
-    const tracker = new EchoTracker();
+  test("mentions break streaks", async () => {
+    const tracker = createTracker();
     const originalRandom = Math.random;
     Math.random = () => 0;
     try {
-      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
+      expect(await tracker.shouldEcho(baseMessage, 30)).toBe(false);
       const mentionMessage: SessionEvent = {
         ...baseMessage,
         elements: [{ type: "mention", userId: "someone" }],
         content: "@someone hello",
       };
-      expect(tracker.shouldEcho(mentionMessage, 30)).toBe(false);
-      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
+      expect(await tracker.shouldEcho(mentionMessage, 30)).toBe(false);
+      expect(await tracker.shouldEcho(baseMessage, 30)).toBe(false);
     } finally {
       Math.random = originalRandom;
     }
   });
 
-  test("respects echo rate", () => {
-    const tracker = new EchoTracker();
+  test("respects echo rate", async () => {
+    const tracker = createTracker();
     const originalRandom = Math.random;
     Math.random = () => 0;
     try {
-      expect(tracker.shouldEcho(baseMessage, 0)).toBe(false);
-      expect(tracker.shouldEcho(baseMessage, 30)).toBe(true);
+      expect(await tracker.shouldEcho(baseMessage, 0)).toBe(false);
+      expect(await tracker.shouldEcho(baseMessage, 30)).toBe(true);
     } finally {
       Math.random = originalRandom;
     }
   });
 
-  test("does not share streaks across channels", () => {
-    const tracker = new EchoTracker();
+  test("does not share streaks across channels", async () => {
+    const tracker = createTracker();
     const originalRandom = Math.random;
     Math.random = () => 0;
     try {
-      expect(tracker.shouldEcho(baseMessage, 30)).toBe(false);
-      expect(tracker.shouldEcho(baseMessage, 30)).toBe(true);
+      expect(await tracker.shouldEcho(baseMessage, 30)).toBe(false);
+      expect(await tracker.shouldEcho(baseMessage, 30)).toBe(true);
       const otherChannel: SessionEvent = {
         ...baseMessage,
         channelId: "group-2",
       };
-      expect(tracker.shouldEcho(otherChannel, 30)).toBe(false);
+      expect(await tracker.shouldEcho(otherChannel, 30)).toBe(false);
     } finally {
       Math.random = originalRandom;
     }
   });
 
-  test("ignores plain @ text for mentions", () => {
-    const tracker = new EchoTracker();
+  test("ignores plain @ text for mentions", async () => {
+    const tracker = createTracker();
     const message: SessionEvent = {
       ...baseMessage,
       content: "contact test@example.com",
@@ -91,10 +91,32 @@ describe("EchoTracker", () => {
     const originalRandom = Math.random;
     Math.random = () => 0;
     try {
-      expect(tracker.shouldEcho(message, 30)).toBe(false);
-      expect(tracker.shouldEcho(message, 30)).toBe(true);
+      expect(await tracker.shouldEcho(message, 30)).toBe(false);
+      expect(await tracker.shouldEcho(message, 30)).toBe(true);
     } finally {
       Math.random = originalRandom;
     }
   });
 });
+
+function createTracker(): EchoTracker {
+  return new EchoTracker({ store: new MemoryEchoStore() });
+}
+
+class MemoryEchoStore {
+  private store = new Map<string, string>();
+
+  async get(key: string): Promise<string | null> {
+    return this.store.get(key) ?? null;
+  }
+
+  async set(key: string, value: string, _ttlSeconds?: number): Promise<void> {
+    this.store.set(key, value);
+  }
+
+  async del(key: string): Promise<void> {
+    this.store.delete(key);
+  }
+
+  async close(): Promise<void> {}
+}

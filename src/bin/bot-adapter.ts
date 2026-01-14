@@ -74,7 +74,10 @@ async function main(): Promise<void> {
       logger.error({ err }, "Failed to start HTTP server");
     });
 
-  const echoTracker = new EchoTracker();
+  const echoTracker = new EchoTracker({
+    redisUrl: config.REDIS_URL,
+    logger,
+  });
   const dispatcher = new MessageDispatcher({
     adapter,
     groupStore,
@@ -95,6 +98,7 @@ async function main(): Promise<void> {
       if (httpServer) {
         httpServer.stop();
       }
+      await echoTracker.close();
       await sessionQueue.close();
       await adapter.disconnect(bot);
     } catch (err) {

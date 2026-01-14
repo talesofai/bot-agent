@@ -13,6 +13,7 @@
 - trimTextElements 改为直接裁剪首尾空白文本节点
 - Discord 解析改为直接使用原始内容与 mentions 列表
 - Discord 发送优先使用缓存并处理 channel fetch 失败
+- EchoTracker 改为 Redis 共享状态，避免本地内存失效
 - Worker 锁逻辑抽离为独立封装，精简业务流程
 - 历史记录读取改为 Bun.file slice 读取尾部窗口并按需解析
 

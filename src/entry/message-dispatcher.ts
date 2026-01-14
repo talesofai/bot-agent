@@ -91,7 +91,7 @@ export class MessageDispatcher {
           rule: triggerRule,
         })
       ) {
-        if (this.echoTracker.shouldEcho(message, effectiveEchoRate)) {
+        if (await this.echoTracker.shouldEcho(message, effectiveEchoRate)) {
           await this.adapter.sendMessage(message, message.content, {
             elements: message.elements,
           });

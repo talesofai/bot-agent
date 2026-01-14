@@ -1,4 +1,5 @@
-import { LRUCache } from "lru-cache";
+import IORedis from "ioredis";
+import type { Logger } from "pino";
 import type { SessionElement, SessionEvent } from "../types/platform";
 
 interface EchoState {
@@ -7,51 +8,131 @@ interface EchoState {
   echoed: boolean;
 }
 
-export class EchoTracker {
-  private states: LRUCache<string, EchoState>;
+interface EchoStore {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttlSeconds: number): Promise<void>;
+  del(key: string): Promise<void>;
+  close(): Promise<void>;
+}
 
-  constructor(maxEntries = 2000) {
-    this.states = new LRUCache({ max: Math.max(1, maxEntries) });
+class RedisEchoStore implements EchoStore {
+  private redis: IORedis;
+
+  constructor(redisUrl: string) {
+    this.redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
   }
 
-  shouldEcho(message: SessionEvent, ratePercent: number): boolean {
+  async get(key: string): Promise<string | null> {
+    return this.redis.get(key);
+  }
+
+  async set(key: string, value: string, ttlSeconds: number): Promise<void> {
+    await this.redis.set(key, value, "EX", ttlSeconds);
+  }
+
+  async del(key: string): Promise<void> {
+    await this.redis.del(key);
+  }
+
+  async close(): Promise<void> {
+    await this.redis.quit();
+  }
+}
+
+export interface EchoTrackerOptions {
+  redisUrl?: string;
+  store?: EchoStore;
+  ttlSeconds?: number;
+  keyPrefix?: string;
+  logger?: Logger;
+}
+
+export class EchoTracker {
+  private store: EchoStore;
+  private ttlSeconds: number;
+  private keyPrefix: string;
+  private logger?: Logger;
+
+  constructor(options: EchoTrackerOptions = {}) {
+    if (options.store) {
+      this.store = options.store;
+    } else if (options.redisUrl) {
+      this.store = new RedisEchoStore(options.redisUrl);
+    } else {
+      throw new Error("EchoTracker requires redisUrl or store");
+    }
+    this.ttlSeconds = options.ttlSeconds ?? 600;
+    this.keyPrefix = options.keyPrefix ?? "echo";
+    this.logger = options.logger;
+  }
+
+  async shouldEcho(
+    message: SessionEvent,
+    ratePercent: number,
+  ): Promise<boolean> {
     if (!message.guildId) {
       return false;
     }
     const scopeId = message.channelId ?? message.guildId;
-    const key = `${message.selfId}:${scopeId}`;
+    const key = `${this.keyPrefix}:${message.platform}:${message.selfId}:${scopeId}`;
     if (message.selfId && message.userId === message.selfId) {
-      this.states.delete(key);
+      await this.store.del(key);
       return false;
     }
     if (hasAnyMention(message)) {
-      this.states.delete(key);
+      await this.store.del(key);
       return false;
     }
     const signature = buildSignature(message);
     if (!signature) {
-      this.states.delete(key);
+      await this.store.del(key);
       return false;
     }
-    const state = this.states.get(key);
+    const state = await this.loadState(key);
     if (!state || state.signature !== signature) {
-      this.states.set(key, { signature, streak: 1, echoed: false });
+      await this.saveState(key, { signature, streak: 1, echoed: false });
       return false;
     }
     state.streak += 1;
     // Keep tracking streaks even when echo is disabled to avoid stale state.
     if (ratePercent <= 0) {
+      await this.saveState(key, state);
       return false;
     }
     if (state.streak < 2 || state.echoed) {
+      await this.saveState(key, state);
       return false;
     }
     const chance = Math.min(ratePercent, 100) / 100;
     if (Math.random() < chance) {
       state.echoed = true;
+      await this.saveState(key, state);
       return true;
     }
+    await this.saveState(key, state);
     return false;
+  }
+
+  async close(): Promise<void> {
+    await this.store.close();
+  }
+
+  private async loadState(key: string): Promise<EchoState | null> {
+    const raw = await this.store.get(key);
+    if (!raw) {
+      return null;
+    }
+    try {
+      return JSON.parse(raw) as EchoState;
+    } catch (err) {
+      this.logger?.warn({ err, key }, "Failed to parse echo state");
+      await this.store.del(key);
+      return null;
+    }
+  }
+
+  private async saveState(key: string, state: EchoState): Promise<void> {
+    await this.store.set(key, JSON.stringify(state), this.ttlSeconds);
   }
 }
 

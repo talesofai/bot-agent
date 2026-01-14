@@ -9,51 +9,61 @@ export function extractTextFromElements(elements: SessionElement[]): string {
 }
 
 export function trimTextElements(elements: SessionElement[]): SessionElement[] {
-  const result = [...elements];
+  if (elements.length === 0) {
+    return [];
+  }
 
-  let firstIndex = result.findIndex((element) => element.type === "text");
-  while (firstIndex !== -1) {
-    const firstText = result[firstIndex];
-    if (firstText.type !== "text") {
-      break;
+  let firstTextIndex = -1;
+  let lastTextIndex = -1;
+  const remove = new Set<number>();
+  const updatedText = new Map<number, string>();
+
+  for (let i = 0; i < elements.length; i += 1) {
+    const element = elements[i];
+    if (element.type !== "text") {
+      continue;
     }
-    const trimmedStart = firstText.text.trimStart();
+    const trimmedStart = element.text.trimStart();
     if (!trimmedStart) {
-      result.splice(firstIndex, 1);
-      firstIndex = result.findIndex((element) => element.type === "text");
+      remove.add(i);
       continue;
     }
-    result[firstIndex] = { ...firstText, text: trimmedStart };
+    firstTextIndex = i;
+    updatedText.set(i, trimmedStart);
     break;
   }
 
-  let lastIndex = -1;
-  for (let i = result.length - 1; i >= 0; i -= 1) {
-    if (result[i].type === "text") {
-      lastIndex = i;
-      break;
-    }
-  }
-  while (lastIndex !== -1) {
-    const lastText = result[lastIndex];
-    if (lastText.type !== "text") {
-      break;
-    }
-    const trimmedEnd = lastText.text.trimEnd();
-    if (!trimmedEnd) {
-      result.splice(lastIndex, 1);
-      let nextIndex = -1;
-      for (let i = lastIndex - 1; i >= 0; i -= 1) {
-        if (result[i].type === "text") {
-          nextIndex = i;
-          break;
-        }
-      }
-      lastIndex = nextIndex;
+  for (let i = elements.length - 1; i >= 0; i -= 1) {
+    const element = elements[i];
+    if (element.type !== "text") {
       continue;
     }
-    result[lastIndex] = { ...lastText, text: trimmedEnd };
+    const trimmedEnd = element.text.trimEnd();
+    if (!trimmedEnd) {
+      remove.add(i);
+      continue;
+    }
+    lastTextIndex = i;
+    const baseText = updatedText.get(i) ?? element.text;
+    updatedText.set(i, baseText.trimEnd());
     break;
   }
-  return result;
+
+  if (firstTextIndex === -1 && lastTextIndex === -1) {
+    return elements.filter((element) => element.type !== "text");
+  }
+
+  return elements.flatMap((element, index) => {
+    if (element.type !== "text") {
+      return [element];
+    }
+    if (remove.has(index)) {
+      return [];
+    }
+    const text = updatedText.get(index);
+    if (!text) {
+      return [element];
+    }
+    return [{ ...element, text }];
+  });
 }

@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import { getConfig } from "../config";
+import { isSafePathSegment } from "../utils/path";
 
 export interface HttpServerOptions {
   logger: Logger;
@@ -8,7 +9,7 @@ export interface HttpServerOptions {
   onReloadGroup?: (groupId: string) => Promise<boolean>;
 }
 
-export type HttpServer = Server;
+export type HttpServer = ReturnType<typeof Bun.serve>;
 
 let cachedVersion: string | null = null;
 
@@ -44,7 +45,15 @@ export async function startHttpServer(
         if (!options.onReloadGroup) {
           return new Response("Not Found", { status: 404 });
         }
-        const groupId = decodeURIComponent(reloadMatch[1]);
+        let groupId: string;
+        try {
+          groupId = decodeURIComponent(reloadMatch[1]);
+        } catch {
+          return new Response("Invalid groupId", { status: 400 });
+        }
+        if (!isSafePathSegment(groupId)) {
+          return new Response("Invalid groupId", { status: 400 });
+        }
         return options
           .onReloadGroup(groupId)
           .then((reloaded) => {

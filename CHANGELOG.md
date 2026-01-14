@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- reload 接口校验 groupId 为安全路径段
+
 ## [0.0.23] - 2026-01-14
 
 ### Added

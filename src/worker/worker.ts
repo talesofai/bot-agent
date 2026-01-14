@@ -10,9 +10,15 @@ import { buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
+import type { SessionEvent } from "../types/platform";
 import { SessionActivityStore } from "../session/activity-store";
-import { assertValidSessionKey, buildSessionId } from "../session/utils";
+import {
+  assertValidSessionKey,
+  buildSessionId,
+  buildSessionLockKey,
+} from "../session/utils";
 import { assertSafePathSegment } from "../utils/path";
+import { SessionBufferStore } from "../session/buffer";
 
 export interface SessionWorkerOptions {
   id: string;
@@ -50,6 +56,7 @@ export class SessionWorker {
   private workerConnection: IORedis;
   private lockConnection: IORedis;
   private redlock: Redlock;
+  private bufferStore: SessionBufferStore;
   private historyMaxEntries?: number;
   private historyMaxBytes?: number;
   private sessionLockTtlMs: number;
@@ -90,6 +97,7 @@ export class SessionWorker {
       retryDelay: 0,
       retryJitter: 0,
     });
+    this.bufferStore = new SessionBufferStore({ redisUrl: options.redis.url });
 
     this.worker = new Worker<SessionJobData>(
       options.queue.name,
@@ -125,19 +133,23 @@ export class SessionWorker {
     await this.workerConnection.quit();
     await this.lockConnection.quit();
     await this.activityIndex.close();
+    await this.bufferStore.close();
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
-    const { sessionId, groupId, userId, key, session } = this.validateJobData(
-      job.data,
-    );
-    const lockKey = `session:lock:${groupId}:${sessionId}`;
+    const { sessionId, groupId, userId, key } = this.validateJobData(job.data);
+    const lockKey = buildSessionLockKey(groupId, sessionId);
 
     await this.withSessionLock(job, lockKey, sessionId, async (lockContext) => {
       let statusUpdated = false;
       let sessionInfo: SessionInfo | null = null;
 
       try {
+        let buffered = await this.bufferStore.drain(sessionId);
+        if (buffered.length === 0) {
+          return;
+        }
+
         // 2. Ensure Session Exists
         sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
         await this.recordActivity(sessionInfo);
@@ -150,47 +162,59 @@ export class SessionWorker {
         statusUpdated = true;
         await this.recordActivity(sessionInfo);
 
-        // 4. Prepare Context
-        const history = await this.sessionManager.readHistory(sessionInfo, {
-          maxEntries: this.historyMaxEntries,
-          maxBytes: this.historyMaxBytes,
-        });
-        const groupConfig = await this.sessionManager.getGroupConfig(groupId);
-        const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
-        const systemPrompt = buildSystemPrompt(agentPrompt);
-        const promptInput = resolveSessionInput(session.content);
-        const prompt = buildOpencodePrompt({
-          systemPrompt,
-          history,
-          input: promptInput,
-        });
-        const launchSpec = this.launcher.buildLaunchSpec(
-          sessionInfo,
-          prompt,
-          groupConfig.model,
-        );
+        while (buffered.length > 0) {
+          const mergedSession = mergeBufferedMessages(buffered);
 
-        // 5. Run
-        lockContext.assertActive();
-        const result = await this.runner.run({
-          job: this.mapJob(job),
-          session: sessionInfo,
-          history,
-          launchSpec,
-          signal: lockContext.signal,
-        });
-        lockContext.assertActive();
-        const output = resolveOutput(result.output);
+          // 4. Prepare Context
+          const history = await this.sessionManager.readHistory(sessionInfo, {
+            maxEntries: this.historyMaxEntries,
+            maxBytes: this.historyMaxBytes,
+          });
+          const groupConfig = await this.sessionManager.getGroupConfig(groupId);
+          const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
+          const systemPrompt = buildSystemPrompt(agentPrompt);
+          const promptInput = resolveSessionInput(mergedSession.content);
+          const prompt = buildOpencodePrompt({
+            systemPrompt,
+            history,
+            input: promptInput,
+          });
+          const launchSpec = this.launcher.buildLaunchSpec(
+            sessionInfo,
+            prompt,
+            groupConfig.model,
+          );
 
-        // 6. Append History
-        await this.appendHistoryFromJob(
-          sessionInfo,
-          session,
-          result.historyEntries,
-          output,
-        );
-        await this.recordActivity(sessionInfo);
-        await this.enqueueResponse(job.data, output);
+          // 5. Run
+          lockContext.assertActive();
+          const result = await this.runner.run({
+            job: this.mapJob(job),
+            session: sessionInfo,
+            history,
+            launchSpec,
+            signal: lockContext.signal,
+          });
+          lockContext.assertActive();
+          const output = resolveOutput(result.output);
+
+          // 6. Append History
+          await this.appendHistoryFromJob(
+            sessionInfo,
+            mergedSession,
+            result.historyEntries,
+            output,
+          );
+          await this.recordActivity(sessionInfo);
+          await this.enqueueResponse(mergedSession, output);
+
+          buffered = await this.bufferStore.drain(sessionId);
+          if (buffered.length === 0) {
+            const pending = await this.bufferStore.consumePending(sessionId);
+            if (pending) {
+              buffered = await this.bufferStore.drain(sessionId);
+            }
+          }
+        }
       } catch (err) {
         if (err instanceof DelayedError) {
           this.logger.debug({ sessionId }, "Session job delayed");
@@ -316,7 +340,7 @@ export class SessionWorker {
 
   private async appendHistoryFromJob(
     sessionInfo: SessionInfo,
-    session: SessionJobData["session"],
+    session: SessionEvent,
     historyEntries?: HistoryEntry[],
     output?: string,
   ): Promise<void> {
@@ -371,7 +395,7 @@ export class SessionWorker {
   }
 
   private async enqueueResponse(
-    jobData: SessionJobData,
+    session: SessionEvent,
     output?: string,
   ): Promise<void> {
     if (!output || !this.responseQueue) {
@@ -380,11 +404,11 @@ export class SessionWorker {
     try {
       await this.responseQueue.enqueue({
         content: output,
-        session: jobData.session,
+        session,
       });
     } catch (err) {
       this.logger.error(
-        { err, sessionId: jobData.sessionId },
+        { err, sessionId: session.messageId },
         "Failed to enqueue response",
       );
     }
@@ -437,4 +461,23 @@ function resolveOutput(output?: string): string | undefined {
     return undefined;
   }
   return output.trim() ? output : undefined;
+}
+
+function mergeBufferedMessages(messages: SessionEvent[]): SessionEvent {
+  const last = messages[messages.length - 1];
+  const combined = messages
+    .map((message) => formatBufferedMessage(message))
+    .filter((line) => line.length > 0)
+    .join("\n");
+  return {
+    ...last,
+    content: combined,
+    elements: combined ? [{ type: "text", text: combined }] : [],
+  };
+}
+
+function formatBufferedMessage(message: SessionEvent): string {
+  const timestamp = new Date(message.timestamp).toISOString();
+  const content = message.content.trim() ? message.content.trim() : "<empty>";
+  return `- [${timestamp}] ${content}`;
 }

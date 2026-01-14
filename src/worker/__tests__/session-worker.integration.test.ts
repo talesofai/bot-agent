@@ -6,6 +6,7 @@ import pino from "pino";
 
 import type { ResponseJob, ResponseJobData, ResponseQueue } from "../../queue";
 import { BullmqSessionQueue } from "../../queue";
+import { SessionBufferStore } from "../../session/buffer";
 import { SessionManager, buildSessionId } from "../../session";
 import type { OpencodeRunner, OpencodeRunResult } from "../runner";
 import { SessionWorker } from "../worker";
@@ -86,6 +87,7 @@ describe("session worker integration", () => {
       redisUrl,
       queueName,
     });
+    const bufferStore = new SessionBufferStore({ redisUrl });
 
     try {
       await worker.start();
@@ -93,24 +95,25 @@ describe("session worker integration", () => {
       const userId = "user-1";
       const key = 0;
       const sessionId = buildSessionId(userId, key);
+      const session = {
+        type: "message",
+        platform: "test",
+        selfId: "bot-1",
+        userId,
+        guildId: groupId,
+        channelId: "channel-1",
+        messageId: "msg-1",
+        content: "Hello there",
+        elements: [{ type: "text", text: "Hello there" }],
+        timestamp: Date.now(),
+        extras: {},
+      } as const;
+      await bufferStore.append(sessionId, session);
       await sessionQueue.enqueue({
         groupId,
         sessionId,
         userId,
         key,
-        session: {
-          type: "message",
-          platform: "test",
-          selfId: "bot-1",
-          userId,
-          guildId: groupId,
-          channelId: "channel-1",
-          messageId: "msg-1",
-          content: "Hello there",
-          elements: [{ type: "text", text: "Hello there" }],
-          timestamp: Date.now(),
-          extras: {},
-        },
       });
 
       const response = await responseQueue.waitForJob(5000);
@@ -127,6 +130,7 @@ describe("session worker integration", () => {
     } finally {
       await worker.stop();
       await sessionQueue.close();
+      await bufferStore.close();
       await responseQueue.close();
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -159,6 +163,7 @@ describe("session worker integration", () => {
       redisUrl,
       queueName,
     });
+    const bufferStore = new SessionBufferStore({ redisUrl });
 
     try {
       await worker.start();
@@ -166,28 +171,29 @@ describe("session worker integration", () => {
       const userId = "user-1";
       const key = 0;
       const sessionId = buildSessionId(userId, key);
+      const session = {
+        type: "message",
+        platform: "test",
+        selfId: "bot-1",
+        userId,
+        guildId: groupId,
+        channelId: "channel-1",
+        messageId: "msg-1",
+        content: "   ",
+        elements: [],
+        timestamp: Date.now(),
+        extras: {},
+      } as const;
+      await bufferStore.append(sessionId, session);
       await sessionQueue.enqueue({
         groupId,
         sessionId,
         userId,
         key,
-        session: {
-          type: "message",
-          platform: "test",
-          selfId: "bot-1",
-          userId,
-          guildId: groupId,
-          channelId: "channel-1",
-          messageId: "msg-1",
-          content: "   ",
-          elements: [],
-          timestamp: Date.now(),
-          extras: {},
-        },
       });
 
       const response = await responseQueue.waitForJob(5000);
-      expect(response.session.content).toBe(" ");
+      expect(response.session.content).toContain("<empty>");
 
       const session = await sessionManager.getSession(groupId, sessionId);
       expect(session).not.toBeNull();
@@ -199,6 +205,7 @@ describe("session worker integration", () => {
     } finally {
       await worker.stop();
       await sessionQueue.close();
+      await bufferStore.close();
       await responseQueue.close();
       await rm(tempDir, { recursive: true, force: true });
     }

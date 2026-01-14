@@ -8,49 +8,37 @@ export function extractTextFromElements(elements: SessionElement[]): string {
     .trim();
 }
 
+export function appendTextElement(
+  elements: SessionElement[],
+  text: string,
+): void {
+  if (!hasNonWhitespace(text)) {
+    return;
+  }
+  elements.push({ type: "text", text });
+}
+
 export function trimTextElements(elements: SessionElement[]): SessionElement[] {
-  let start = 0;
-  let end = elements.length;
-
-  while (start < end) {
-    const element = elements[start];
-    if (element.type !== "text" || hasNonWhitespace(element.text)) {
-      break;
-    }
-    start += 1;
-  }
-
-  while (end > start) {
-    const element = elements[end - 1];
-    if (element.type !== "text" || hasNonWhitespace(element.text)) {
-      break;
-    }
-    end -= 1;
-  }
-
-  if (start >= end) {
+  const filtered = elements.filter(
+    (element) => element.type !== "text" || hasNonWhitespace(element.text),
+  );
+  if (filtered.length === 0) {
     return [];
   }
-
-  const result = elements.slice(start, end);
-  const first = result[0];
-  if (first.type === "text") {
-    const trimmed = first.text.trimStart();
-    if (trimmed !== first.text) {
-      result[0] = { ...first, text: trimmed };
+  return filtered.map((element, index) => {
+    if (element.type !== "text") {
+      return element;
     }
-  }
-
-  const lastIndex = result.length - 1;
-  const last = result[lastIndex];
-  if (last.type === "text") {
-    const trimmed = last.text.trimEnd();
-    if (trimmed !== last.text) {
-      result[lastIndex] = { ...last, text: trimmed };
+    if (index === 0) {
+      const text = element.text.trimStart();
+      return text === element.text ? element : { ...element, text };
     }
-  }
-
-  return result;
+    if (index === filtered.length - 1) {
+      const text = element.text.trimEnd();
+      return text === element.text ? element : { ...element, text };
+    }
+    return element;
+  });
 }
 
 function hasNonWhitespace(text: string): boolean {

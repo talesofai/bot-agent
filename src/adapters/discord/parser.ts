@@ -1,6 +1,10 @@
 import type { Message } from "discord.js";
 import type { SessionElement, SessionEvent } from "../../types/platform";
-import { extractTextFromElements, trimTextElements } from "../utils";
+import {
+  appendTextElement,
+  extractTextFromElements,
+  trimTextElements,
+} from "../utils";
 
 export interface DiscordMessageExtras {
   messageId: string;
@@ -54,21 +58,18 @@ function buildElements(rawContent: string, message: Message): SessionElement[] {
     for (const match of rawContent.matchAll(pattern)) {
       const start = match.index ?? 0;
       if (start > lastIndex) {
-        elements.push({
-          type: "text",
-          text: rawContent.slice(lastIndex, start),
-        });
+        appendTextElement(elements, rawContent.slice(lastIndex, start));
       }
       const userId = match[1];
       if (userId && mentionIds.has(userId)) {
         elements.push({ type: "mention", userId });
       } else {
-        elements.push({ type: "text", text: match[0] });
+        appendTextElement(elements, match[0]);
       }
       lastIndex = start + match[0].length;
     }
     if (lastIndex < rawContent.length) {
-      elements.push({ type: "text", text: rawContent.slice(lastIndex) });
+      appendTextElement(elements, rawContent.slice(lastIndex));
     }
   }
   for (const attachment of message.attachments.values()) {

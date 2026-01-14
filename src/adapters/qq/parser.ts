@@ -1,5 +1,9 @@
 import type { SessionElement, SessionEvent } from "../../types/platform";
-import { extractTextFromElements, trimTextElements } from "../utils";
+import {
+  appendTextElement,
+  extractTextFromElements,
+  trimTextElements,
+} from "../utils";
 
 /**
  * Milky event types
@@ -97,7 +101,7 @@ function mapSegmentsToElements(
   const elements: SessionElement[] = [];
   for (const seg of segments) {
     if (seg.type === "text" && typeof seg.data.text === "string") {
-      elements.push({ type: "text", text: seg.data.text });
+      appendTextElement(elements, seg.data.text);
       continue;
     }
     if (seg.type === "image" && typeof seg.data.file === "string") {
@@ -127,9 +131,7 @@ function parseRawElements(rawMessage: string): SessionElement[] {
 
   while ((match = pattern.exec(rawMessage))) {
     const leadingText = rawMessage.slice(lastIndex, match.index);
-    if (leadingText) {
-      elements.push({ type: "text", text: leadingText });
-    }
+    appendTextElement(elements, leadingText);
     const type = match[1];
     const params = parseCqParams(match[2]);
     if (type === "at" && params.qq) {
@@ -143,10 +145,7 @@ function parseRawElements(rawMessage: string): SessionElement[] {
     lastIndex = pattern.lastIndex;
   }
 
-  const trailingText = rawMessage.slice(lastIndex);
-  if (trailingText) {
-    elements.push({ type: "text", text: trailingText });
-  }
+  appendTextElement(elements, rawMessage.slice(lastIndex));
 
   return trimTextElements(elements);
 }

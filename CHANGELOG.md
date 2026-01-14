@@ -19,6 +19,7 @@
 - 历史记录 extra 解析与 QQ payload 解析改为安全对象判断
 - SessionWorker 直接发送消息，移除 ResponseQueue/ResponseWorker
 - opencode-ai 依赖升级至 1.1.20
+- 解析层过滤纯空白文本节点，trimTextElements 简化为 filter/map
 
 ## [0.0.25] - 2026-01-15
 

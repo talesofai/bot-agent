@@ -23,6 +23,7 @@
 - Opencode 输出解析支持日志混排 JSON
 - Worker 任务处理与队列写入更严格的空输入/中止控制
 - Adapter 启动流程提前失败退出并确保初始化
+- TypeScript 配置与 Redlock 类型补齐
 
 ## [0.0.23] - 2026-01-14
 

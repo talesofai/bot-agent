@@ -1,4 +1,4 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import type { Logger } from "pino";
 import type { HistoryEntry } from "../types/session";
 
@@ -19,19 +19,21 @@ export class HistoryStore {
     options: HistoryReadOptions = {},
   ): Promise<HistoryEntry[]> {
     try {
-      const content = await readFile(historyPath, "utf-8");
-      if (!content) {
+      const file = Bun.file(historyPath);
+      const exists = await file.exists();
+      if (!exists) {
+        return [];
+      }
+      const size = file.size;
+      if (size === 0) {
         return [];
       }
 
       const maxEntries = options.maxEntries ?? 0;
-      let linesToParse = content;
-      if (maxEntries > 0) {
-        const offset = this.findStartOffset(content, maxEntries);
-        if (offset > 0) {
-          linesToParse = content.slice(offset);
-        }
-      }
+      const linesToParse =
+        maxEntries > 0
+          ? await this.readTailText(file, size, maxEntries, options.maxBytes)
+          : await file.text();
 
       return linesToParse
         .split("\n")
@@ -46,9 +48,6 @@ export class HistoryStore {
         })
         .filter((entry): entry is HistoryEntry => entry !== null);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        return [];
-      }
       this.logger.warn({ err, historyPath }, "Failed to read history");
       return [];
     }
@@ -75,5 +74,38 @@ export class HistoryStore {
       index -= 1;
     }
     return 0;
+  }
+
+  private async readTailText(
+    file: ReturnType<typeof Bun.file>,
+    size: number,
+    maxEntries: number,
+    maxBytes?: number,
+  ): Promise<string> {
+    const chunkSize = 16 * 1024;
+    const minStart =
+      typeof maxBytes === "number" && maxBytes > 0
+        ? Math.max(0, size - maxBytes)
+        : 0;
+    let start = Math.max(minStart, size - chunkSize);
+    let tail = await file.slice(start, size).text();
+
+    while (start > minStart && this.countNewlines(tail) < maxEntries) {
+      start = Math.max(minStart, start - chunkSize);
+      tail = await file.slice(start, size).text();
+    }
+
+    const offset = this.findStartOffset(tail, maxEntries);
+    return offset > 0 ? tail.slice(offset) : tail;
+  }
+
+  private countNewlines(content: string): number {
+    let count = 0;
+    for (let i = 0; i < content.length; i += 1) {
+      if (content[i] === "\n") {
+        count += 1;
+      }
+    }
+    return count;
   }
 }

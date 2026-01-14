@@ -21,6 +21,9 @@ export interface OpencodeRunner {
 export class ShellOpencodeRunner implements OpencodeRunner {
   async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
     const { command, args, cwd, env } = input.launchSpec;
+    if (input.signal?.aborted) {
+      throw new Error("Opencode run aborted before start");
+    }
     const child = Bun.spawn([command, ...args], {
       cwd,
       env: { ...process.env, ...env },
@@ -33,26 +36,41 @@ export class ShellOpencodeRunner implements OpencodeRunner {
         child.kill();
         throw new Error("Opencode run aborted before start");
       }
-      const onAbort = () => {
-        child.kill();
-      };
-      input.signal.addEventListener("abort", onAbort, { once: true });
-      try {
-        return await this.collectResult(child);
-      } finally {
-        input.signal.removeEventListener("abort", onAbort);
-      }
+      return this.collectWithAbort(child, input.signal);
     }
 
     return this.collectResult(child);
+  }
+
+  private async collectWithAbort(
+    child: ReturnType<typeof Bun.spawn>,
+    signal: AbortSignal,
+  ): Promise<OpencodeRunResult> {
+    if (signal.aborted) {
+      child.kill();
+      throw new Error("Opencode run aborted");
+    }
+    return await new Promise<OpencodeRunResult>((resolve, reject) => {
+      const onAbort = () => {
+        child.kill();
+        reject(new Error("Opencode run aborted"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.collectResult(child)
+        .then(resolve)
+        .catch(reject)
+        .finally(() => {
+          signal.removeEventListener("abort", onAbort);
+        });
+    });
   }
 
   private async collectResult(
     child: ReturnType<typeof Bun.spawn>,
   ): Promise<OpencodeRunResult> {
     const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
+      readStreamText(child.stdout),
+      readStreamText(child.stderr),
       child.exited,
     ]);
     const trimmedOut = stdout.trim();
@@ -68,6 +86,15 @@ export class ShellOpencodeRunner implements OpencodeRunner {
     const detail = trimmedOut || trimmedErr || "empty output";
     throw new Error(`Opencode returned non-JSON output: ${detail}`);
   }
+}
+
+async function readStreamText(
+  stream: ReadableStream<Uint8Array> | number | null | undefined,
+): Promise<string> {
+  if (!stream || typeof stream === "number") {
+    return "";
+  }
+  return new Response(stream).text();
 }
 
 export class NoopOpencodeRunner implements OpencodeRunner {

@@ -131,4 +131,76 @@ describe("session worker integration", () => {
       await rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  integrationTest("normalizes empty input to a single space", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "session-worker-"));
+    const logger = pino({ level: "silent" });
+    const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
+    const queueName = `session-empty-test-${Date.now()}`;
+    const responseQueue = new MemoryResponseQueue();
+    const sessionManager = new SessionManager({
+      dataDir: tempDir,
+      logger,
+    });
+    const worker = new SessionWorker({
+      id: "session-empty-test",
+      redis: {
+        url: redisUrl,
+      },
+      queue: {
+        name: queueName,
+      },
+      sessionManager,
+      runner: new FakeRunner(),
+      logger,
+      responseQueue,
+    });
+    const sessionQueue = new BullmqSessionQueue({
+      redisUrl,
+      queueName,
+    });
+
+    try {
+      await worker.start();
+      const groupId = "group-1";
+      const userId = "user-1";
+      const key = 0;
+      const sessionId = buildSessionId(userId, key);
+      await sessionQueue.enqueue({
+        groupId,
+        sessionId,
+        userId,
+        key,
+        session: {
+          type: "message",
+          platform: "test",
+          selfId: "bot-1",
+          userId,
+          guildId: groupId,
+          channelId: "channel-1",
+          messageId: "msg-1",
+          content: "   ",
+          elements: [],
+          timestamp: Date.now(),
+          extras: {},
+        },
+      });
+
+      const response = await responseQueue.waitForJob(5000);
+      expect(response.session.content).toBe(" ");
+
+      const session = await sessionManager.getSession(groupId, sessionId);
+      expect(session).not.toBeNull();
+      const history = await sessionManager.readHistory(session!, {
+        maxEntries: 20,
+      });
+      const userEntries = history.filter((entry) => entry.role === "user");
+      expect(userEntries[userEntries.length - 1]?.content).toBe(" ");
+    } finally {
+      await worker.stop();
+      await sessionQueue.close();
+      await responseQueue.close();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
 });

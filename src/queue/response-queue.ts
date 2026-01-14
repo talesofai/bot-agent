@@ -52,7 +52,7 @@ export class BullmqResponseQueue implements ResponseQueue {
     opts?: JobsOptions,
   ): Promise<ResponseJob> {
     const job = await this.queue.add("response-job", jobData, opts);
-    return { id: job.id!, data: jobData };
+    return { id: String(job.id ?? `job-${Date.now()}`), data: jobData };
   }
 
   async close(): Promise<void> {

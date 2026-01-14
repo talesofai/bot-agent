@@ -11,6 +11,8 @@ import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
 import { SessionActivityStore } from "../session/activity-store";
+import { assertValidSessionKey, buildSessionId } from "../session/utils";
+import { assertSafePathSegment } from "../utils/path";
 
 export interface SessionWorkerOptions {
   id: string;
@@ -126,7 +128,9 @@ export class SessionWorker {
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {
-    const { sessionId, groupId, userId, key, session } = job.data;
+    const { sessionId, groupId, userId, key, session } = this.validateJobData(
+      job.data,
+    );
     const lockKey = `session:lock:${groupId}:${sessionId}`;
 
     // 1. Acquire Lock
@@ -146,6 +150,8 @@ export class SessionWorker {
       throw new DelayedError();
     }
     let renewTimer: ReturnType<typeof setInterval> | null = null;
+    const abortController = new AbortController();
+    let lockLost = false;
     if (lock) {
       const renewIntervalMs = Math.max(
         1000,
@@ -156,6 +162,10 @@ export class SessionWorker {
           try {
             lock = await lock!.extend(this.sessionLockTtlMs);
           } catch (err) {
+            lockLost = true;
+            if (!abortController.signal.aborted) {
+              abortController.abort();
+            }
             if (renewTimer) {
               clearInterval(renewTimer);
               renewTimer = null;
@@ -175,7 +185,10 @@ export class SessionWorker {
       await this.recordActivity(sessionInfo);
 
       // 3. Update Status
-      await this.sessionManager.updateStatus(sessionInfo, "running");
+      sessionInfo = await this.sessionManager.updateStatus(
+        sessionInfo,
+        "running",
+      );
       statusUpdated = true;
       await this.recordActivity(sessionInfo);
 
@@ -187,10 +200,11 @@ export class SessionWorker {
       const groupConfig = await this.sessionManager.getGroupConfig(groupId);
       const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
       const systemPrompt = buildSystemPrompt(agentPrompt);
+      const promptInput = resolveSessionInput(session.content);
       const prompt = buildOpencodePrompt({
         systemPrompt,
         history,
-        input: session.content,
+        input: promptInput,
       });
       const launchSpec = this.launcher.buildLaunchSpec(
         sessionInfo,
@@ -199,27 +213,39 @@ export class SessionWorker {
       );
 
       // 5. Run
+      if (lockLost) {
+        throw new Error("Session lock lost before run");
+      }
       const result = await this.runner.run({
         job: this.mapJob(job),
         session: sessionInfo,
         history,
         launchSpec,
+        signal: abortController.signal,
       });
+      if (lockLost) {
+        throw new Error("Session lock lost during run");
+      }
+      const output = resolveOutput(result.output);
 
       // 6. Append History
       await this.appendHistoryFromJob(
         sessionInfo,
         session,
         result.historyEntries,
-        result.output,
+        output,
       );
       await this.recordActivity(sessionInfo);
-      await this.enqueueResponse(job.data, result.output);
+      await this.enqueueResponse(job.data, output);
     } catch (err) {
+      if (err instanceof DelayedError) {
+        this.logger.debug({ sessionId }, "Session job delayed");
+        throw err;
+      }
       this.logger.error({ err, sessionId }, "Error processing session job");
       throw err;
     } finally {
-      if (statusUpdated && sessionInfo) {
+      if (statusUpdated && sessionInfo && !lockLost) {
         try {
           await this.sessionManager.updateStatus(sessionInfo, "idle");
         } catch (err) {
@@ -244,13 +270,13 @@ export class SessionWorker {
     groupId: string,
     userId: string,
     key: number,
-    expectedSessionId: string,
+    sessionId: string,
   ): Promise<SessionInfo> {
-    const existing = await this.sessionManager.getSession(
-      groupId,
-      expectedSessionId,
-    );
+    const existing = await this.sessionManager.getSession(groupId, sessionId);
     if (existing) {
+      if (existing.meta.ownerId !== userId) {
+        throw new Error("Session ownership mismatch");
+      }
       return existing;
     }
     return this.sessionManager.createSession(groupId, userId, { key });
@@ -264,13 +290,15 @@ export class SessionWorker {
   ): Promise<void> {
     const entries: HistoryEntry[] = [];
 
-    if (session.content) {
-      entries.push({
-        role: "user",
-        content: session.content,
-        createdAt: new Date().toISOString(),
-      });
-    }
+    const nowIso = new Date().toISOString();
+    const userCreatedAt = resolveUserCreatedAt(session.timestamp, nowIso);
+    // Persist a single space so downstream storage never sees an empty user input.
+    const userContent = session.content.trim() ? session.content : " ";
+    entries.push({
+      role: "user",
+      content: userContent,
+      createdAt: userCreatedAt,
+    });
 
     const nonUserEntries =
       historyEntries?.filter((entry) => entry.role !== "user") ?? [];
@@ -285,7 +313,7 @@ export class SessionWorker {
       entries.push({
         role: "assistant",
         content: output,
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso,
       });
     }
 
@@ -317,10 +345,17 @@ export class SessionWorker {
     if (!output || !this.responseQueue) {
       return;
     }
-    await this.responseQueue.enqueue({
-      content: output,
-      session: jobData.session,
-    });
+    try {
+      await this.responseQueue.enqueue({
+        content: output,
+        session: jobData.session,
+      });
+    } catch (err) {
+      this.logger.error(
+        { err, sessionId: jobData.sessionId },
+        "Failed to enqueue response",
+      );
+    }
   }
   private isLockBusy(err: unknown): boolean {
     if (!(err instanceof Error)) {
@@ -328,4 +363,46 @@ export class SessionWorker {
     }
     return err.name === "ExecutionError" || err.name === "ResourceLockedError";
   }
+
+  private validateJobData(jobData: SessionJobData): SessionJobData {
+    assertSafePathSegment(jobData.groupId, "groupId");
+    assertSafePathSegment(jobData.userId, "userId");
+    assertSafePathSegment(jobData.sessionId, "sessionId");
+    assertValidSessionKey(jobData.key);
+    const derivedSessionId = buildSessionId(jobData.userId, jobData.key);
+    if (jobData.sessionId !== derivedSessionId) {
+      throw new Error("Session id mismatch for user/key");
+    }
+    return jobData;
+  }
+}
+
+function resolveUserCreatedAt(
+  timestamp: number | undefined,
+  fallback: string,
+): string {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+    return fallback;
+  }
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return fallback;
+  }
+  return date.toISOString();
+}
+
+function resolveSessionInput(content: string): string {
+  const trimmed = content.trim();
+  if (trimmed) {
+    return content;
+  }
+  // Opencode rejects empty input, but we still need a non-empty placeholder.
+  return " ";
+}
+
+function resolveOutput(output?: string): string | undefined {
+  if (!output) {
+    return undefined;
+  }
+  return output.trim() ? output : undefined;
 }

@@ -1,6 +1,8 @@
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis from "ioredis";
 import type { SessionEvent } from "../types/platform";
+import { assertSafePathSegment } from "../utils/path";
+import { assertValidSessionKey, buildSessionId } from "../session/utils";
 
 export interface SessionJobData {
   groupId: string;
@@ -49,11 +51,28 @@ export class BullmqSessionQueue {
     jobData: SessionJobData,
     opts?: JobsOptions,
   ): Promise<SessionJob> {
-    const job = await this.queue.add("session-job", jobData, opts);
+    const normalizedSession = {
+      ...jobData.session,
+      // Ensure queue payload never contains empty input.
+      content: jobData.session.content.trim() ? jobData.session.content : " ",
+    };
+    assertSafePathSegment(jobData.groupId, "groupId");
+    assertSafePathSegment(jobData.userId, "userId");
+    assertValidSessionKey(jobData.key);
+    const derivedSessionId = buildSessionId(jobData.userId, jobData.key);
+    assertSafePathSegment(derivedSessionId, "sessionId");
+    if (jobData.sessionId !== derivedSessionId) {
+      throw new Error("Session id mismatch for user/key");
+    }
+    const job = await this.queue.add(
+      "session-job",
+      { ...jobData, session: normalizedSession },
+      opts,
+    );
 
     return {
-      id: job.id!,
-      data: jobData,
+      id: String(job.id ?? `job-${Date.now()}`),
+      data: { ...jobData, session: normalizedSession },
     };
   }
 

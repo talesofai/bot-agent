@@ -1,7 +1,7 @@
 import { getConfig } from "../config";
 import { logger } from "../logger";
 import { SessionManager } from "../session";
-import { BullmqResponseQueue, BullmqSessionQueue } from "../queue";
+import { BullmqResponseQueue } from "../queue";
 import { ShellOpencodeRunner, SessionWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
 

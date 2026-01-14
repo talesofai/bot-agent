@@ -13,7 +13,7 @@ export interface LlbotRegistryOptions {
   redisUrl: string;
   prefix: string;
   indexKey?: string;
-  refreshIntervalSec?: number;
+  updateChannel?: string;
   logger?: Logger;
 }
 
@@ -23,19 +23,22 @@ export type RegistryUpdateHandler = (
 
 export class LlbotRegistry {
   private redis: IORedis;
+  private subscriber: IORedis;
   private prefix: string;
   private indexKey: string;
+  private updateChannel: string;
   private logger: Logger;
-  private refreshIntervalSec: number;
-  private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private refreshInFlight = false;
   private onUpdate: RegistryUpdateHandler | null = null;
 
   constructor(options: LlbotRegistryOptions) {
     this.redis = new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
+    this.subscriber = new IORedis(options.redisUrl, {
+      maxRetriesPerRequest: null,
+    });
     this.prefix = options.prefix;
     this.indexKey = options.indexKey ?? `${options.prefix}:index`;
-    this.refreshIntervalSec = options.refreshIntervalSec ?? 10;
+    this.updateChannel = options.updateChannel ?? `${options.prefix}:updates`;
     this.logger = (options.logger ?? defaultLogger).child({
       component: "llbot-registry",
     });
@@ -44,19 +47,27 @@ export class LlbotRegistry {
   async start(handler: RegistryUpdateHandler): Promise<void> {
     this.onUpdate = handler;
     await this.refresh();
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-    }
-    this.refreshTimer = setInterval(() => {
-      void this.refresh();
-    }, this.refreshIntervalSec * 1000);
+    this.subscriber.on("message", (_channel, message) => {
+      if (message === "refresh") {
+        void this.refresh();
+      }
+    });
+    this.subscriber.on("pmessage", (_pattern, _channel, message) => {
+      if (message.startsWith(`${this.prefix}:`)) {
+        void this.refresh();
+      }
+    });
+    await this.subscriber.subscribe(this.updateChannel);
+    await this.subscriber.psubscribe(
+      "__keyevent@*__:set",
+      "__keyevent@*__:expired",
+    );
   }
 
   async stop(): Promise<void> {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-      this.refreshTimer = null;
-    }
+    this.subscriber.removeAllListeners("message");
+    this.subscriber.removeAllListeners("pmessage");
+    await this.subscriber.quit();
     await this.redis.quit();
   }
 

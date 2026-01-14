@@ -6,6 +6,7 @@ interface RedisClient {
   set(key: RedisKey, value: string): Promise<unknown>;
   set(key: RedisKey, value: string, mode: "EX", ttl: number): Promise<unknown>;
   sadd(key: RedisKey, member: string): Promise<unknown>;
+  publish?(channel: RedisKey, message: string): Promise<unknown>;
   quit(): Promise<unknown>;
 }
 
@@ -25,6 +26,7 @@ export interface LlbotRegistrarOptions {
 export class LlbotRegistrar {
   private redis: RedisClient;
   private key: string;
+  private updateChannel: string;
   private payloadBase: { wsUrl: string; platform: string };
   private indexKey: string;
   private ttlSec: number | null;
@@ -44,6 +46,7 @@ export class LlbotRegistrar {
       new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.key = `${options.prefix}:${options.botId}`;
     this.indexKey = options.indexKey ?? `${options.prefix}:index`;
+    this.updateChannel = `${options.prefix}:updates`;
     this.payloadBase = { wsUrl: options.wsUrl, platform: options.platform };
     this.ttlSec = ttlSec;
     this.refreshIntervalSec = refreshIntervalSec;
@@ -86,6 +89,9 @@ export class LlbotRegistrar {
         await this.redis.set(this.key, payload);
       }
       await this.redis.sadd(this.indexKey, this.key);
+      if (this.redis.publish) {
+        await this.redis.publish(this.updateChannel, "refresh");
+      }
     } catch (err) {
       this.logger.error({ err }, "Failed to refresh llbot registry entry");
     } finally {

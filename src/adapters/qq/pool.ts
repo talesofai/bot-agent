@@ -17,7 +17,6 @@ import { QQAdapter } from "./adapter";
 interface QQAdapterPoolOptions {
   redisUrl: string;
   registryPrefix: string;
-  refreshIntervalSec?: number;
   logger?: Logger;
 }
 
@@ -43,7 +42,6 @@ export class QQAdapterPool implements PlatformAdapter {
     this.registry = new LlbotRegistry({
       redisUrl: options.redisUrl,
       prefix: options.registryPrefix,
-      refreshIntervalSec: options.refreshIntervalSec,
       logger: this.logger,
     });
   }

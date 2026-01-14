@@ -34,6 +34,7 @@ describe("LlbotRegistrar", () => {
   test("writes registry entry with ttl", async () => {
     const setCalls: unknown[][] = [];
     const saddCalls: unknown[][] = [];
+    const publishCalls: unknown[][] = [];
     const mockRedis = {
       set: async (key: RedisKey, value: string, mode?: "EX", ttl?: number) => {
         const args = mode ? [key, value, mode, ttl] : [key, value];
@@ -42,6 +43,10 @@ describe("LlbotRegistrar", () => {
       },
       sadd: async (key: RedisKey, member: string) => {
         saddCalls.push([key, member]);
+        return 1;
+      },
+      publish: async (channel: RedisKey, message: string) => {
+        publishCalls.push([channel, message]);
         return 1;
       },
       quit: async () => "OK",
@@ -76,11 +81,13 @@ describe("LlbotRegistrar", () => {
     expect(saddCalls).toEqual([
       ["llbot:registry:index", "llbot:registry:bot-1"],
     ]);
+    expect(publishCalls).toEqual([["llbot:registry:updates", "refresh"]]);
   });
 
   test("writes registry entry without ttl when ttl is zero", async () => {
     const setCalls: unknown[][] = [];
     const saddCalls: unknown[][] = [];
+    const publishCalls: unknown[][] = [];
     const mockRedis = {
       set: async (key: RedisKey, value: string, mode?: "EX", ttl?: number) => {
         const args = mode ? [key, value, mode, ttl] : [key, value];
@@ -89,6 +96,10 @@ describe("LlbotRegistrar", () => {
       },
       sadd: async (key: RedisKey, member: string) => {
         saddCalls.push([key, member]);
+        return 1;
+      },
+      publish: async (channel: RedisKey, message: string) => {
+        publishCalls.push([channel, message]);
         return 1;
       },
       quit: async () => "OK",
@@ -113,6 +124,7 @@ describe("LlbotRegistrar", () => {
     expect(saddCalls).toEqual([
       ["llbot:registry:index", "llbot:registry:bot-2"],
     ]);
+    expect(publishCalls).toEqual([["llbot:registry:updates", "refresh"]]);
   });
 
   test("logs refresh errors and keeps running", async () => {
@@ -125,6 +137,7 @@ describe("LlbotRegistrar", () => {
         throw new Error("redis down");
       },
       sadd: async (_key: RedisKey, _member: string) => 1,
+      publish: async (_channel: RedisKey, _message: string) => 1,
       quit: async () => "OK",
     };
     const logger = createMockLogger();

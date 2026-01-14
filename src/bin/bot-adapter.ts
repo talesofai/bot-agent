@@ -31,7 +31,6 @@ async function main(): Promise<void> {
       adapter = new QQAdapterPool({
         redisUrl: config.REDIS_URL,
         registryPrefix: config.LLBOT_REGISTRY_PREFIX,
-        refreshIntervalSec: config.LLBOT_REGISTRY_REFRESH_SEC,
       });
       break;
     case "discord":

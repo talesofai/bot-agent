@@ -24,9 +24,13 @@ export class MessageSender {
       throw new Error("channelId is required for sending messages.");
     }
 
-    const channel = await this.client.channels.fetch(session.channelId);
+    const channel = await this.resolveChannel(session.channelId);
     if (!isSendableChannel(channel)) {
-      throw new Error("channelId is not a text channel.");
+      this.logger.warn(
+        { channelId: session.channelId },
+        "Channel is not sendable",
+      );
+      return;
     }
 
     const payload = buildPayload(content, options?.elements ?? []);
@@ -40,6 +44,24 @@ export class MessageSender {
     } catch (err) {
       this.logger.error({ err, channelId: session.channelId }, "Send failed");
       throw err;
+    }
+  }
+
+  private async resolveChannel(
+    channelId: string,
+  ): Promise<unknown | null | undefined> {
+    const cached = this.client.channels.cache.get(channelId);
+    if (cached) {
+      return cached;
+    }
+    try {
+      return await this.client.channels.fetch(channelId);
+    } catch (err) {
+      this.logger.warn(
+        { err, channelId },
+        "Failed to fetch channel for sending",
+      );
+      return null;
     }
   }
 }

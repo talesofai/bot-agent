@@ -7,7 +7,9 @@ import pino from "pino";
 import type { ResponseJob, ResponseJobData, ResponseQueue } from "../../queue";
 import { BullmqSessionQueue } from "../../queue";
 import { SessionBufferStore } from "../../session/buffer";
-import { SessionManager, buildSessionId } from "../../session";
+import { HistoryStore } from "../../session/history";
+import { SessionRepository } from "../../session/repository";
+import { buildSessionId } from "../../session/utils";
 import type { OpencodeRunner, OpencodeRunResult } from "../runner";
 import { SessionWorker } from "../worker";
 
@@ -66,19 +68,15 @@ describe("session worker integration", () => {
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-test-${Date.now()}`;
     const responseQueue = new MemoryResponseQueue();
-    const sessionManager = new SessionManager({
-      dataDir: tempDir,
-      logger,
-    });
     const worker = new SessionWorker({
       id: "session-test",
+      dataDir: tempDir,
       redis: {
         url: redisUrl,
       },
       queue: {
         name: queueName,
       },
-      sessionManager,
       runner: new FakeRunner(),
       logger,
       responseQueue,
@@ -119,9 +117,14 @@ describe("session worker integration", () => {
       const response = await responseQueue.waitForJob(5000);
       expect(response.content).toBe("Test response");
 
-      const session = await sessionManager.getSession(groupId, sessionId);
+      const sessionRepository = new SessionRepository({
+        dataDir: tempDir,
+        logger,
+      });
+      const historyStore = new HistoryStore(logger);
+      const session = await sessionRepository.loadSession(groupId, sessionId);
       expect(session).not.toBeNull();
-      const history = await sessionManager.readHistory(session!, {
+      const history = await historyStore.readHistory(session!.historyPath, {
         maxEntries: 20,
       });
       const assistant = history.filter((entry) => entry.role === "assistant");
@@ -142,19 +145,15 @@ describe("session worker integration", () => {
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-empty-test-${Date.now()}`;
     const responseQueue = new MemoryResponseQueue();
-    const sessionManager = new SessionManager({
-      dataDir: tempDir,
-      logger,
-    });
     const worker = new SessionWorker({
       id: "session-empty-test",
+      dataDir: tempDir,
       redis: {
         url: redisUrl,
       },
       queue: {
         name: queueName,
       },
-      sessionManager,
       runner: new FakeRunner(),
       logger,
       responseQueue,
@@ -195,9 +194,14 @@ describe("session worker integration", () => {
       const response = await responseQueue.waitForJob(5000);
       expect(response.session.content).toContain("<empty>");
 
-      const session = await sessionManager.getSession(groupId, sessionId);
+      const sessionRepository = new SessionRepository({
+        dataDir: tempDir,
+        logger,
+      });
+      const historyStore = new HistoryStore(logger);
+      const session = await sessionRepository.loadSession(groupId, sessionId);
       expect(session).not.toBeNull();
-      const history = await sessionManager.readHistory(session!, {
+      const history = await historyStore.readHistory(session!.historyPath, {
         maxEntries: 20,
       });
       const userEntries = history.filter((entry) => entry.role === "user");

@@ -1,6 +1,5 @@
 import { getConfig } from "../config";
 import { logger } from "../logger";
-import { SessionManager } from "../session";
 import { BullmqResponseQueue } from "../queue";
 import { ShellOpencodeRunner, SessionWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
@@ -15,7 +14,6 @@ logger.info(
   "Session worker starting",
 );
 
-const sessionManager = new SessionManager();
 const sessionQueueName = "session-jobs";
 const responseQueueName = "session-responses";
 
@@ -26,13 +24,13 @@ const responseQueue = new BullmqResponseQueue({
 
 const worker = new SessionWorker({
   id: "worker-1",
+  dataDir: config.GROUPS_DATA_DIR,
   redis: {
     url: config.REDIS_URL,
   },
   queue: {
     name: sessionQueueName,
   },
-  sessionManager,
   runner: new ShellOpencodeRunner(),
   logger,
   responseQueue,

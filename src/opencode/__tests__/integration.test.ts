@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import pino from "pino";
 
 import type { SessionJob } from "../../queue";
-import { SessionManager } from "../../session";
+import { GroupFileRepository } from "../../store/repository";
+import { HistoryStore } from "../../session/history";
+import { SessionRepository } from "../../session/repository";
+import { createSession } from "../../session/session-ops";
 import { OpencodeLauncher } from "../launcher";
 import { ShellOpencodeRunner } from "../../worker/runner";
 import { buildSystemPrompt } from "../system-prompt";
@@ -18,10 +21,15 @@ describe("opencode integration", () => {
   integrationTest("runs opencode and writes history", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "opencode-test-"));
     const logger = pino({ level: "silent" });
-    const sessionManager = new SessionManager({
+    const groupRepository = new GroupFileRepository({
       dataDir: tempDir,
       logger,
     });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new HistoryStore(logger);
     const groupId = "group-1";
     const userId = "user-1";
     const key = 0;
@@ -36,8 +44,12 @@ describe("opencode integration", () => {
           );
         }
       }
-      const session = await sessionManager.createSession(groupId, userId, {
+      const session = await createSession({
+        groupId,
+        userId,
         key,
+        groupRepository,
+        sessionRepository,
       });
       const model = process.env.OPENCODE_MODEL ?? "glm-4.7";
       const launcher = new OpencodeLauncher();
@@ -45,15 +57,18 @@ describe("opencode integration", () => {
 
       const runTurn = async (input: string): Promise<void> => {
         const now = new Date().toISOString();
-        await sessionManager.appendHistory(session, {
+        await historyStore.appendHistory(session.historyPath, {
           role: "user",
           content: input,
           createdAt: now,
         });
-        const history = await sessionManager.readHistory(session, {
+        const history = await historyStore.readHistory(session.historyPath, {
           maxEntries: 20,
         });
-        const agentPrompt = await sessionManager.getAgentPrompt(groupId);
+        await groupRepository.ensureGroupDir(groupId);
+        const groupPath = sessionRepository.getGroupPath(groupId);
+        const agentContent = await groupRepository.loadAgentPrompt(groupPath);
+        const agentPrompt = agentContent.content;
         const systemPrompt = buildSystemPrompt(agentPrompt);
         const prompt = buildOpencodePrompt({
           systemPrompt,
@@ -80,12 +95,12 @@ describe("opencode integration", () => {
         const createdAt = new Date().toISOString();
         if (result.historyEntries?.length) {
           for (const entry of result.historyEntries) {
-            await sessionManager.appendHistory(session, entry);
+            await historyStore.appendHistory(session.historyPath, entry);
           }
           return;
         }
         if (result.output) {
-          await sessionManager.appendHistory(session, {
+          await historyStore.appendHistory(session.historyPath, {
             role: "assistant",
             content: result.output,
             createdAt,
@@ -98,7 +113,7 @@ describe("opencode integration", () => {
       await runTurn("Say hi in one short sentence.");
       await runTurn("Now answer in one short sentence.");
 
-      const updated = await sessionManager.readHistory(session, {
+      const updated = await historyStore.readHistory(session.historyPath, {
         maxEntries: 50,
       });
       const assistantMessages = updated.filter(

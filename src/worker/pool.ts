@@ -1,6 +1,5 @@
 import type { Logger } from "pino";
 
-import type { SessionManager } from "../session";
 import type { OpencodeRunner } from "./runner";
 import { SessionWorker } from "./worker";
 
@@ -8,7 +7,7 @@ export interface SessionWorkerPoolOptions {
   size: number;
   queueName: string;
   redisUrl: string;
-  sessionManager: SessionManager;
+  dataDir: string;
   runner: OpencodeRunner;
   logger: Logger;
   prefix?: string;
@@ -28,6 +27,7 @@ export class SessionWorkerPool {
     this.logger = options.logger.child({ component: "session-worker-pool" });
     this.worker = new SessionWorker({
       id: "pool",
+      dataDir: options.dataDir,
       redis: {
         url: options.redisUrl,
       },
@@ -38,7 +38,6 @@ export class SessionWorkerPool {
         stalledIntervalMs: options.stalledIntervalMs,
         maxStalledCount: options.maxStalledCount,
       },
-      sessionManager: options.sessionManager,
       runner: options.runner,
       logger: this.logger,
       limits: {

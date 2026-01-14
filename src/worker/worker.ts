@@ -4,7 +4,10 @@ import type { Logger } from "pino";
 import Redlock, { type Lock } from "redlock";
 
 import type { ResponseQueue, SessionJob, SessionJobData } from "../queue";
-import type { SessionManager } from "../session";
+import { GroupFileRepository } from "../store/repository";
+import { SessionRepository } from "../session/repository";
+import { HistoryStore } from "../session/history";
+import { createSession } from "../session/session-ops";
 import { OpencodeLauncher } from "../opencode/launcher";
 import { buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
@@ -22,6 +25,7 @@ import { SessionBufferStore } from "../session/buffer";
 
 export interface SessionWorkerOptions {
   id: string;
+  dataDir: string;
   redis: {
     url: string;
   };
@@ -32,7 +36,6 @@ export interface SessionWorkerOptions {
     stalledIntervalMs?: number;
     maxStalledCount?: number;
   };
-  sessionManager: SessionManager;
   launcher?: OpencodeLauncher;
   runner: OpencodeRunner;
   logger: Logger;
@@ -48,7 +51,9 @@ export interface SessionWorkerOptions {
 export class SessionWorker {
   private worker: Worker<SessionJobData>;
   private logger: Logger;
-  private sessionManager: SessionManager;
+  private groupRepository: GroupFileRepository;
+  private sessionRepository: SessionRepository;
+  private historyStore: HistoryStore;
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
   private responseQueue?: ResponseQueue;
@@ -69,7 +74,15 @@ export class SessionWorker {
       component: "session-worker",
       workerId: options.id,
     });
-    this.sessionManager = options.sessionManager;
+    this.groupRepository = new GroupFileRepository({
+      dataDir: options.dataDir,
+      logger: this.logger,
+    });
+    this.sessionRepository = new SessionRepository({
+      dataDir: options.dataDir,
+      logger: this.logger,
+    });
+    this.historyStore = new HistoryStore(this.logger);
     this.launcher = options.launcher ?? new OpencodeLauncher();
     this.runner = options.runner;
     this.responseQueue = options.responseQueue;
@@ -155,10 +168,7 @@ export class SessionWorker {
         await this.recordActivity(sessionInfo);
 
         // 3. Update Status
-        sessionInfo = await this.sessionManager.updateStatus(
-          sessionInfo,
-          "running",
-        );
+        sessionInfo = await this.updateStatus(sessionInfo, "running");
         statusUpdated = true;
         await this.recordActivity(sessionInfo);
 
@@ -166,12 +176,15 @@ export class SessionWorker {
           const mergedSession = mergeBufferedMessages(buffered);
 
           // 4. Prepare Context
-          const history = await this.sessionManager.readHistory(sessionInfo, {
-            maxEntries: this.historyMaxEntries,
-            maxBytes: this.historyMaxBytes,
-          });
-          const groupConfig = await this.sessionManager.getGroupConfig(groupId);
-          const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
+          const history = await this.historyStore.readHistory(
+            sessionInfo.historyPath,
+            {
+              maxEntries: this.historyMaxEntries,
+              maxBytes: this.historyMaxBytes,
+            },
+          );
+          const groupConfig = await this.getGroupConfig(groupId);
+          const agentPrompt = await this.getAgentPrompt(groupId);
           const systemPrompt = buildSystemPrompt(agentPrompt);
           const promptInput = resolveSessionInput(mergedSession.content);
           const prompt = buildOpencodePrompt({
@@ -225,7 +238,7 @@ export class SessionWorker {
       } finally {
         if (statusUpdated && sessionInfo && !lockContext.isLost()) {
           try {
-            await this.sessionManager.updateStatus(sessionInfo, "idle");
+            await this.updateStatus(sessionInfo, "idle");
           } catch (err) {
             this.logger.warn(
               { err },
@@ -328,14 +341,48 @@ export class SessionWorker {
     key: number,
     sessionId: string,
   ): Promise<SessionInfo> {
-    const existing = await this.sessionManager.getSession(groupId, sessionId);
+    const existing = await this.sessionRepository.loadSession(
+      groupId,
+      sessionId,
+    );
     if (existing) {
       if (existing.meta.ownerId !== userId) {
         throw new Error("Session ownership mismatch");
       }
       return existing;
     }
-    return this.sessionManager.createSession(groupId, userId, { key });
+    return createSession({
+      groupId,
+      userId,
+      key,
+      groupRepository: this.groupRepository,
+      sessionRepository: this.sessionRepository,
+    });
+  }
+
+  private async updateStatus(
+    sessionInfo: SessionInfo,
+    status: "idle" | "running",
+  ): Promise<SessionInfo> {
+    const updated: SessionInfo["meta"] = {
+      ...sessionInfo.meta,
+      status,
+      updatedAt: new Date().toISOString(),
+    };
+    return this.sessionRepository.updateMeta(updated);
+  }
+
+  private async getGroupConfig(groupId: string) {
+    await this.groupRepository.ensureGroupDir(groupId);
+    const groupPath = this.sessionRepository.getGroupPath(groupId);
+    return this.groupRepository.loadConfig(groupPath);
+  }
+
+  private async getAgentPrompt(groupId: string): Promise<string> {
+    await this.groupRepository.ensureGroupDir(groupId);
+    const groupPath = this.sessionRepository.getGroupPath(groupId);
+    const agentContent = await this.groupRepository.loadAgentPrompt(groupPath);
+    return agentContent.content;
   }
 
   private async appendHistoryFromJob(
@@ -374,7 +421,7 @@ export class SessionWorker {
     }
 
     for (const entry of entries) {
-      await this.sessionManager.appendHistory(sessionInfo, entry);
+      await this.historyStore.appendHistory(sessionInfo.historyPath, entry);
     }
   }
 

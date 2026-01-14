@@ -1,7 +1,7 @@
-export { SessionManager } from "./manager";
-export type { SessionManagerOptions, CreateSessionOptions } from "./manager";
 export { SessionRepository } from "./repository";
 export type { SessionRepositoryOptions } from "./repository";
+export { createSession } from "./session-ops";
+export type { CreateSessionInput } from "./session-ops";
 
 export { HistoryStore } from "./history";
 export type { HistoryReadOptions } from "./history";

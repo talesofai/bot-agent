@@ -9,11 +9,9 @@ export interface HistoryReadOptions {
 
 export class HistoryStore {
   private logger: Logger;
-  private maxBytes: number;
 
-  constructor(logger: Logger, maxBytes = 1024 * 1024) {
+  constructor(logger: Logger) {
     this.logger = logger.child({ component: "history-store" });
-    this.maxBytes = maxBytes;
   }
 
   async readHistory(
@@ -22,30 +20,31 @@ export class HistoryStore {
   ): Promise<HistoryEntry[]> {
     try {
       const content = await readFile(historyPath, "utf-8");
-      if (!content.trim()) {
+      if (!content) {
         return [];
       }
-      let entries = content
+
+      const maxEntries = options.maxEntries ?? 0;
+      let linesToParse = content;
+      if (maxEntries > 0) {
+        const offset = this.findStartOffset(content, maxEntries);
+        if (offset > 0) {
+          linesToParse = content.slice(offset);
+        }
+      }
+
+      return linesToParse
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
         .map((line) => {
           try {
             return JSON.parse(line) as HistoryEntry;
-          } catch (err) {
-            this.logger.warn({ err }, "Failed to parse history entry");
+          } catch {
             return null;
           }
         })
         .filter((entry): entry is HistoryEntry => entry !== null);
-      if (
-        typeof options.maxEntries === "number" &&
-        options.maxEntries > 0 &&
-        entries.length > options.maxEntries
-      ) {
-        entries = entries.slice(-options.maxEntries);
-      }
-      return entries;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         return [];
@@ -58,5 +57,23 @@ export class HistoryStore {
   async appendHistory(historyPath: string, entry: HistoryEntry): Promise<void> {
     const line = `${JSON.stringify(entry)}\n`;
     await appendFile(historyPath, line, "utf-8");
+  }
+
+  private findStartOffset(content: string, maxLines: number): number {
+    let count = 0;
+    let index = content.length - 1;
+    if (content[index] === "\n") {
+      index -= 1;
+    }
+    while (index >= 0) {
+      if (content[index] === "\n") {
+        count += 1;
+        if (count >= maxLines) {
+          return index + 1;
+        }
+      }
+      index -= 1;
+    }
+    return 0;
   }
 }

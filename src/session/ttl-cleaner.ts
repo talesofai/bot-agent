@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import { getConfig } from "../config";
 import type { SessionMeta, SessionStatus } from "../types/session";
 import { SessionActivityStore, type SessionKey } from "./activity-store";
+import { isSafePathSegment } from "../utils/path";
 
 export interface SessionTtlCleanerOptions {
   dataDir?: string;
@@ -23,7 +24,8 @@ export class SessionTtlCleaner {
     this.dataDir = options.dataDir ?? getConfig().GROUPS_DATA_DIR;
     this.logger = options.logger.child({ component: "session-ttl-cleaner" });
     this.ttlMs = options.ttlMs ?? 30 * 24 * 60 * 60 * 1000;
-    const redisUrl = options.redisUrl ?? getConfig().REDIS_URL;
+    const redisUrl =
+      options.redisUrl === undefined ? getConfig().REDIS_URL : options.redisUrl;
     this.activityIndex = redisUrl
       ? new SessionActivityStore({
           redisUrl,
@@ -34,49 +36,69 @@ export class SessionTtlCleaner {
 
   async cleanup(): Promise<number> {
     const now = Date.now();
+    const cutoffMs = now - this.ttlMs;
     let removed = 0;
+    const removedKeys = new Set<string>();
 
-    try {
-      const groupEntries = await this.readDirSafe(this.dataDir);
-      for (const groupEntry of groupEntries) {
-        if (!groupEntry.isDirectory() || groupEntry.name.startsWith(".")) {
+    if (this.activityIndex) {
+      removed += await this.cleanupFromIndex(cutoffMs, removedKeys);
+    }
+
+    const groupEntries = await this.readDirSafe(this.dataDir);
+    for (const groupEntry of groupEntries) {
+      if (!groupEntry.isDirectory() || groupEntry.name.startsWith(".")) {
+        continue;
+      }
+      const groupId = groupEntry.name;
+      if (!isSafePathSegment(groupId)) {
+        this.logger.warn({ groupId }, "Skipping unsafe group directory");
+        continue;
+      }
+      const sessionsDir = join(this.dataDir, groupId, "sessions");
+      const sessionEntries = await this.readDirSafe(sessionsDir);
+      for (const sessionEntry of sessionEntries) {
+        if (!sessionEntry.isDirectory()) {
           continue;
         }
-        const groupId = groupEntry.name;
-        const sessionsDir = join(this.dataDir, groupId, "sessions");
-        const sessionEntries = await this.readDirSafe(sessionsDir);
-        for (const sessionEntry of sessionEntries) {
-          if (!sessionEntry.isDirectory()) {
-            continue;
-          }
-          const sessionId = sessionEntry.name;
-          const sessionPath = join(sessionsDir, sessionId);
-          const metaPath = join(sessionPath, "meta.json");
-          const { status, lastActiveMs } = await this.readSessionState(
-            metaPath,
-            sessionPath,
+        const sessionId = sessionEntry.name;
+        if (!isSafePathSegment(sessionId)) {
+          this.logger.warn(
+            { groupId, sessionId },
+            "Skipping unsafe session directory",
           );
-          if (status === "running") {
-            continue;
-          }
-          if (lastActiveMs === null) {
-            this.logger.warn(
-              { groupId, sessionId },
-              "Skipping session without last active timestamp",
-            );
-            continue;
-          }
-          if (now - lastActiveMs <= this.ttlMs) {
-            continue;
-          }
-          await rm(sessionPath, { recursive: true, force: true });
-          await this.removeIndexEntry({ groupId, sessionId });
+          continue;
+        }
+        const sessionKey = this.buildSessionKey(groupId, sessionId);
+        if (removedKeys.has(sessionKey)) {
+          continue;
+        }
+        const sessionPath = join(sessionsDir, sessionId);
+        const metaPath = join(sessionPath, "meta.json");
+        const { status, lastActiveMs } = await this.readSessionState(
+          metaPath,
+          sessionPath,
+        );
+        if (lastActiveMs === null) {
+          this.logger.warn(
+            { groupId, sessionId },
+            "Skipping session without last active timestamp",
+          );
+          continue;
+        }
+        const ageMs = now - lastActiveMs;
+        if (ageMs <= this.ttlMs) {
+          continue;
+        }
+        if (status === "running") {
+          this.logger.warn(
+            { groupId, sessionId, ageMs },
+            "Removing stale running session",
+          );
+        }
+        if (await this.removeSession(groupId, sessionId, sessionPath)) {
+          removedKeys.add(sessionKey);
           removed += 1;
         }
-      }
-    } finally {
-      if (this.activityIndex) {
-        await this.activityIndex.close();
       }
     }
 
@@ -85,6 +107,14 @@ export class SessionTtlCleaner {
     }
 
     return removed;
+  }
+
+  async close(): Promise<void> {
+    if (!this.activityIndex) {
+      return;
+    }
+    await this.activityIndex.close();
+    this.activityIndex = null;
   }
 
   private async readMeta(metaPath: string): Promise<SessionMeta | null> {
@@ -125,6 +155,64 @@ export class SessionTtlCleaner {
     } catch {
       return [];
     }
+  }
+
+  private async cleanupFromIndex(
+    cutoffMs: number,
+    removedKeys: Set<string>,
+  ): Promise<number> {
+    if (!this.activityIndex) {
+      return 0;
+    }
+    let removed = 0;
+    let expired: SessionKey[] = [];
+    try {
+      expired = await this.activityIndex.fetchExpired(cutoffMs);
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to read expired session index");
+      return 0;
+    }
+    for (const entry of expired) {
+      if (
+        !isSafePathSegment(entry.groupId) ||
+        !isSafePathSegment(entry.sessionId)
+      ) {
+        this.logger.warn({ entry }, "Skipping unsafe session entry from index");
+        await this.removeIndexEntry(entry);
+        continue;
+      }
+      const sessionKey = this.buildSessionKey(entry.groupId, entry.sessionId);
+      if (removedKeys.has(sessionKey)) {
+        continue;
+      }
+      if (await this.removeSession(entry.groupId, entry.sessionId)) {
+        removedKeys.add(sessionKey);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  private async removeSession(
+    groupId: string,
+    sessionId: string,
+    sessionPath = join(this.dataDir, groupId, "sessions", sessionId),
+  ): Promise<boolean> {
+    try {
+      await rm(sessionPath, { recursive: true, force: true });
+    } catch (err) {
+      this.logger.warn(
+        { err, groupId, sessionId },
+        "Failed to remove stale session directory",
+      );
+      return false;
+    }
+    await this.removeIndexEntry({ groupId, sessionId });
+    return true;
+  }
+
+  private buildSessionKey(groupId: string, sessionId: string): string {
+    return `${groupId}:${sessionId}`;
   }
 
   private async removeIndexEntry(key: SessionKey): Promise<void> {

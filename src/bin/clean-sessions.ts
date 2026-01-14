@@ -26,14 +26,17 @@ async function main(): Promise<void> {
     { ttlDays: env.CLEAN_SESSIONS_TTL_DAYS },
     "Starting session cleanup",
   );
+  let exitCode = 0;
   try {
     const removed = await cleaner.cleanup();
     logger.info({ removed }, "Session cleanup finished");
-    process.exit(0);
   } catch (err) {
     logger.error({ err }, "Session cleanup failed");
-    process.exit(1);
+    exitCode = 1;
+  } finally {
+    await cleaner.close();
   }
+  process.exit(exitCode);
 }
 
 await main();

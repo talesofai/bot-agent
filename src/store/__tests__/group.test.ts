@@ -2,20 +2,21 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-let GroupStore: typeof import("../group").GroupStore;
+type GroupStoreType = import("../group").GroupStore;
+let GroupStoreClass: typeof import("../group").GroupStore;
 
 describe("GroupStore", () => {
   let testDir: string;
-  let store: GroupStore;
+  let store: GroupStoreType;
 
   beforeEach(async () => {
     // Create a unique temp directory for each test
     testDir = join(tmpdir(), `group-store-test-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
-    if (!GroupStore) {
-      ({ GroupStore } = await import("../group"));
+    if (!GroupStoreClass) {
+      ({ GroupStore: GroupStoreClass } = await import("../group"));
     }
-    store = new GroupStore({ dataDir: testDir });
+    store = new GroupStoreClass({ dataDir: testDir });
   });
 
   afterEach(async () => {
@@ -28,7 +29,7 @@ describe("GroupStore", () => {
   describe("init", () => {
     test("should create data directory if not exists", async () => {
       const newDir = join(testDir, "new-data");
-      const newStore = new GroupStore({ dataDir: newDir });
+      const newStore = new GroupStoreClass({ dataDir: newDir });
       await newStore.init();
       expect(existsSync(newDir)).toBe(true);
     });
@@ -46,7 +47,7 @@ describe("GroupStore", () => {
         "# Test Agent\n\nYou are helpful.",
       );
 
-      store = new GroupStore({ dataDir: testDir, preload: true });
+      store = new GroupStoreClass({ dataDir: testDir, preload: true });
       await store.init();
 
       const groups = store.listGroups();
@@ -79,6 +80,12 @@ describe("GroupStore", () => {
 
       const content = Bun.file(join(groupPath, "agent.md")).text();
       expect(content).resolves.toBe("Custom content");
+    });
+
+    test("should reject unsafe group IDs", async () => {
+      await expect(store.ensureGroupDir("../escape")).rejects.toThrow(
+        "groupId must be a safe path segment",
+      );
     });
   });
 
@@ -168,14 +175,17 @@ Be friendly and concise.
       expect(group).toBeNull();
     });
 
-    test("should reject invalid config", async () => {
+    test("should fall back to defaults on invalid config", async () => {
       const groupPath = join(testDir, "invalid-config");
       mkdirSync(groupPath, { recursive: true });
       writeFileSync(join(groupPath, "config.yaml"), "invalid: yaml: content:");
 
       const group = await store.loadGroup("invalid-config");
 
-      expect(group).toBeNull();
+      expect(group).not.toBeNull();
+      expect(group!.config.enabled).toBe(true);
+      expect(group!.config.triggerMode).toBe("mention");
+      expect(group!.config.maxSessions).toBe(1);
     });
   });
 

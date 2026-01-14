@@ -4,6 +4,7 @@ import { z } from "zod";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "pino";
 import { logger as defaultLogger } from "../logger";
+import { isSafePathSegment } from "../utils/path";
 import {
   EchoRateSchema,
   KeywordRoutingSchema,
@@ -129,6 +130,13 @@ export class RouterStore {
 
     await Promise.all(
       botDirs.map(async (entry) => {
+        if (!isSafePathSegment(entry.name)) {
+          this.logger.warn(
+            { botId: entry.name },
+            "Skipping unsafe bot config directory",
+          );
+          return;
+        }
         const configPath = join(botsDir, entry.name, "config.yaml");
         const config = await this.loadBotConfig(configPath);
         if (config) {

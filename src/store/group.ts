@@ -17,7 +17,7 @@ export interface GroupStoreOptions {
   cacheSize?: number;
 }
 
-type ReloadCallback = (groupId: string) => void;
+type ReloadCallback = (groupId: string) => void | Promise<void>;
 
 export class GroupStore {
   private dataDir: string;
@@ -124,7 +124,7 @@ export class GroupStore {
     const group = await this.loadGroup(groupId);
     for (const callback of this.reloadCallbacks) {
       try {
-        callback(groupId);
+        await callback(groupId);
       } catch (err) {
         this.logger.error({ err, groupId }, "Reload callback error");
       }

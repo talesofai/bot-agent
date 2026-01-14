@@ -14,6 +14,7 @@ import {
   type GroupData,
   type Skill,
 } from "../types/group";
+import { assertSafePathSegment } from "../utils/path";
 
 const DEFAULT_AGENT_MD = `# Agent
 
@@ -48,6 +49,7 @@ export class GroupFileRepository {
   }
 
   async ensureGroupDir(groupId: string): Promise<string> {
+    assertSafePathSegment(groupId, "groupId");
     const groupPath = join(this.dataDir, groupId);
 
     await mkdir(groupPath, { recursive: true });
@@ -72,6 +74,7 @@ export class GroupFileRepository {
   }
 
   async loadGroup(groupId: string): Promise<GroupData | null> {
+    assertSafePathSegment(groupId, "groupId");
     const groupPath = join(this.dataDir, groupId);
 
     if (!(await this.exists(groupPath))) {
@@ -105,8 +108,11 @@ export class GroupFileRepository {
       const parsed = parseYaml(content);
       return GroupConfigSchema.parse(parsed);
     } catch (err) {
-      this.logger.error({ err, configPath }, "Failed to parse config");
-      throw err;
+      this.logger.error(
+        { err, configPath },
+        "Failed to parse config, falling back to defaults",
+      );
+      return { ...DEFAULT_GROUP_CONFIG };
     }
   }
 
@@ -163,21 +169,19 @@ export class GroupFileRepository {
         (entry) => entry.isFile() && entry.name.endsWith(".md"),
       );
 
-      const loadedSkills = await Promise.all(
-        skillEntries.map(async (entry) => {
-          const skillPath = join(skillsPath, entry.name);
+      for (const entry of skillEntries) {
+        const skillPath = join(skillsPath, entry.name);
+        try {
           const content = await readFile(skillPath, "utf-8");
           const name = basename(entry.name, ".md");
-          return {
+          skills[name] = {
             name,
             content: content.trim(),
             enabled: true,
           };
-        }),
-      );
-
-      for (const skill of loadedSkills) {
-        skills[skill.name] = skill;
+        } catch (err) {
+          this.logger.warn({ err, skillPath }, "Failed to load skill file");
+        }
       }
     } catch (err) {
       this.logger.warn({ err, skillsPath }, "Failed to load skills");

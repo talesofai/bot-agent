@@ -79,6 +79,34 @@ describe("MilkyConnection", () => {
     );
   });
 
+  test("should resolve sendRequest when echo is numeric", async () => {
+    server.on("connection", (socket) => {
+      socket.on("message", (data) => {
+        const payload = JSON.parse(String(data)) as { echo?: string };
+        socket.send(
+          JSON.stringify({
+            status: "ok",
+            echo: payload.echo ? Number(payload.echo) : 0,
+            data: { ok: true },
+          }),
+        );
+      });
+    });
+
+    const connection = new MilkyConnection({
+      url: wsUrl,
+      logger: mockLogger,
+      onEvent: onEventMock,
+    });
+
+    await connection.connect();
+    const response = await connection.sendRequest("test_action", {
+      foo: "bar",
+    });
+    expect(response).toEqual({ ok: true });
+    await connection.disconnect();
+  });
+
   test("should emit events on EventEmitter", () => {
     const connection = new MilkyConnection({
       url: wsUrl,

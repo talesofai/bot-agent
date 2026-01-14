@@ -73,6 +73,7 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
     this.isShuttingDown = false; // Reset in case of reconnection after previous disconnect
     this.logger.info("Connecting to Milky server...");
     await this.connection.connect();
+    bot.status = "connected";
     this.logger.info("Connected to Milky server");
   }
 
@@ -120,7 +121,10 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
       try {
         await handler(message);
       } catch (err) {
-        this.logger.error({ err, messageId: message.id }, "Handler error");
+        this.logger.error(
+          { err, messageId: message.messageId },
+          "Handler error",
+        );
       }
     }
   }

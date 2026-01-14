@@ -90,7 +90,7 @@ describe("parseMessage", () => {
     expect(result).not.toBeNull();
     expect(result!.elements).toEqual([
       { type: "mention", userId: "111111111" },
-      { type: "text", text: " Help me" },
+      { type: "text", text: "Help me" },
     ]);
     expect(result!.content).toBe("Help me");
   });
@@ -230,6 +230,30 @@ describe("parseMessage", () => {
       { type: "text", text: "Help me" },
     ]);
     expect(result!.content).toBe("Help me");
+  });
+
+  test("should preserve element order for raw CQ segments", () => {
+    const event = {
+      post_type: "message",
+      message_type: "group",
+      message_id: 12345,
+      user_id: 123456789,
+      group_id: 987654321,
+      raw_message: "Hello [CQ:at,qq=111111111] world",
+      sender: { user_id: 123456789, nickname: "User" },
+      time: 1704067200,
+      self_id: 111111111,
+    };
+
+    const result = parseMessage(event);
+
+    expect(result).not.toBeNull();
+    expect(result!.elements).toEqual([
+      { type: "text", text: "Hello " },
+      { type: "mention", userId: "111111111" },
+      { type: "text", text: " world" },
+    ]);
+    expect(result!.content).toBe("Hello  world");
   });
 
   test("should parse mentions with extra CQ params", () => {

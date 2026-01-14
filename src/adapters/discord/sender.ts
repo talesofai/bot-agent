@@ -25,7 +25,7 @@ export class MessageSender {
     }
 
     const channel = await this.client.channels.fetch(session.channelId);
-    if (!channel || !channel.isTextBased()) {
+    if (!isSendableChannel(channel)) {
       throw new Error("channelId is not a text channel.");
     }
 
@@ -54,10 +54,12 @@ function buildPayload(
 
   const textParts: string[] = [];
   const embeds: EmbedBuilder[] = [];
+  let hasTextElement = false;
 
   for (const element of elements) {
     if (element.type === "text") {
       textParts.push(element.text);
+      hasTextElement = true;
       continue;
     }
     if (element.type === "mention") {
@@ -74,7 +76,11 @@ function buildPayload(
     }
   }
 
-  const resolvedContent = textParts.join("").trim() || content.trim();
+  const normalizedContent = content.trim();
+  const baseContent = textParts.join("").trim();
+  const resolvedContent = hasTextElement
+    ? baseContent
+    : [baseContent, normalizedContent].filter(Boolean).join(" ");
   const payload: MessageCreateOptions = {};
   if (resolvedContent) {
     payload.content = resolvedContent;
@@ -83,4 +89,17 @@ function buildPayload(
     payload.embeds = embeds;
   }
   return payload;
+}
+
+function isSendableChannel(
+  channel: unknown,
+): channel is { send: (options: MessageCreateOptions) => Promise<unknown> } {
+  if (!channel || typeof channel !== "object") {
+    return false;
+  }
+  if (!("send" in channel)) {
+    return false;
+  }
+  const candidate = channel as { send?: unknown };
+  return typeof candidate.send === "function";
 }

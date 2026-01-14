@@ -26,7 +26,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private sender: MessageSender;
   private botUserId: string | null = null;
   private bot: Bot | null = null;
-  private isShuttingDown = false;
 
   constructor(options: DiscordAdapterOptions = {}) {
     const token = options.token;
@@ -72,13 +71,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
   async connect(bot: Bot): Promise<void> {
     this.bot = bot;
-    this.isShuttingDown = false;
     this.logger.info("Connecting to Discord...");
     await this.client.login(this.token);
   }
 
   async disconnect(bot: Bot): Promise<void> {
-    this.isShuttingDown = true;
     bot.status = "disconnected";
     this.logger.info("Disconnecting from Discord...");
     await this.client.destroy();

@@ -1,4 +1,5 @@
 import type { SessionElement, SessionEvent } from "../../types/platform";
+import { extractTextFromElements, trimTextElements } from "../utils";
 
 /**
  * Milky event types
@@ -78,17 +79,13 @@ function normalizeSegments(event: MilkyMessageEvent): {
     };
   }
   if (typeof message === "string") {
-    const mentions = extractMentions(message);
-    const text = parseRawMessage(message);
     return {
-      elements: buildElementsFromRaw(text, mentions),
+      elements: parseRawElements(message),
     };
   }
   if (typeof raw_message === "string") {
-    const mentions = extractMentions(raw_message);
-    const text = parseRawMessage(raw_message);
     return {
-      elements: buildElementsFromRaw(text, mentions),
+      elements: parseRawElements(raw_message),
     };
   }
   return { elements: [] };
@@ -111,29 +108,7 @@ function mapSegmentsToElements(
       elements.push({ type: "mention", userId: String(seg.data.qq) });
     }
   }
-  return elements;
-}
-
-function buildElementsFromRaw(
-  text: string,
-  mentions: string[],
-): SessionElement[] {
-  const elements: SessionElement[] = [];
-  for (const userId of mentions) {
-    elements.push({ type: "mention", userId });
-  }
-  if (text) {
-    elements.push({ type: "text", text });
-  }
-  return elements;
-}
-
-function extractTextFromElements(elements: SessionElement[]): string {
-  return elements
-    .filter((element) => element.type === "text")
-    .map((element) => element.text)
-    .join("")
-    .trim();
+  return trimTextElements(elements);
 }
 
 /**
@@ -144,13 +119,57 @@ export function parseRawMessage(rawMessage: string): string {
   return rawMessage.replace(/\[CQ:[^\]]+\]/g, "").trim();
 }
 
-function extractMentions(rawMessage: string): string[] {
-  const mentions: string[] = [];
-  const pattern = /\[CQ:at,[^\]]*qq=([0-9]+)[^\]]*\]/g;
-  let match: RegExpExecArray | null = pattern.exec(rawMessage);
-  while (match) {
-    mentions.push(match[1]);
-    match = pattern.exec(rawMessage);
+function parseRawElements(rawMessage: string): SessionElement[] {
+  const elements: SessionElement[] = [];
+  const pattern = /\[CQ:([a-zA-Z0-9_]+)(?:,([^\]]*))?\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(rawMessage))) {
+    const leadingText = rawMessage.slice(lastIndex, match.index);
+    if (leadingText) {
+      elements.push({ type: "text", text: leadingText });
+    }
+    const type = match[1];
+    const params = parseCqParams(match[2]);
+    if (type === "at" && params.qq) {
+      elements.push({ type: "mention", userId: params.qq });
+    } else if (type === "image") {
+      const file = params.file ?? params.url;
+      if (file) {
+        elements.push({ type: "image", url: file });
+      }
+    }
+    lastIndex = pattern.lastIndex;
   }
-  return mentions;
+
+  const trailingText = rawMessage.slice(lastIndex);
+  if (trailingText) {
+    elements.push({ type: "text", text: trailingText });
+  }
+
+  return trimTextElements(elements);
+}
+
+function parseCqParams(raw: string | undefined): Record<string, string> {
+  if (!raw) {
+    return {};
+  }
+  const params: Record<string, string> = {};
+  for (const pair of raw.split(",")) {
+    if (!pair) {
+      continue;
+    }
+    const separatorIndex = pair.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+    const key = pair.slice(0, separatorIndex);
+    const value = pair.slice(separatorIndex + 1);
+    if (!key) {
+      continue;
+    }
+    params[key] = value;
+  }
+  return params;
 }

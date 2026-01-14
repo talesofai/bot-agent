@@ -33,6 +33,10 @@ export class MessageSender {
     if (!channelId) {
       throw new Error("channelId is required for sending messages.");
     }
+    if (message.length === 0) {
+      this.logger.debug({ channelId }, "Skipping empty message send");
+      return;
+    }
 
     const action = isGroup ? "send_group_msg" : "send_private_msg";
     const params = isGroup
@@ -58,7 +62,15 @@ export class MessageSender {
     const segments: MilkyMessageSegment[] = [];
 
     if (elements && elements.length > 0) {
-      segments.push(...this.mapElements(elements));
+      const mapped = this.mapElements(elements);
+      const hasText = mapped.some((segment) => segment.type === "text");
+      const normalizedContent = content.trim();
+      if (!hasText && normalizedContent) {
+        const needsSpace = mapped.length > 0 && !/^\s/.test(normalizedContent);
+        const text = needsSpace ? ` ${normalizedContent}` : normalizedContent;
+        mapped.push({ type: "text", data: { text } });
+      }
+      segments.push(...mapped);
     } else if (content) {
       segments.push({ type: "text", data: { text: content } });
     }

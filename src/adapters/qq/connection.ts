@@ -67,8 +67,8 @@ export class MilkyConnection extends EventEmitter {
     if (this.connectPromise) {
       return this.connectPromise;
     }
-    this.openSocket();
     this.connectPromise = this.waitForConnect();
+    this.openSocket();
     try {
       await this.connectPromise;
     } finally {
@@ -129,8 +129,16 @@ export class MilkyConnection extends EventEmitter {
         timeout,
       });
 
-      this.ws!.send(payload);
-      this.logger.debug({ action, echo }, "Request sent");
+      try {
+        this.ws!.send(payload);
+        this.logger.debug({ action, echo }, "Request sent");
+      } catch (err) {
+        this.responseCallbacks.delete(echo);
+        clearTimeout(timeout);
+        const error =
+          err instanceof Error ? err : new Error("WebSocket send failed");
+        reject(error);
+      }
     });
   }
 
@@ -151,35 +159,44 @@ export class MilkyConnection extends EventEmitter {
       }
       const parsed = JSON.parse(normalized);
       this.logger.debug({ data: parsed }, "Message received");
+      if (!parsed || typeof parsed !== "object") {
+        this.logger.warn({ data: parsed }, "Unexpected message payload");
+        return;
+      }
+      const payload = parsed as Record<string, unknown>;
 
       // Handle response messages
-      if ("status" in parsed && "echo" in parsed) {
-        const echo = parsed.echo as string;
+      if ("status" in payload && "echo" in payload) {
+        const echo = String(payload.echo);
         const callback = this.responseCallbacks.get(echo);
         if (callback) {
           this.responseCallbacks.delete(echo);
-          if (parsed.status === "ok") {
-            callback.resolve(parsed.data);
+          if (payload.status === "ok") {
+            callback.resolve(payload.data);
           } else {
-            callback.reject(new Error(parsed.message || "Request failed"));
+            const message =
+              typeof payload.message === "string"
+                ? payload.message
+                : "Request failed";
+            callback.reject(new Error(message));
           }
         }
         return;
       }
 
       // Handle events
-      if ("post_type" in parsed) {
+      if ("post_type" in payload) {
         // Extract bot ID from lifecycle events
         if (
-          parsed.post_type === "meta_event" &&
-          parsed.meta_event_type === "lifecycle" &&
-          parsed.self_id
+          payload.post_type === "meta_event" &&
+          payload.meta_event_type === "lifecycle" &&
+          payload.self_id
         ) {
-          this.onBotId?.(String(parsed.self_id));
+          this.onBotId?.(String(payload.self_id));
         }
 
         // Process message events
-        this.onEvent(parsed).catch((err) => {
+        this.onEvent(payload).catch((err) => {
           this.logger.error({ err }, "Event handler error");
         });
       }
@@ -246,7 +263,7 @@ export class MilkyConnection extends EventEmitter {
     }
     if (this.ws) {
       this.logger.warn("Existing WebSocket detected, closing before reconnect");
-      this.detachSocket();
+      this.closeSocket();
     }
 
     const WebSocketImpl = globalThis.WebSocket;
@@ -275,6 +292,11 @@ export class MilkyConnection extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
+        try {
+          this.ws?.close();
+        } catch {
+          // Best-effort cleanup after timeout.
+        }
         reject(new Error("WebSocket connection timed out"));
       }, CONNECT_TIMEOUT_MS);
       const onConnect = () => {

@@ -133,7 +133,96 @@ export class SessionWorker {
     );
     const lockKey = `session:lock:${groupId}:${sessionId}`;
 
-    // 1. Acquire Lock
+    await this.withSessionLock(job, lockKey, sessionId, async (lockContext) => {
+      let statusUpdated = false;
+      let sessionInfo: SessionInfo | null = null;
+
+      try {
+        // 2. Ensure Session Exists
+        sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
+        await this.recordActivity(sessionInfo);
+
+        // 3. Update Status
+        sessionInfo = await this.sessionManager.updateStatus(
+          sessionInfo,
+          "running",
+        );
+        statusUpdated = true;
+        await this.recordActivity(sessionInfo);
+
+        // 4. Prepare Context
+        const history = await this.sessionManager.readHistory(sessionInfo, {
+          maxEntries: this.historyMaxEntries,
+          maxBytes: this.historyMaxBytes,
+        });
+        const groupConfig = await this.sessionManager.getGroupConfig(groupId);
+        const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
+        const systemPrompt = buildSystemPrompt(agentPrompt);
+        const promptInput = resolveSessionInput(session.content);
+        const prompt = buildOpencodePrompt({
+          systemPrompt,
+          history,
+          input: promptInput,
+        });
+        const launchSpec = this.launcher.buildLaunchSpec(
+          sessionInfo,
+          prompt,
+          groupConfig.model,
+        );
+
+        // 5. Run
+        lockContext.assertActive();
+        const result = await this.runner.run({
+          job: this.mapJob(job),
+          session: sessionInfo,
+          history,
+          launchSpec,
+          signal: lockContext.signal,
+        });
+        lockContext.assertActive();
+        const output = resolveOutput(result.output);
+
+        // 6. Append History
+        await this.appendHistoryFromJob(
+          sessionInfo,
+          session,
+          result.historyEntries,
+          output,
+        );
+        await this.recordActivity(sessionInfo);
+        await this.enqueueResponse(job.data, output);
+      } catch (err) {
+        if (err instanceof DelayedError) {
+          this.logger.debug({ sessionId }, "Session job delayed");
+          throw err;
+        }
+        this.logger.error({ err, sessionId }, "Error processing session job");
+        throw err;
+      } finally {
+        if (statusUpdated && sessionInfo && !lockContext.isLost()) {
+          try {
+            await this.sessionManager.updateStatus(sessionInfo, "idle");
+          } catch (err) {
+            this.logger.warn(
+              { err },
+              "Failed to update session status to idle",
+            );
+          }
+        }
+      }
+    });
+  }
+
+  private async withSessionLock<T>(
+    job: Job<SessionJobData>,
+    lockKey: string,
+    sessionId: string,
+    fn: (context: {
+      signal: AbortSignal;
+      assertActive: () => void;
+      isLost: () => boolean;
+    }) => Promise<T>,
+  ): Promise<T> {
     let lock: Lock | null = null;
     try {
       lock = await this.redlock.acquire([lockKey], this.sessionLockTtlMs);
@@ -149,9 +238,18 @@ export class SessionWorker {
       await job.moveToDelayed(Date.now() + this.requeueDelayMs, job.token);
       throw new DelayedError();
     }
+
     let renewTimer: ReturnType<typeof setInterval> | null = null;
     const abortController = new AbortController();
     let lockLost = false;
+
+    const stopRenewal = () => {
+      if (renewTimer) {
+        clearInterval(renewTimer);
+        renewTimer = null;
+      }
+    };
+
     if (lock) {
       const renewIntervalMs = Math.max(
         1000,
@@ -166,10 +264,7 @@ export class SessionWorker {
             if (!abortController.signal.aborted) {
               abortController.abort();
             }
-            if (renewTimer) {
-              clearInterval(renewTimer);
-              renewTimer = null;
-            }
+            stopRenewal();
             this.logger.warn(
               { err, lockKey, sessionId },
               "Session lock lost, aborting job",
@@ -179,86 +274,20 @@ export class SessionWorker {
       }, renewIntervalMs);
     }
 
-    let statusUpdated = false;
-    let sessionInfo: SessionInfo | null = null;
+    const context = {
+      signal: abortController.signal,
+      assertActive: () => {
+        if (lockLost) {
+          throw new Error("Session lock lost");
+        }
+      },
+      isLost: () => lockLost,
+    };
 
     try {
-      // 2. Ensure Session Exists
-      sessionInfo = await this.ensureSession(groupId, userId, key, sessionId);
-      await this.recordActivity(sessionInfo);
-
-      // 3. Update Status
-      sessionInfo = await this.sessionManager.updateStatus(
-        sessionInfo,
-        "running",
-      );
-      statusUpdated = true;
-      await this.recordActivity(sessionInfo);
-
-      // 4. Prepare Context
-      const history = await this.sessionManager.readHistory(sessionInfo, {
-        maxEntries: this.historyMaxEntries,
-        maxBytes: this.historyMaxBytes,
-      });
-      const groupConfig = await this.sessionManager.getGroupConfig(groupId);
-      const agentPrompt = await this.sessionManager.getAgentPrompt(groupId);
-      const systemPrompt = buildSystemPrompt(agentPrompt);
-      const promptInput = resolveSessionInput(session.content);
-      const prompt = buildOpencodePrompt({
-        systemPrompt,
-        history,
-        input: promptInput,
-      });
-      const launchSpec = this.launcher.buildLaunchSpec(
-        sessionInfo,
-        prompt,
-        groupConfig.model,
-      );
-
-      // 5. Run
-      if (lockLost) {
-        throw new Error("Session lock lost before run");
-      }
-      const result = await this.runner.run({
-        job: this.mapJob(job),
-        session: sessionInfo,
-        history,
-        launchSpec,
-        signal: abortController.signal,
-      });
-      if (lockLost) {
-        throw new Error("Session lock lost during run");
-      }
-      const output = resolveOutput(result.output);
-
-      // 6. Append History
-      await this.appendHistoryFromJob(
-        sessionInfo,
-        session,
-        result.historyEntries,
-        output,
-      );
-      await this.recordActivity(sessionInfo);
-      await this.enqueueResponse(job.data, output);
-    } catch (err) {
-      if (err instanceof DelayedError) {
-        this.logger.debug({ sessionId }, "Session job delayed");
-        throw err;
-      }
-      this.logger.error({ err, sessionId }, "Error processing session job");
-      throw err;
+      return await fn(context);
     } finally {
-      if (statusUpdated && sessionInfo && !lockLost) {
-        try {
-          await this.sessionManager.updateStatus(sessionInfo, "idle");
-        } catch (err) {
-          this.logger.warn({ err }, "Failed to update session status to idle");
-        }
-      }
-      // 8. Release Lock
-      if (renewTimer) {
-        clearInterval(renewTimer);
-      }
+      stopRenewal();
       if (lock) {
         try {
           await lock.release();

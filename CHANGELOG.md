@@ -11,6 +11,7 @@
 
 - trimTextElements 简化为双向扫描与 slice 风格裁剪
 - Discord 解析改为直接使用原始内容与 mentions 列表
+- Worker 锁逻辑抽离为独立封装，精简业务流程
 
 ## [0.0.24] - 2026-01-14
 

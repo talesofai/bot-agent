@@ -49,9 +49,9 @@ export function parseMessage(
 
 function buildElements(rawContent: string, message: Message): SessionElement[] {
   const elements: SessionElement[] = [];
-  const mentionUserIds = new Set(message.mentions.users.keys());
-
-  elements.push(...splitContent(rawContent, mentionUserIds));
+  if (rawContent) {
+    elements.push({ type: "text", text: rawContent });
+  }
   for (const attachment of message.attachments.values()) {
     if (attachment.url) {
       elements.push({ type: "image", url: attachment.url });
@@ -59,47 +59,4 @@ function buildElements(rawContent: string, message: Message): SessionElement[] {
   }
 
   return trimTextElements(elements);
-}
-
-function splitContent(
-  content: string,
-  mentionUserIds: Set<string>,
-): SessionElement[] {
-  if (!content) {
-    return [];
-  }
-  const elements: SessionElement[] = [];
-  const mentionPattern = /<@!?(\d+)>/g;
-  let cursor = 0;
-  let match = mentionPattern.exec(content);
-  while (match) {
-    const index = match.index;
-    const mentionId = match[1];
-    const mentionEnd = index + match[0].length;
-    if (!mentionUserIds.has(mentionId)) {
-      const text = content.slice(cursor, mentionEnd);
-      if (text) {
-        elements.push({ type: "text", text });
-      }
-      cursor = mentionEnd;
-      match = mentionPattern.exec(content);
-      continue;
-    }
-    if (index > cursor) {
-      const text = content.slice(cursor, index);
-      if (text) {
-        elements.push({ type: "text", text });
-      }
-    }
-    elements.push({ type: "mention", userId: mentionId });
-    cursor = mentionEnd;
-    match = mentionPattern.exec(content);
-  }
-  if (cursor < content.length) {
-    const text = content.slice(cursor);
-    if (text) {
-      elements.push({ type: "text", text });
-    }
-  }
-  return elements;
 }

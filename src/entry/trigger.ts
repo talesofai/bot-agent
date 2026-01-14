@@ -1,8 +1,6 @@
 import type { GroupConfig, KeywordRouting, TriggerMode } from "../types/group";
 import type { SessionEvent } from "../types";
 
-const selfMentionPatterns = new Map<string, RegExp>();
-
 const DEFAULT_ROUTING: KeywordRouting = {
   enableGlobal: true,
   enableGroup: true,
@@ -69,11 +67,15 @@ function mentionsSelf(message: SessionEvent): boolean {
   if (!message.selfId) {
     return false;
   }
-  return (
-    message.elements.some(
-      (element) =>
-        element.type === "mention" && element.userId === message.selfId,
-    ) || mentionsSelfInContent(message)
+  if (message.platform === "discord") {
+    const mentionUserIds = getDiscordMentionUserIds(message.extras);
+    if (mentionUserIds?.includes(message.selfId)) {
+      return true;
+    }
+  }
+  return message.elements.some(
+    (element) =>
+      element.type === "mention" && element.userId === message.selfId,
   );
 }
 
@@ -91,26 +93,18 @@ export function normalizeKeywords(keywords: string[]): string[] {
     .filter((keyword) => keyword.length > 0);
 }
 
-function mentionsSelfInContent(message: SessionEvent): boolean {
-  if (!message.selfId) {
-    return false;
+function getDiscordMentionUserIds(extras: unknown): string[] | null {
+  if (!extras || typeof extras !== "object") {
+    return null;
   }
-  if (message.platform !== "discord") {
-    return false;
+  const record = extras as { mentionUserIds?: unknown };
+  if (!Array.isArray(record.mentionUserIds)) {
+    return null;
   }
-  const pattern = getSelfMentionPattern(message.selfId);
-  return pattern.test(message.content);
-}
-
-function getSelfMentionPattern(selfId: string): RegExp {
-  const cached = selfMentionPatterns.get(selfId);
-  if (cached) {
-    return cached;
-  }
-  const escaped = selfId.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
-  const pattern = new RegExp(`<@!?${escaped}>`);
-  selfMentionPatterns.set(selfId, pattern);
-  return pattern;
+  const ids = record.mentionUserIds.filter(
+    (id): id is string => typeof id === "string",
+  );
+  return ids;
 }
 
 export function extractSessionKey(input: string): {

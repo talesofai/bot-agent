@@ -10,6 +10,7 @@ import { MessageDispatcher } from "../entry/message-dispatcher";
 import { ResponseWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
+import { SessionBufferStore } from "../session/buffer";
 
 const config = getConfig();
 
@@ -61,6 +62,8 @@ async function main(): Promise<void> {
   });
   responseWorker.start();
 
+  const bufferStore = new SessionBufferStore({ redisUrl: config.REDIS_URL });
+
   let httpServer: HttpServer | null = null;
   startHttpServer({
     logger,
@@ -83,6 +86,7 @@ async function main(): Promise<void> {
     groupStore,
     routerStore,
     sessionQueue,
+    bufferStore,
     echoTracker,
     logger,
     defaultGroupId: config.DEFAULT_GROUP_ID,
@@ -98,6 +102,7 @@ async function main(): Promise<void> {
       if (httpServer) {
         httpServer.stop();
       }
+      await bufferStore.close();
       await echoTracker.close();
       await sessionQueue.close();
       await adapter.disconnect(bot);

@@ -14,12 +14,15 @@ import {
 import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
+import { SessionBufferStore } from "../session/buffer";
+import { buildSessionLockKey } from "../session/utils";
 
 export interface MessageDispatcherOptions {
   adapter: PlatformAdapter;
   groupStore: GroupStore;
   routerStore: RouterStore | null;
   sessionQueue: BullmqSessionQueue;
+  bufferStore: SessionBufferStore;
   echoTracker: EchoTracker;
   logger: Logger;
   defaultGroupId?: string;
@@ -30,6 +33,7 @@ export class MessageDispatcher {
   private groupStore: GroupStore;
   private routerStore: RouterStore | null;
   private sessionQueue: BullmqSessionQueue;
+  private bufferStore: SessionBufferStore;
   private echoTracker: EchoTracker;
   private logger: Logger;
   private defaultGroupId?: string;
@@ -39,6 +43,7 @@ export class MessageDispatcher {
     this.groupStore = options.groupStore;
     this.routerStore = options.routerStore;
     this.sessionQueue = options.sessionQueue;
+    this.bufferStore = options.bufferStore;
     this.echoTracker = options.echoTracker;
     this.logger = options.logger;
     this.defaultGroupId = options.defaultGroupId;
@@ -134,13 +139,23 @@ export class MessageDispatcher {
       );
 
       const session = applySessionKey(message, trimmedContent, prefixLength);
-      await this.sessionQueue.enqueue({
-        groupId,
-        userId: message.userId,
-        key,
-        sessionId: buildSessionId(message.userId, key),
-        session,
-      });
+      const sessionId = buildSessionId(message.userId, key);
+      await this.bufferStore.append(sessionId, session);
+      const lockKey = buildSessionLockKey(groupId, sessionId);
+      const locked = await this.bufferStore.isLocked(lockKey);
+      if (!locked) {
+        await this.sessionQueue.enqueue(
+          {
+            groupId,
+            userId: message.userId,
+            key,
+            sessionId,
+          },
+          { jobId: `trigger:${groupId}:${sessionId}` },
+        );
+      } else {
+        await this.bufferStore.markPending(sessionId);
+      }
     } catch (err) {
       this.logger.error(
         { err, messageId: message.messageId },

@@ -27,6 +27,7 @@
 - trimTextElements 去除 splice 操作并简化裁剪流程
 - 触发规则预先合并关键词，精简 shouldEnqueue 逻辑
 - Discord 解析提及元素时校验真实 mentions
+- 群配置与 agent.md 读取失败时直接抛错
 
 ## [0.0.23] - 2026-01-14
 

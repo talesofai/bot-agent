@@ -100,36 +100,23 @@ export class GroupFileRepository {
     const configPath = join(groupPath, "config.yaml");
 
     if (!(await this.exists(configPath))) {
-      return { ...DEFAULT_GROUP_CONFIG };
+      throw new Error(`Missing config.yaml at ${configPath}`);
     }
 
-    try {
-      const content = await readFile(configPath, "utf-8");
-      const parsed = parseYaml(content);
-      return GroupConfigSchema.parse(parsed);
-    } catch (err) {
-      this.logger.error(
-        { err, configPath },
-        "Failed to parse config, falling back to defaults",
-      );
-      return { ...DEFAULT_GROUP_CONFIG };
-    }
+    const content = await readFile(configPath, "utf-8");
+    const parsed = parseYaml(content);
+    return GroupConfigSchema.parse(parsed);
   }
 
   async loadAgentPrompt(groupPath: string): Promise<AgentContent> {
     const agentPath = join(groupPath, "agent.md");
 
     if (!(await this.exists(agentPath))) {
-      return { frontmatter: {}, content: "" };
+      throw new Error(`Missing agent.md at ${agentPath}`);
     }
 
-    try {
-      const content = await readFile(agentPath, "utf-8");
-      return this.parseAgentMd(content);
-    } catch (err) {
-      this.logger.warn({ err, agentPath }, "Failed to read agent.md");
-      return { frontmatter: {}, content: "" };
-    }
+    const content = await readFile(agentPath, "utf-8");
+    return this.parseAgentMd(content);
   }
 
   parseAgentMd(content: string): AgentContent {

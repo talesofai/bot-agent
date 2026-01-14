@@ -175,17 +175,14 @@ Be friendly and concise.
       expect(group).toBeNull();
     });
 
-    test("should fall back to defaults on invalid config", async () => {
+    test("should return null on invalid config", async () => {
       const groupPath = join(testDir, "invalid-config");
       mkdirSync(groupPath, { recursive: true });
       writeFileSync(join(groupPath, "config.yaml"), "invalid: yaml: content:");
 
       const group = await store.loadGroup("invalid-config");
 
-      expect(group).not.toBeNull();
-      expect(group!.config.enabled).toBe(true);
-      expect(group!.config.triggerMode).toBe("mention");
-      expect(group!.config.maxSessions).toBe(1);
+      expect(group).toBeNull();
     });
   });
 

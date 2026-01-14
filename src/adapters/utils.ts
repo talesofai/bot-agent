@@ -13,57 +13,45 @@ export function trimTextElements(elements: SessionElement[]): SessionElement[] {
     return [];
   }
 
-  let firstTextIndex = -1;
-  let lastTextIndex = -1;
-  const remove = new Set<number>();
-  const updatedText = new Map<number, string>();
-
-  for (let i = 0; i < elements.length; i += 1) {
-    const element = elements[i];
+  const trimmedLeading: SessionElement[] = [];
+  let started = false;
+  for (const element of elements) {
     if (element.type !== "text") {
+      trimmedLeading.push(element);
       continue;
     }
-    const trimmedStart = element.text.trimStart();
-    if (!trimmedStart) {
-      remove.add(i);
+    if (!started) {
+      const text = element.text.trimStart();
+      if (!text) {
+        continue;
+      }
+      trimmedLeading.push({ ...element, text });
+      started = true;
       continue;
     }
-    firstTextIndex = i;
-    updatedText.set(i, trimmedStart);
-    break;
+    trimmedLeading.push(element);
   }
 
-  for (let i = elements.length - 1; i >= 0; i -= 1) {
-    const element = elements[i];
+  const trimmedTrailing: SessionElement[] = [];
+  let ended = false;
+  for (let i = trimmedLeading.length - 1; i >= 0; i -= 1) {
+    const element = trimmedLeading[i];
     if (element.type !== "text") {
+      trimmedTrailing.push(element);
       continue;
     }
-    const trimmedEnd = element.text.trimEnd();
-    if (!trimmedEnd) {
-      remove.add(i);
+    if (!ended) {
+      const text = element.text.trimEnd();
+      if (!text) {
+        continue;
+      }
+      trimmedTrailing.push({ ...element, text });
+      ended = true;
       continue;
     }
-    lastTextIndex = i;
-    const baseText = updatedText.get(i) ?? element.text;
-    updatedText.set(i, baseText.trimEnd());
-    break;
+    trimmedTrailing.push(element);
   }
 
-  if (firstTextIndex === -1 && lastTextIndex === -1) {
-    return elements.filter((element) => element.type !== "text");
-  }
-
-  return elements.flatMap((element, index) => {
-    if (element.type !== "text") {
-      return [element];
-    }
-    if (remove.has(index)) {
-      return [];
-    }
-    const text = updatedText.get(index);
-    if (!text) {
-      return [element];
-    }
-    return [{ ...element, text }];
-  });
+  trimmedTrailing.reverse();
+  return trimmedTrailing;
 }

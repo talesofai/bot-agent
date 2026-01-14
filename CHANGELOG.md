@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- trimTextElements 简化为双向扫描与 slice 风格裁剪
+
 ## [0.0.24] - 2026-01-14
 
 ### Fixed

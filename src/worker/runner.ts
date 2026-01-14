@@ -24,6 +24,7 @@ export class ShellOpencodeRunner implements OpencodeRunner {
     if (input.signal?.aborted) {
       throw new Error("Opencode run aborted before start");
     }
+    // Opencode runs as a Go process; spawn keeps IO controllable and avoids blocking.
     const child = Bun.spawn([command, ...args], {
       cwd,
       env: { ...process.env, ...env },

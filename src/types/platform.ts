@@ -4,7 +4,7 @@ export type SessionElement =
   | { type: "mention"; userId: string }
   | { type: "quote"; messageId: string };
 
-export interface SessionEvent<TExtras = Record<string, unknown>> {
+export interface SessionEvent<TExtras = unknown> {
   type: "message";
   platform: string;
   selfId: string;
@@ -36,7 +36,9 @@ export interface SendMessageOptions {
   elements?: SessionElement[];
 }
 
-export type MessageHandler = (session: SessionEvent) => Promise<void> | void;
+export type MessageHandler<TExtras = unknown> = (
+  session: SessionEvent<TExtras>,
+) => Promise<void> | void;
 
 export interface PlatformAdapter {
   platform: string;

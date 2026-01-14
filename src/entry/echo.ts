@@ -1,3 +1,4 @@
+import { LRUCache } from "lru-cache";
 import type { SessionElement, SessionEvent } from "../types/platform";
 
 interface EchoState {
@@ -7,13 +8,18 @@ interface EchoState {
 }
 
 export class EchoTracker {
-  private states = new Map<string, EchoState>();
+  private states: LRUCache<string, EchoState>;
+
+  constructor(maxEntries = 2000) {
+    this.states = new LRUCache({ max: Math.max(1, maxEntries) });
+  }
 
   shouldEcho(message: SessionEvent, ratePercent: number): boolean {
     if (!message.guildId) {
       return false;
     }
-    const key = `${message.selfId}:${message.guildId}`;
+    const scopeId = message.channelId ?? message.guildId;
+    const key = `${message.selfId}:${scopeId}`;
     if (message.selfId && message.userId === message.selfId) {
       this.states.delete(key);
       return false;
@@ -73,14 +79,5 @@ function normalizeElement(element: SessionElement): Record<string, string> {
 }
 
 function hasAnyMention(message: SessionEvent): boolean {
-  if (message.elements.some((element) => element.type === "mention")) {
-    return true;
-  }
-  if (message.platform === "discord") {
-    const pattern = /<@!?[0-9]+>/g;
-    if (pattern.test(message.content)) {
-      return true;
-    }
-  }
-  return message.content.includes("@");
+  return message.elements.some((element) => element.type === "mention");
 }

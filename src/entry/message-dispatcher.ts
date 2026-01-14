@@ -9,6 +9,7 @@ import { buildSessionId } from "../session";
 import { extractSessionKey, shouldEnqueue } from "./trigger";
 import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
+import { isSafePathSegment } from "../utils/path";
 
 export interface MessageDispatcherOptions {
   adapter: PlatformAdapter;
@@ -40,108 +41,147 @@ export class MessageDispatcher {
   }
 
   async dispatch(message: SessionEvent): Promise<void> {
-    const groupId = this.defaultGroupId ?? message.channelId;
-    const group = await this.groupStore.getGroup(groupId);
-    const groupConfig = group?.config;
-    if (!groupConfig || !groupConfig.enabled) {
-      return;
-    }
-    const routerSnapshot = await this.routerStore?.getSnapshot();
-    const globalKeywords = routerSnapshot?.globalKeywords ?? [];
-    const globalEchoRate = routerSnapshot?.globalEchoRate ?? 30;
-    const botConfigs = routerSnapshot?.botConfigs ?? new Map();
-    const selfId = message.selfId ?? "";
-    const botConfig = selfId ? botConfigs.get(selfId) : undefined;
-    const effectiveEchoRate = resolveEchoRate(
-      botConfig?.echoRate,
-      groupConfig.echoRate,
-      globalEchoRate,
-    );
-
-    if (
-      !shouldEnqueue({
-        groupConfig,
-        message,
-        globalKeywords,
-        botConfigs,
-      })
-    ) {
-      if (this.echoTracker.shouldEcho(message, effectiveEchoRate)) {
-        await this.adapter.sendMessage(message, message.content, {
-          elements: message.elements,
-        });
+    try {
+      const groupId =
+        this.defaultGroupId ?? message.guildId ?? message.channelId;
+      if (!groupId || !isSafePathSegment(groupId)) {
+        this.logger.error({ groupId }, "Invalid groupId for message dispatch");
+        return;
       }
-      return;
-    }
+      if (!isSafePathSegment(message.userId)) {
+        this.logger.error(
+          { userId: message.userId, groupId },
+          "Invalid userId for message dispatch",
+        );
+        return;
+      }
+      let group = await this.groupStore.getGroup(groupId);
+      if (!group) {
+        await this.groupStore.ensureGroupDir(groupId);
+        group = await this.groupStore.getGroup(groupId);
+      }
+      const groupConfig = group?.config;
+      if (!groupConfig || !groupConfig.enabled) {
+        return;
+      }
+      const routerSnapshot = await this.routerStore?.getSnapshot();
+      const globalKeywords = routerSnapshot?.globalKeywords ?? [];
+      const globalEchoRate = routerSnapshot?.globalEchoRate ?? 30;
+      const botConfigs = routerSnapshot?.botConfigs ?? new Map();
+      const selfId = message.selfId ?? "";
+      const botConfig = selfId ? botConfigs.get(selfId) : undefined;
+      const effectiveEchoRate = resolveEchoRate(
+        botConfig?.echoRate,
+        groupConfig.echoRate,
+        globalEchoRate,
+      );
 
-    const { key, content } = extractSessionKey(message.content);
-    const logContent =
-      groupConfig.triggerMode === "keyword" ? message.content : content;
-    const contentHash = createHash("sha256")
-      .update(logContent)
-      .digest("hex")
-      .slice(0, 12);
-    this.logger.info(
-      {
-        id: message.messageId,
-        channelId: message.channelId,
+      if (
+        !shouldEnqueue({
+          groupConfig,
+          message,
+          globalKeywords,
+          botConfigs,
+        })
+      ) {
+        if (this.echoTracker.shouldEcho(message, effectiveEchoRate)) {
+          await this.adapter.sendMessage(message, message.content, {
+            elements: message.elements,
+          });
+        }
+        return;
+      }
+
+      const { key, content, prefixLength } = extractSessionKey(message.content);
+      const trimmedContent = content.trim();
+      if (key >= groupConfig.maxSessions) {
+        this.logger.warn(
+          {
+            groupId,
+            userId: message.userId,
+            key,
+            maxSessions: groupConfig.maxSessions,
+          },
+          "Session key exceeds maxSessions, dropping message",
+        );
+        return;
+      }
+      const logContent =
+        groupConfig.triggerMode === "keyword"
+          ? message.content
+          : trimmedContent;
+      const contentHash = createHash("sha256")
+        .update(logContent)
+        .digest("hex")
+        .slice(0, 12);
+      this.logger.info(
+        {
+          id: message.messageId,
+          channelId: message.channelId,
+          userId: message.userId,
+          botId: message.selfId,
+          contentHash,
+          contentLength: logContent.length,
+        },
+        "Message received",
+      );
+
+      const session = applySessionKey(message, trimmedContent, prefixLength);
+      await this.sessionQueue.enqueue({
+        groupId,
         userId: message.userId,
-        botId: message.selfId,
-        contentHash,
-        contentLength: logContent.length,
-      },
-      "Message received",
-    );
-
-    const session = applySessionKey(message, content);
-    await this.sessionQueue.enqueue({
-      groupId,
-      userId: message.userId,
-      key,
-      sessionId: buildSessionId(message.userId, key),
-      session,
-    });
+        key,
+        sessionId: buildSessionId(message.userId, key),
+        session,
+      });
+    } catch (err) {
+      this.logger.error(
+        { err, messageId: message.messageId },
+        "Message dispatch failed",
+      );
+    }
   }
 }
 
-function applySessionKey(message: SessionEvent, content: string): SessionEvent {
+function applySessionKey(
+  message: SessionEvent,
+  content: string,
+  prefixLength: number,
+): SessionEvent {
   if (content === message.content) {
     return message;
   }
-  const elements = stripPrefixFromElements(
-    message.elements,
-    message.content,
-    content,
-  );
+  const elements = stripPrefixFromElements(message.elements, prefixLength);
   return { ...message, content, elements };
 }
 
 function stripPrefixFromElements(
   elements: SessionElement[],
-  rawContent: string,
-  cleanedContent: string,
+  prefixLength: number,
 ): SessionElement[] {
-  const prefixIndex = rawContent.indexOf(cleanedContent);
-  if (prefixIndex <= 0) {
+  if (prefixLength <= 0) {
     return elements;
   }
-  let offset = prefixIndex;
+  let remaining = prefixLength;
   const updated: SessionElement[] = [];
   for (const element of elements) {
-    if (offset === 0) {
-      updated.push(element);
-      continue;
-    }
     if (element.type !== "text") {
       updated.push(element);
       continue;
     }
-    const trimmed = element.text.slice(offset).trimStart();
-    offset = 0;
-    if (!trimmed) {
+    if (remaining <= 0) {
+      updated.push(element);
       continue;
     }
-    updated.push({ ...element, text: trimmed });
+    if (element.text.length <= remaining) {
+      remaining -= element.text.length;
+      continue;
+    }
+    const sliced = element.text.slice(remaining);
+    remaining = 0;
+    if (sliced) {
+      updated.push({ ...element, text: sliced });
+    }
   }
-  return updated.length > 0 ? updated : elements;
+  return updated;
 }

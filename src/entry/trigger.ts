@@ -47,7 +47,7 @@ export function shouldEnqueue(input: TriggerContext): boolean {
   if (globalMatch || groupMatch) {
     return true;
   }
-  if (!groupRouting.enableBot) {
+  if (!effectiveRouting.enableBot) {
     return false;
   }
   const botKeywordMatches = new Set<string>();
@@ -78,11 +78,14 @@ function mentionsSelf(message: SessionEvent): boolean {
 }
 
 export function matchesKeywords(content: string, keywords: string[]): boolean {
-  if (keywords.length === 0) {
+  const normalized = keywords
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword.length > 0);
+  if (normalized.length === 0) {
     return false;
   }
   const lowered = content.toLowerCase();
-  return keywords.some((keyword) => lowered.includes(keyword.toLowerCase()));
+  return normalized.some((keyword) => lowered.includes(keyword.toLowerCase()));
 }
 
 function mentionsSelfInContent(message: SessionEvent): boolean {
@@ -110,14 +113,16 @@ function getSelfMentionPattern(selfId: string): RegExp {
 export function extractSessionKey(input: string): {
   key: number;
   content: string;
+  prefixLength: number;
 } {
   const match = input.match(/^\s*#(\d+)(?:\s+|$)/);
   if (!match) {
-    return { key: 0, content: input };
+    return { key: 0, content: input, prefixLength: 0 };
   }
   const key = Number(match[1]);
   if (!Number.isInteger(key) || key < 0) {
-    return { key: 0, content: input };
+    return { key: 0, content: input, prefixLength: 0 };
   }
-  return { key, content: input.slice(match[0].length) };
+  const prefixLength = match[0].length;
+  return { key, content: input.slice(prefixLength), prefixLength };
 }

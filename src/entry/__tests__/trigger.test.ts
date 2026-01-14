@@ -34,7 +34,7 @@ function makeBotConfigs(
 
 describe("shouldEnqueue", () => {
   test("matches mention mode", () => {
-    const message = {
+    const message: SessionEvent = {
       ...baseMessage,
       elements: [
         { type: "mention", userId: baseMessage.selfId },
@@ -52,7 +52,7 @@ describe("shouldEnqueue", () => {
   });
 
   test("mention bypasses bot keyword ownership", () => {
-    const message = {
+    const message: SessionEvent = {
       ...baseMessage,
       elements: [
         { type: "mention", userId: baseMessage.selfId },
@@ -78,7 +78,7 @@ describe("shouldEnqueue", () => {
   });
 
   test("matches keyword mode", () => {
-    const message = { ...baseMessage, content: "Hello Bot" };
+    const message: SessionEvent = { ...baseMessage, content: "Hello Bot" };
     const config = makeConfig({ triggerMode: "keyword", keywords: ["bot"] });
     const allowed = shouldEnqueue({
       groupConfig: config,
@@ -90,7 +90,10 @@ describe("shouldEnqueue", () => {
   });
 
   test("global keyword is not blocked by other bot keywords", () => {
-    const message = { ...baseMessage, content: "global-key bot-a" };
+    const message: SessionEvent = {
+      ...baseMessage,
+      content: "global-key bot-a",
+    };
     const config = makeConfig({ triggerMode: "keyword" });
     const allowed = shouldEnqueue({
       groupConfig: config,
@@ -110,7 +113,7 @@ describe("shouldEnqueue", () => {
   });
 
   test("respects bot keyword ownership", () => {
-    const message = { ...baseMessage, content: "hello bot-a" };
+    const message: SessionEvent = { ...baseMessage, content: "hello bot-a" };
     const config = makeConfig({ triggerMode: "keyword" });
     const allowed = shouldEnqueue({
       groupConfig: config,
@@ -130,7 +133,7 @@ describe("shouldEnqueue", () => {
   });
 
   test("allows bot keyword match for self", () => {
-    const message = { ...baseMessage, content: "hello bot-a" };
+    const message: SessionEvent = { ...baseMessage, content: "hello bot-a" };
     const config = makeConfig({ triggerMode: "keyword" });
     const allowed = shouldEnqueue({
       groupConfig: config,
@@ -155,6 +158,7 @@ describe("extractSessionKey", () => {
     expect(extractSessionKey("#2 hello")).toEqual({
       key: 2,
       content: "hello",
+      prefixLength: 3,
     });
   });
 
@@ -162,6 +166,7 @@ describe("extractSessionKey", () => {
     expect(extractSessionKey("#3")).toEqual({
       key: 3,
       content: "",
+      prefixLength: 2,
     });
   });
 
@@ -169,6 +174,7 @@ describe("extractSessionKey", () => {
     expect(extractSessionKey("#-1 hello")).toEqual({
       key: 0,
       content: "#-1 hello",
+      prefixLength: 0,
     });
   });
 });

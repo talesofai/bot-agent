@@ -18,7 +18,7 @@ export function parseOpencodeOutput(
   }
   const entries = extractHistoryEntries(parsed, createdAt);
   const output = extractOutput(parsed, entries);
-  if (!output && (!entries || entries.length === 0)) {
+  if (output === null && (!entries || entries.length === 0)) {
     return null;
   }
   return {
@@ -34,8 +34,39 @@ function tryParseJson(raw: string | null): unknown | null {
   try {
     return JSON.parse(raw);
   } catch {
+    return parseJsonFromLines(raw);
+  }
+}
+
+function parseJsonFromLines(raw: string): unknown | null {
+  const lines = raw.split(/\r?\n/);
+  const nonEmpty = lines.filter((line) => line.trim().length > 0);
+  if (nonEmpty.length === 0) {
     return null;
   }
+
+  const tryParse = (candidate: string): unknown | null => {
+    if (!candidate) {
+      return null;
+    }
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  };
+
+  for (let start = 0; start < nonEmpty.length; start += 1) {
+    let candidate = "";
+    for (let end = start; end < nonEmpty.length; end += 1) {
+      candidate = candidate ? `${candidate}\n${nonEmpty[end]}` : nonEmpty[end];
+      const parsed = tryParse(candidate.trim());
+      if (parsed) {
+        return parsed;
+      }
+    }
+  }
+  return null;
 }
 
 function extractHistoryEntries(
@@ -54,7 +85,11 @@ function extractHistoryEntries(
     if (candidates) {
       return mapEntries(candidates, createdAt);
     }
-    if (typeof obj.role === "string" && typeof obj.content === "string") {
+    if (
+      typeof obj.role === "string" &&
+      typeof obj.content === "string" &&
+      isHistoryRole(obj.role)
+    ) {
       return [
         {
           role: obj.role as HistoryEntry["role"],
@@ -77,11 +112,7 @@ function mapEntries(items: unknown[], createdAt: string): HistoryEntry[] {
     if (typeof obj.role !== "string" || typeof obj.content !== "string") {
       continue;
     }
-    if (
-      obj.role !== "user" &&
-      obj.role !== "assistant" &&
-      obj.role !== "system"
-    ) {
+    if (!isHistoryRole(obj.role)) {
       continue;
     }
     entries.push({
@@ -91,6 +122,10 @@ function mapEntries(items: unknown[], createdAt: string): HistoryEntry[] {
     });
   }
   return entries;
+}
+
+function isHistoryRole(role: string): role is HistoryEntry["role"] {
+  return role === "user" || role === "assistant" || role === "system";
 }
 
 function extractOutput(

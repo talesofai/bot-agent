@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import pino from "pino";
 
 import type { SessionJob } from "../../queue";
-import type { HistoryEntry } from "../../types/session";
 import { SessionManager } from "../../session";
 import { OpencodeLauncher } from "../launcher";
 import { ShellOpencodeRunner } from "../../worker/runner";

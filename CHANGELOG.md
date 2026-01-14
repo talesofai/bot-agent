@@ -7,8 +7,6 @@
 
 ## [Unreleased]
 
-## [Unreleased]
-
 ### Changed
 
 - 会话历史存储切换为 SQLite 文件
@@ -19,6 +17,7 @@
 - Opencode 输出解析改为单次 JSON block 扫描
 - trimTextElements 减少多余分配与空白扫描
 - 历史记录 extra 解析与 QQ payload 解析改为安全对象判断
+- SessionWorker 直接发送消息，移除 ResponseQueue/ResponseWorker
 
 ## [0.0.25] - 2026-01-15
 

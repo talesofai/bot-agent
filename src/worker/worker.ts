@@ -2,7 +2,7 @@ import { Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import type { Logger } from "pino";
 
-import type { ResponseQueue, SessionJob, SessionJobData } from "../queue";
+import type { SessionJob, SessionJobData } from "../queue";
 import { GroupFileRepository } from "../store/repository";
 import { SessionRepository } from "../session/repository";
 import { HistoryStore } from "../session/history";
@@ -12,7 +12,7 @@ import { buildOpencodePrompt, mergeBufferedMessages } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
-import type { SessionEvent } from "../types/platform";
+import type { PlatformAdapter, SessionEvent } from "../types/platform";
 import { SessionActivityStore } from "../session/activity-store";
 import { assertValidSessionKey, buildSessionId } from "../session/utils";
 import { assertSafePathSegment } from "../utils/path";
@@ -21,6 +21,7 @@ import { SessionBufferStore } from "../session/buffer";
 export interface SessionWorkerOptions {
   id: string;
   dataDir: string;
+  adapter: PlatformAdapter;
   redis: {
     url: string;
   };
@@ -38,18 +39,17 @@ export interface SessionWorkerOptions {
     historyEntries?: number;
     historyBytes?: number;
   };
-  responseQueue?: ResponseQueue;
 }
 
 export class SessionWorker {
   private worker: Worker<SessionJobData>;
   private logger: Logger;
+  private adapter: PlatformAdapter;
   private groupRepository: GroupFileRepository;
   private sessionRepository: SessionRepository;
   private historyStore: HistoryStore;
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
-  private responseQueue?: ResponseQueue;
   private activityIndex: SessionActivityStore;
   private workerConnection: IORedis;
   private bufferStore: SessionBufferStore;
@@ -63,6 +63,7 @@ export class SessionWorker {
       component: "session-worker",
       workerId: options.id,
     });
+    this.adapter = options.adapter;
     this.groupRepository = new GroupFileRepository({
       dataDir: options.dataDir,
       logger: this.logger,
@@ -74,7 +75,6 @@ export class SessionWorker {
     this.historyStore = new HistoryStore(this.logger);
     this.launcher = options.launcher ?? new OpencodeLauncher();
     this.runner = options.runner;
-    this.responseQueue = options.responseQueue;
     this.historyMaxEntries = options.limits?.historyEntries;
     this.historyMaxBytes = options.limits?.historyBytes;
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
@@ -179,7 +179,7 @@ export class SessionWorker {
           output,
         );
         await this.recordActivity(sessionInfo);
-        await this.enqueueResponse(mergedSession, output);
+        await this.sendResponse(mergedSession, output);
 
         buffered = await this.drainPendingBuffer(jobData.sessionId);
       }
@@ -349,22 +349,19 @@ export class SessionWorker {
     return { id, data: job.data };
   }
 
-  private async enqueueResponse(
+  private async sendResponse(
     session: SessionEvent,
     output?: string,
   ): Promise<void> {
-    if (!output || !this.responseQueue) {
+    if (!output) {
       return;
     }
     try {
-      await this.responseQueue.enqueue({
-        content: output,
-        session,
-      });
+      await this.adapter.sendMessage(session, output);
     } catch (err) {
       this.logger.error(
         { err, sessionId: session.messageId },
-        "Failed to enqueue response",
+        "Failed to send response",
       );
     }
   }

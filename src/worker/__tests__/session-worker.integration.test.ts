@@ -4,12 +4,16 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import pino from "pino";
 
-import type { ResponseJob, ResponseJobData, ResponseQueue } from "../../queue";
 import { BullmqSessionQueue } from "../../queue";
 import { SessionBufferStore } from "../../session/buffer";
 import { HistoryStore } from "../../session/history";
 import { SessionRepository } from "../../session/repository";
 import { buildSessionId } from "../../session/utils";
+import type {
+  Bot,
+  MessageHandler,
+  PlatformAdapter,
+} from "../../types/platform";
 import type { OpencodeRunner, OpencodeRunResult } from "../runner";
 import { SessionWorker } from "../worker";
 
@@ -19,9 +23,10 @@ class FakeRunner implements OpencodeRunner {
   }
 }
 
-class MemoryResponseQueue implements ResponseQueue {
-  private resolver?: (job: ResponseJobData) => void;
-  private promise: Promise<ResponseJobData>;
+class MemoryAdapter implements PlatformAdapter {
+  platform = "test";
+  private resolver?: (content: string) => void;
+  private promise: Promise<string>;
 
   constructor() {
     this.promise = new Promise((resolve) => {
@@ -29,14 +34,24 @@ class MemoryResponseQueue implements ResponseQueue {
     });
   }
 
-  async enqueue(jobData: ResponseJobData): Promise<ResponseJob> {
-    this.resolver?.(jobData);
-    return { id: "response-job", data: jobData };
+  async connect(_bot: Bot): Promise<void> {}
+
+  async disconnect(_bot: Bot): Promise<void> {}
+
+  onEvent(_handler: MessageHandler): void {}
+
+  async sendMessage(
+    _session: Parameters<MessageHandler>[0],
+    content: string,
+  ): Promise<void> {
+    this.resolver?.(content);
   }
 
-  async close(): Promise<void> {}
+  getBotUserId(): string | null {
+    return null;
+  }
 
-  async waitForJob(timeoutMs: number): Promise<ResponseJobData> {
+  async waitForMessage(timeoutMs: number): Promise<string> {
     return withTimeout(this.promise, timeoutMs);
   }
 }
@@ -67,10 +82,11 @@ describe("session worker integration", () => {
     const logger = pino({ level: "silent" });
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-test-${Date.now()}`;
-    const responseQueue = new MemoryResponseQueue();
+    const adapter = new MemoryAdapter();
     const worker = new SessionWorker({
       id: "session-test",
       dataDir: tempDir,
+      adapter,
       redis: {
         url: redisUrl,
       },
@@ -79,7 +95,6 @@ describe("session worker integration", () => {
       },
       runner: new FakeRunner(),
       logger,
-      responseQueue,
     });
     const sessionQueue = new BullmqSessionQueue({
       redisUrl,
@@ -114,8 +129,8 @@ describe("session worker integration", () => {
         key,
       });
 
-      const response = await responseQueue.waitForJob(5000);
-      expect(response.content).toBe("Test response");
+      const response = await adapter.waitForMessage(5000);
+      expect(response).toBe("Test response");
 
       const sessionRepository = new SessionRepository({
         dataDir: tempDir,
@@ -134,7 +149,6 @@ describe("session worker integration", () => {
       await worker.stop();
       await sessionQueue.close();
       await bufferStore.close();
-      await responseQueue.close();
       await rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -144,10 +158,11 @@ describe("session worker integration", () => {
     const logger = pino({ level: "silent" });
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-empty-test-${Date.now()}`;
-    const responseQueue = new MemoryResponseQueue();
+    const adapter = new MemoryAdapter();
     const worker = new SessionWorker({
       id: "session-empty-test",
       dataDir: tempDir,
+      adapter,
       redis: {
         url: redisUrl,
       },
@@ -156,7 +171,6 @@ describe("session worker integration", () => {
       },
       runner: new FakeRunner(),
       logger,
-      responseQueue,
     });
     const sessionQueue = new BullmqSessionQueue({
       redisUrl,
@@ -191,8 +205,8 @@ describe("session worker integration", () => {
         key,
       });
 
-      const response = await responseQueue.waitForJob(5000);
-      expect(response.session.content).toContain("<empty>");
+      const response = await adapter.waitForMessage(5000);
+      expect(response).toContain("Test response");
 
       const sessionRepository = new SessionRepository({
         dataDir: tempDir,
@@ -210,7 +224,6 @@ describe("session worker integration", () => {
       await worker.stop();
       await sessionQueue.close();
       await bufferStore.close();
-      await responseQueue.close();
       await rm(tempDir, { recursive: true, force: true });
     }
   });

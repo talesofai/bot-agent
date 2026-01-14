@@ -1,8 +1,10 @@
 import { getConfig } from "../config";
 import { logger } from "../logger";
-import { BullmqResponseQueue } from "../queue";
+import { DiscordAdapter } from "../adapters/discord";
+import { QQAdapterPool } from "../adapters/qq";
 import { ShellOpencodeRunner, SessionWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
+import type { Bot } from "../types/platform";
 
 const config = getConfig();
 
@@ -15,16 +17,39 @@ logger.info(
 );
 
 const sessionQueueName = "session-jobs";
-const responseQueueName = "session-responses";
+let adapter;
+switch (config.PLATFORM) {
+  case "qq":
+    adapter = new QQAdapterPool({
+      redisUrl: config.REDIS_URL,
+      registryPrefix: config.LLBOT_REGISTRY_PREFIX,
+    });
+    break;
+  case "discord":
+    adapter = new DiscordAdapter({
+      token: config.DISCORD_TOKEN,
+    });
+    break;
+  default:
+    throw new Error(`Unknown platform: ${config.PLATFORM}`);
+}
 
-const responseQueue = new BullmqResponseQueue({
-  redisUrl: config.REDIS_URL,
-  queueName: responseQueueName,
-});
+const bot: Bot = {
+  platform: adapter.platform,
+  selfId: "",
+  status: "disconnected",
+  capabilities: {
+    canEditMessage: false,
+    canDeleteMessage: false,
+    canSendRichContent: false,
+  },
+  adapter,
+};
 
 const worker = new SessionWorker({
   id: "worker-1",
   dataDir: config.GROUPS_DATA_DIR,
+  adapter,
   redis: {
     url: config.REDIS_URL,
   },
@@ -33,7 +58,9 @@ const worker = new SessionWorker({
   },
   runner: new ShellOpencodeRunner(),
   logger,
-  responseQueue,
+});
+adapter.connect(bot).catch((err) => {
+  logger.warn({ err }, "Adapter connection failed");
 });
 worker.start();
 
@@ -53,7 +80,7 @@ const shutdown = async () => {
     if (httpServer) {
       httpServer.stop();
     }
-    await responseQueue.close();
+    await adapter.disconnect(bot);
   } catch (err) {
     logger.error({ err }, "Error during disconnect");
   } finally {

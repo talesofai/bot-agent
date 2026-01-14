@@ -8,7 +8,6 @@ import { RouterStore } from "../store/router";
 import { BullmqSessionQueue } from "../queue";
 import { EchoTracker } from "../entry/echo";
 import { MessageDispatcher } from "../entry/message-dispatcher";
-import { ResponseWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 import { SessionBufferStore } from "../session/buffer";
@@ -69,15 +68,6 @@ async function main(): Promise<void> {
     queueName: "session-jobs",
   });
 
-  const responseWorker = new ResponseWorker({
-    id: "response-1",
-    queueName: "session-responses",
-    redisUrl: config.REDIS_URL,
-    adapter,
-    logger,
-  });
-  responseWorker.start();
-
   const bufferStore = new SessionBufferStore({ redisUrl: config.REDIS_URL });
 
   let httpServer: HttpServer | null = null;
@@ -114,7 +104,6 @@ async function main(): Promise<void> {
   const shutdown = async () => {
     logger.info("Shutting down...");
     try {
-      await responseWorker.stop();
       if (httpServer) {
         httpServer.stop();
       }

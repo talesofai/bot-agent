@@ -60,10 +60,10 @@
 
 ### 2.4 消息路由：归属一致性 (Ownership-Consistent Responses)
 
-每个 Bot 负责自己收到的消息并发送回执，主服务按 `botId=self_id` 回路发送。
+每个 Bot 负责自己收到的消息并发送回执，Worker 直接通过连接池发送回复。
 
 - **一致性原则**：谁收到消息谁回复，避免跨 Bot 回复导致的群不可达问题。
-- **回复路由**：Worker 写入 `session-responses` 时携带 `selfId`，主服务根据连接池将回复下发到对应 Bot。
+- **回复路由**：Worker 持有连接池，按 `selfId` 选择对应 Bot 直接发送。
 
 ### 2.5 外部访问：Ingress 路径映射
 
@@ -95,8 +95,7 @@ graph TD
         Main -- 2. Enqueue session-jobs --> Redis
         Worker -- 3. Process Job --> LLM[LLM Service]
         LLM --> Worker
-        Worker -- 4. Enqueue session-responses --> Redis
-        Main -- 5. Send reply --> LLB1
+        Worker -- 4. Send reply --> LLB1
 
         LLB1 -. registry refresh .-> Redis
         LLB2 -. registry refresh .-> Redis

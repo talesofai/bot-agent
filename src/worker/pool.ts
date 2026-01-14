@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import type { PlatformAdapter } from "../types/platform";
 import type { OpencodeRunner } from "./runner";
 import { SessionWorker } from "./worker";
 
@@ -8,6 +9,7 @@ export interface SessionWorkerPoolOptions {
   queueName: string;
   redisUrl: string;
   dataDir: string;
+  adapter: PlatformAdapter;
   runner: OpencodeRunner;
   logger: Logger;
   prefix?: string;
@@ -26,6 +28,7 @@ export class SessionWorkerPool {
     this.worker = new SessionWorker({
       id: "pool",
       dataDir: options.dataDir,
+      adapter: options.adapter,
       redis: {
         url: options.redisUrl,
       },

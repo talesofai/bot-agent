@@ -29,6 +29,7 @@ export class LlbotRegistry {
   private updateChannel: string;
   private logger: Logger;
   private refreshInFlight = false;
+  private refreshQueued = false;
   private onUpdate: RegistryUpdateHandler | null = null;
 
   constructor(options: LlbotRegistryOptions) {
@@ -53,15 +54,12 @@ export class LlbotRegistry {
       }
     });
     this.subscriber.on("pmessage", (_pattern, _channel, message) => {
-      if (message.startsWith(`${this.prefix}:`)) {
+      if (message === "set" || message === "expired") {
         void this.refresh();
       }
     });
     await this.subscriber.subscribe(this.updateChannel);
-    await this.subscriber.psubscribe(
-      "__keyevent@*__:set",
-      "__keyevent@*__:expired",
-    );
+    await this.subscriber.psubscribe(`__keyspace@*__:${this.prefix}:*`);
   }
 
   async stop(): Promise<void> {
@@ -73,14 +71,18 @@ export class LlbotRegistry {
 
   private async refresh(): Promise<void> {
     if (this.refreshInFlight) {
+      this.refreshQueued = true;
       return;
     }
     this.refreshInFlight = true;
     try {
-      const entries = await this.listEntries();
-      if (this.onUpdate) {
-        await this.onUpdate(entries);
-      }
+      do {
+        this.refreshQueued = false;
+        const entries = await this.listEntries();
+        if (this.onUpdate) {
+          await this.onUpdate(entries);
+        }
+      } while (this.refreshQueued);
     } catch (err) {
       this.logger.error({ err }, "Failed to refresh llbot registry");
     } finally {

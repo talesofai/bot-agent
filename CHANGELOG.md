@@ -28,6 +28,7 @@
 - Session meta 读取改用 Zod 校验结构
 - Opencode 输出解析移除不安全对象断言
 - 注册表条目解析改用 Zod 校验结构
+- SessionWorker 下沉会话处理逻辑至 SessionProcessor
 
 ## [0.0.25] - 2026-01-15
 

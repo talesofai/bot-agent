@@ -172,6 +172,7 @@ spec:
 ### Bot Agent Deployment
 
 Adapter 与 Worker 分离部署，入口命令分别为 `start:adapter` / `start:worker`。
+无需配置 `PLATFORM`；默认启用 QQ，提供 `DISCORD_TOKEN` 时会同时启用 Discord。
 
 ```yaml
 # deployments/k8s/opencode-bot-agent-adapter.yaml（示例）
@@ -195,8 +196,6 @@ spec:
           image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
           command: ["bun", "run", "start:adapter"]
           env:
-            - name: PLATFORM
-              value: "qq"
             - name: REDIS_URL
               value: "redis://redis:6379"
             - name: LLBOT_REGISTRY_PREFIX

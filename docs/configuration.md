@@ -41,10 +41,8 @@ OPENCODE_MODEL=claude-sonnet-4-20250514
 ### 连接配置
 
 ```env
-# 平台选择（默认自动开启 QQ；提供 Discord token 时自动开启 Discord）
-# 如需显式限定，使用逗号分隔：PLATFORMS=qq,discord
-# PLATFORM=qq
-# PLATFORMS=qq,discord
+# 平台启用
+# 默认开启 QQ；配置 DISCORD_TOKEN 时同时启用 Discord
 
 # llbot Redis 注册表前缀
 LLBOT_REGISTRY_PREFIX=llbot:registry
@@ -70,7 +68,7 @@ DISCORD_APPLICATION_ID=
 # WebSocket 重连配置（当前使用内置默认值）
 ```
 
-> Adapter 进程使用 `PLATFORM=qq` 需要 Redis 注册表可用，`PLATFORM=discord` 必须提供 `DISCORD_TOKEN`。
+> Adapter 进程默认连接 QQ 注册表；提供 `DISCORD_TOKEN` 时会同时连接 Discord。
 
 ### 队列配置
 
@@ -113,7 +111,7 @@ BOT_ID_ALIASES=
 ```
 
 `GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置。
-会话数据默认存放在 `${GROUPS_DATA_DIR}/sessions/{botId}/{userId}/{sessionId}`，其中 `botId` 为经过 `BOT_ID_ALIASES` 解析后的 canonical 标识。
+会话数据默认存放在 `${GROUPS_DATA_DIR}/sessions/{botId}/{userId}/{sessionId}`，其中 `botId` 为 `{platform}-{canonicalBotId}`（canonical 部分由 `BOT_ID_ALIASES` 解析）。
 
 ### 日志配置
 

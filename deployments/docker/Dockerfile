@@ -1,5 +1,15 @@
 # Build stage
-FROM oven/bun:1-alpine AS builder
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV BUN_INSTALL=/usr/local/bun
+ENV PATH="${BUN_INSTALL}/bin:${PATH}"
+ENV npm_config_registry=https://registry.npmjs.org
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl build-essential bash \
+  && curl -fsSL https://bun.sh/install | bash \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -14,19 +24,22 @@ COPY . .
 RUN bun run build
 
 # Runtime stage
-FROM oven/bun:1-alpine
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV BUN_INSTALL=/usr/local/bun
+ENV PATH="${BUN_INSTALL}/bin:${PATH}"
+ENV npm_config_registry=https://registry.npmjs.org
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl bash \
+  && curl -fsSL https://bun.sh/install | bash \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install opencode CLI
-ARG OPENCODE_VERSION=v0.0.55
-ARG OPENCODE_SHA256=7f1f41203e7920aec48f3e2216d334e9ce8c6d0a7b107ceb758fefa4d4c98025
-RUN apk add --no-cache ca-certificates curl \
-  && curl -fsSL "https://github.com/opencode-ai/opencode/releases/download/${OPENCODE_VERSION}/opencode-linux-x86_64.tar.gz" -o /tmp/opencode.tar.gz \
-  && echo "${OPENCODE_SHA256}  /tmp/opencode.tar.gz" | sha256sum -c - \
-  && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin opencode \
-  && chmod +x /usr/local/bin/opencode \
-  && rm /tmp/opencode.tar.gz
+# Install opencode CLI from npm to pick the correct platform binary
+RUN bun install -g opencode-ai
 
 # Copy app artifacts
 COPY --from=builder /app /app

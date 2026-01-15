@@ -29,6 +29,7 @@
 - Prompt 的 History 行追加 `groupId` 标记，确保跨群共享历史时可区分来源
 - 历史记录查询按 canonical botId 聚合并按时间倒序截取，History 行显示 `group:xxx`/`dm:0` 上下文
 - 集成测试自动探测可用的 Redis/Opencode 二进制，有依赖即运行，无依赖则跳过并保留单测
+- Docker 镜像改用 Ubuntu 基础镜像，并以 `bun install -g opencode-ai` 安装 CLI 修复构建失败
 
 ## [0.0.26] - 2026-01-15
 

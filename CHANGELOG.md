@@ -23,6 +23,7 @@
 - 会话目录迁移至 `sessions/{botId}/{userId}/{sessionId}`，按 canonical botId 隔离并允许继承
 - QQ 路由缺失时发送消息改为记录告警并跳过
 - SessionWorker 默认使用 PostgreSQL 历史存储（`DATABASE_URL` 必填）
+- 依赖：`opencode-ai` 锁定至 1.1.19（1.1.20 缺少 linux x64 二进制导致构建失败）
 - 测试脚本改为 `bun test ./src`，避免误跑 `example/` 下游工程的测试
 - 会话缓冲与任务去重键增加 `botId + groupId` 维度，避免跨群/跨 bot 串话与误合并
 - 私聊强制使用 `groupId=0`，并默认始终入队处理（不再依赖群触发规则）

@@ -1,5 +1,6 @@
 import IORedis from "ioredis";
 import type { Logger } from "pino";
+import { z } from "zod";
 import { logger as defaultLogger } from "../logger";
 
 export interface LlbotRegistryEntry {
@@ -124,21 +125,33 @@ export class LlbotRegistry {
   }
 
   private parseEntry(botId: string, raw: string): LlbotRegistryEntry | null {
-    let data: Record<string, unknown> = {};
-    try {
-      data = JSON.parse(raw) as Record<string, unknown>;
-    } catch {
-      data = { wsUrl: raw };
-    }
-    const wsUrl = typeof data.wsUrl === "string" ? data.wsUrl : raw;
+    const parsed = tryParseJson(raw);
+    const validated = registryEntrySchema.safeParse(parsed);
+    const data = validated.success ? validated.data : null;
+    const wsUrl = data?.wsUrl ?? raw;
     if (!wsUrl) {
       this.logger.warn({ botId, raw }, "Registry entry missing wsUrl");
       return null;
     }
-    const platform = typeof data.platform === "string" ? data.platform : "qq";
-    const lastSeenAt =
-      typeof data.lastSeenAt === "string" ? data.lastSeenAt : undefined;
+    const platform = data?.platform ?? "qq";
+    const lastSeenAt = data?.lastSeenAt;
 
     return { botId, wsUrl, platform, lastSeenAt };
+  }
+}
+
+const registryEntrySchema = z
+  .object({
+    wsUrl: z.string(),
+    platform: z.string().optional(),
+    lastSeenAt: z.string().optional(),
+  })
+  .passthrough();
+
+function tryParseJson(raw: string): unknown | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }

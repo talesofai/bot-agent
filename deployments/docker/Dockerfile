@@ -17,7 +17,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN git init \
   && git config --global --add safe.directory /app \
-  && bun install --frozen-lockfile
+  && bun install --frozen-lockfile --ignore-scripts
 
 # Copy source code
 COPY . .

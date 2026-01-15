@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: opencode-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=opencode
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../../data/postgres:/var/lib/postgresql/data
+    networks:
+      - llbot_net
+
   redis:
     image: redis:7.4-alpine
     container_name: opencode-redis
@@ -84,6 +99,7 @@ services:
       - ../../data:/data
     depends_on:
       - redis
+      - postgres
     networks:
       - llbot_net
 

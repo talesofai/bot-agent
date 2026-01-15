@@ -26,111 +26,22 @@ LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节�
 │       └── .env
 └── data/
     ├── llbot/          # LuckyLilliaBot (LLBot) 数据
+    ├── postgres/       # PostgreSQL 数据（历史与可变状态）
     └── groups/         # 群数据
 ```
 
 ### docker-compose.yml
 
-当前仅启用 LuckyLilliaBot（LLBot Docker 版），Bot Agent 以注释方式保留占位。
+使用 `deployments/docker/docker-compose.yml` 启动完整栈（Redis + PostgreSQL + LuckyLilliaBot + Adapter + Worker）。
 
-```yaml
-version: "3.8"
-
-services:
-  redis:
-    image: redis:7.4-alpine
-    container_name: opencode-redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    volumes:
-      - ../../data/redis:/data
-
-  pmhq:
-    image: linyuchen/pmhq:latest
-    container_name: luckylillia-pmhq
-    restart: unless-stopped
-    privileged: true
-    environment:
-      - ENABLE_HEADLESS=false
-      - AUTO_LOGIN_QQ=
-    volumes:
-      - ../../data/llbot/qq:/root/.config/QQ
-      - ../../data/llbot/data:/app/llbot/data
-
-  luckylillia:
-    image: linyuchen/llbot:latest
-    container_name: luckylillia
-    restart: unless-stopped
-    env_file:
-      - ../../configs/.env
-      - ../../configs/secrets/.env
-    environment:
-      - ENABLE_WEBUI=true
-      - WEBUI_PORT=3080
-    entrypoint:
-      - /bin/sh
-      - /config/llbot-entrypoint.sh
-    ports:
-      - "3000:3000"
-      - "3080:3080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ../../data/llbot/data:/app/llbot/data
-      - ../../data/llbot/qq:/root/.config/QQ
-      - ../../data/llbot/default_config.json:/config/default_config.json:ro
-      - ../../scripts/llbot-entrypoint.sh:/config/llbot-entrypoint.sh:ro
-    depends_on:
-      - pmhq
-
-  opencode-bot-agent-adapter:
-    image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest # 镜像占位
-    container_name: opencode-bot-agent-adapter
-    restart: unless-stopped
-    command: ["bun", "run", "start:adapter"]
-    depends_on:
-      - luckylillia
-      - redis
-    volumes:
-      - ../../data:/data
-      - ../../configs:/app/configs
-    env_file:
-      - ../../configs/.env
-      - ../../configs/secrets/.env
-    environment:
-      - PLATFORM=qq
-      - REDIS_URL=redis://redis:6379
-      - LLBOT_REGISTRY_PREFIX=llbot:registry
-      - DISCORD_TOKEN=your-token # 规划
-      - DISCORD_APPLICATION_ID=your-app-id # 规划
-  opencode-bot-agent-worker:
-    image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest # 镜像占位
-    container_name: opencode-bot-agent-worker
-    restart: unless-stopped
-    command: ["bun", "run", "start:worker"]
-    depends_on:
-      - redis
-    volumes:
-      - ../../data:/data
-      - ../../configs:/app/configs
-    env_file:
-      - ../../configs/.env
-      - ../../configs/secrets/.env
-    environment:
-      - REDIS_URL=redis://redis:6379
-```
-
-当前使用公开镜像 `linyuchen/pmhq` 与 `linyuchen/llbot`。
-注意：**Redis 是由于引入分布式任务队列（BullMQ）而必须的服务**，请确保它在 Agent 启动前已就绪。
+- `DATABASE_URL` 必须可用（建议通过 `configs/.env` 或 `configs/secrets/.env` 注入）
+- `REDIS_URL` 必须可用（BullMQ 依赖）
 
 ### 启动命令
 
 ```bash
 cd /opt/opencode-bot-agent
 docker compose -f deployments/docker/docker-compose.yml up -d
-docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 ```
 
 ## Kubernetes 部署（规划）
@@ -159,7 +70,6 @@ docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 
 ```bash
 docker compose -f deployments/docker/docker-compose.yml up -d
-docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 ```
 
 ### Kubernetes
@@ -200,6 +110,7 @@ stringData:
   OPENAI_API_KEY: ""
   ANTHROPIC_API_KEY: ""
   GEMINI_API_KEY: ""
+  DATABASE_URL: ""
   API_TOKEN: "" # 预留给 Bot Agent API 认证
 ```
 
@@ -326,6 +237,11 @@ spec:
           env:
             - name: REDIS_URL
               value: "redis://redis:6379"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: DATABASE_URL
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:

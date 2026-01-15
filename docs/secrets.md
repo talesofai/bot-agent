@@ -50,8 +50,9 @@ WEBUI_TOKEN=your-token ./scripts/rotate-secrets.sh
 ```env
 WEBUI_TOKEN=your-token
 OPENAI_API_KEY=sk-xxx
-DISCORD_TOKEN=your-token # 规划
-DISCORD_APPLICATION_ID=your-app-id # 规划
+DISCORD_TOKEN=your-token
+DISCORD_APPLICATION_ID=your-app-id
+DATABASE_URL=postgres://postgres:postgres@postgres:5432/opencode
 API_TOKEN=your-token
 ```
 

@@ -61,7 +61,7 @@ LLBOT_REGISTRY_BOT_ID=
 LLBOT_REGISTRY_WS_URL=
 LLBOT_PLATFORM=qq
 
-# Discord 平台配置（规划）
+# Discord 平台配置
 DISCORD_TOKEN=
 DISCORD_APPLICATION_ID=
 
@@ -69,8 +69,6 @@ DISCORD_APPLICATION_ID=
 ```
 
 > Adapter 进程使用 `PLATFORM=qq` 需要 Redis 注册表可用，`PLATFORM=discord` 必须提供 `DISCORD_TOKEN`。
->
-> Discord Adapter 当前仍是占位实现，`PLATFORM=discord` 时会直接报错。
 
 ### 队列配置
 
@@ -79,13 +77,20 @@ DISCORD_APPLICATION_ID=
 REDIS_URL=redis://localhost:6379
 ```
 
+### 存储配置
+
+```env
+# PostgreSQL（历史与可变状态）
+DATABASE_URL=postgres://postgres:postgres@postgres:5432/opencode
+```
+
 ### HTTP 服务配置
 
 ```env
 # HTTP 端口
 HTTP_PORT=8080
 
-# 入口默认群 ID (未提供时使用消息 channelId)
+# 入口默认群 ID（仅群聊生效；私聊固定 groupId=0；未设置时群聊使用消息 channelId 作为 groupId）
 DEFAULT_GROUP_ID=
 
 # 可选：/health 版本号（默认读取 npm_package_version）

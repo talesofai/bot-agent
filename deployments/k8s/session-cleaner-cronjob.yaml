@@ -18,7 +18,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: session-cleaner
-              image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+              image: opencode-bot-agent:latest
               command:
                 - bun
                 - run

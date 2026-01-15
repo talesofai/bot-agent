@@ -193,7 +193,7 @@ spec:
     spec:
       containers:
         - name: opencode-bot-agent-adapter
-          image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+          image: opencode-bot-agent:latest
           command: ["bun", "run", "start:adapter"]
           env:
             - name: REDIS_URL
@@ -205,6 +205,7 @@ spec:
                 secretKeyRef:
                   name: llbot-secrets
                   key: OPENAI_API_KEY
+                  optional: true
           volumeMounts:
             - name: data
               mountPath: /data
@@ -231,7 +232,7 @@ spec:
     spec:
       containers:
         - name: opencode-bot-agent-worker
-          image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+          image: opencode-bot-agent:latest
           command: ["bun", "run", "start:worker"]
           env:
             - name: REDIS_URL
@@ -246,6 +247,7 @@ spec:
                 secretKeyRef:
                   name: llbot-secrets
                   key: OPENAI_API_KEY
+                  optional: true
           volumeMounts:
             - name: data
               mountPath: /data
@@ -268,6 +270,11 @@ kubectl apply -f deployments/k8s/llbot-service.yaml
 kubectl apply -f deployments/k8s/opencode-bot-agent-adapter.yaml
 kubectl apply -f deployments/k8s/opencode-bot-agent-worker.yaml
 kubectl apply -f deployments/k8s/session-cleaner-cronjob.yaml
+
+# 将 Bot Agent 镜像切换到阿里云镜像仓库（示例为 latest tag）
+kubectl -n bot set image deployment/opencode-bot-agent-adapter opencode-bot-agent-adapter=registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+kubectl -n bot set image deployment/opencode-bot-agent-worker opencode-bot-agent-worker=registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+kubectl -n bot set image cronjob/session-cleaner session-cleaner=registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
 ```
 
 如果你的节点是 ARM 架构，请使用 amd64 节点运行或自行构建对应架构镜像。

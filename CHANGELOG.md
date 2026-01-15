@@ -15,6 +15,7 @@
 
 - 提供 `DISCORD_TOKEN` 时自动启用 Discord（无需 PLATFORM/PLATFORMS）
 - 会话/缓冲/任务/机器人配置使用 `{platform}-{canonicalBotId}` 作为 botId，避免跨平台 id 冲突
+- K8s 清单默认使用通用镜像名 `opencode-bot-agent:latest`，部署时用 `kubectl set image` 切换为阿里云镜像
 
 ### Fixed
 

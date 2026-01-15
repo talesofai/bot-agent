@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: opencode-bot-agent-worker
-          image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+          image: opencode-bot-agent:latest
           command:
             - bun
             - run
@@ -33,6 +33,7 @@ spec:
                 secretKeyRef:
                   name: llbot-secrets
                   key: OPENAI_API_KEY
+                  optional: true
           resources:
             requests:
               cpu: 200m

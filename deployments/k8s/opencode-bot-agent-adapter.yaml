@@ -15,14 +15,12 @@ spec:
     spec:
       containers:
         - name: opencode-bot-agent-adapter
-          image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+          image: opencode-bot-agent:latest
           command:
             - bun
             - run
             - start:adapter
           env:
-            - name: PLATFORM
-              value: "qq"
             - name: REDIS_URL
               value: "redis://redis:6379"
             - name: LLBOT_REGISTRY_PREFIX
@@ -32,18 +30,13 @@ spec:
                 secretKeyRef:
                   name: llbot-secrets
                   key: DISCORD_TOKEN
-              # 规划
-            - name: DISCORD_APPLICATION_ID
-              valueFrom:
-                secretKeyRef:
-                  name: llbot-secrets
-                  key: DISCORD_APPLICATION_ID
-              # 规划
+                  optional: true
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: llbot-secrets
                   key: OPENAI_API_KEY
+                  optional: true
           resources:
             requests:
               cpu: 200m

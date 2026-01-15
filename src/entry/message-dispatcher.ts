@@ -15,6 +15,7 @@ import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
 import { SessionBufferStore } from "../session/buffer";
+import { resolveCanonicalBotId } from "../utils/bot-id";
 
 export interface MessageDispatcherOptions {
   adapter: PlatformAdapter;
@@ -55,10 +56,20 @@ export class MessageDispatcher {
         this.logger.error({ groupId }, "Invalid groupId for message dispatch");
         return;
       }
-      const botId = message.selfId;
-      if (!botId || !isSafePathSegment(botId)) {
-        this.logger.error({ botId }, "Invalid botId for message dispatch");
+      const rawBotId = message.selfId;
+      if (!rawBotId || !isSafePathSegment(rawBotId)) {
+        this.logger.error(
+          { botId: rawBotId },
+          "Invalid botId for message dispatch",
+        );
         return;
+      }
+      const botId = resolveCanonicalBotId(rawBotId);
+      if (botId !== rawBotId) {
+        this.logger.info(
+          { botId: rawBotId, canonicalBotId: botId },
+          "Resolved botId alias",
+        );
       }
       if (!isSafePathSegment(message.userId)) {
         this.logger.error(
@@ -134,7 +145,8 @@ export class MessageDispatcher {
           id: message.messageId,
           channelId: message.channelId,
           userId: message.userId,
-          botId: message.selfId,
+          botId,
+          selfId: rawBotId,
           contentHash,
           contentLength: logContent.length,
         },

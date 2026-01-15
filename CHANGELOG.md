@@ -11,6 +11,7 @@
 
 - PostgreSQL 历史存储（`PostgresHistoryStore`），按 `bot_account_id + user_id` 读写并记录 `groupId`
 - 新增 `DATABASE_URL` 配置，用于连接 PostgreSQL
+- 新增 `BOT_ID_ALIASES` 映射，支持继承者 botId 复用旧目录
 
 ### Changed
 

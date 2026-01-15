@@ -15,10 +15,11 @@ import { getBotIdAliasMap } from "../utils/bot-id";
 const config = getConfig();
 
 async function main(): Promise<void> {
+  const platformAdapters = createPlatformAdapters(config);
   logger.info(
     {
       env: config.NODE_ENV ?? "development",
-      platforms: config.platforms,
+      platforms: platformAdapters.map((adapter) => adapter.platform),
       bunVersion: Bun.version,
     },
     "Bot adapter starting",
@@ -33,7 +34,7 @@ async function main(): Promise<void> {
   }
 
   const adapter = new MultiAdapter({
-    adapters: createPlatformAdapters(config),
+    adapters: platformAdapters,
     logger,
   });
   const bot: Bot = {

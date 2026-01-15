@@ -11,9 +11,12 @@ if (!config.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for session worker");
 }
 
+const platformAdapters = createPlatformAdapters(config);
+
 logger.info(
   {
     env: config.NODE_ENV ?? "development",
+    platforms: platformAdapters.map((adapter) => adapter.platform),
     bunVersion: Bun.version,
   },
   "Session worker starting",
@@ -28,7 +31,7 @@ if (aliasMap.size > 0) {
 
 const sessionQueueName = "session-jobs";
 const adapter = new MultiAdapter({
-  adapters: createPlatformAdapters(config),
+  adapters: platformAdapters,
   logger,
 });
 

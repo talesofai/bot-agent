@@ -4,22 +4,20 @@ import { DiscordAdapter } from "./discord";
 import { QQAdapterPool } from "./qq";
 
 export function createPlatformAdapters(config: AppConfig): PlatformAdapter[] {
-  const adapters: PlatformAdapter[] = [];
-  for (const platform of config.platforms) {
-    if (platform === "qq") {
-      adapters.push(
-        new QQAdapterPool({
-          redisUrl: config.REDIS_URL,
-          registryPrefix: config.LLBOT_REGISTRY_PREFIX,
-        }),
-      );
-    } else if (platform === "discord") {
-      adapters.push(
-        new DiscordAdapter({
-          token: config.DISCORD_TOKEN,
-        }),
-      );
-    }
+  const adapters: PlatformAdapter[] = [
+    new QQAdapterPool({
+      redisUrl: config.REDIS_URL,
+      registryPrefix: config.LLBOT_REGISTRY_PREFIX,
+    }),
+  ];
+
+  const discordToken = config.DISCORD_TOKEN?.trim();
+  if (discordToken) {
+    adapters.push(
+      new DiscordAdapter({
+        token: discordToken,
+      }),
+    );
   }
   return adapters;
 }

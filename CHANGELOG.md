@@ -16,6 +16,10 @@
 - 提供 `DISCORD_TOKEN` 时自动启用 Discord（无需 PLATFORM/PLATFORMS）
 - 会话/缓冲/任务/机器人配置使用 `{platform}-{canonicalBotId}` 作为 botId，避免跨平台 id 冲突
 
+### Fixed
+
+- Docker 镜像默认 CMD 改为 `bun run start:adapter`，避免缺少 `start` 脚本导致容器退出
+
 ## [0.0.27] - 2026-01-15
 
 ### Added

@@ -53,4 +53,4 @@ RUN mkdir -p /data/groups
 
 EXPOSE 8080
 
-CMD ["bun", "run", "start"]
+CMD ["bun", "run", "start:adapter"]

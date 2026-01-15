@@ -47,7 +47,7 @@ jobs:
           file: ./deployments/docker/Dockerfile
           cache-from: type=gha,scope=build
           cache-to: type=gha,mode=min,scope=build
-          push: false # enable once ready to publish
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64

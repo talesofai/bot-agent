@@ -4,6 +4,7 @@ import tseslint from "typescript-eslint";
 export default [
   {
     ignores: [
+      ".bun/**",
       "data/**",
       "dist/**",
       "node_modules/**",

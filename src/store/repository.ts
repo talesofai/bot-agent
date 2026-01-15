@@ -6,7 +6,6 @@ import { parse as parseYaml } from "yaml";
 import type { Logger } from "pino";
 
 import {
-  DEFAULT_GROUP_CONFIG,
   GroupConfigSchema,
   type AgentContent,
   AgentFrontmatterSchema,

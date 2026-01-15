@@ -15,13 +15,16 @@ WORKDIR /app
 
 # Install dependencies
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+RUN git init \
+  && git config --global --add safe.directory /app \
+  && bun install --frozen-lockfile
 
 # Copy source code
 COPY . .
 
 # Build
 RUN bun run build
+RUN rm -rf .git
 
 # Runtime stage
 FROM ubuntu:22.04
@@ -39,7 +42,7 @@ RUN apt-get update \
 WORKDIR /app
 
 # Install opencode CLI from npm to pick the correct platform binary
-RUN bun install -g opencode-ai
+RUN bun install -g opencode-ai@1.1.19
 
 # Copy app artifacts
 COPY --from=builder /app /app

@@ -73,11 +73,19 @@ export class QQAdapterPool implements PlatformAdapter {
   ): Promise<void> {
     const botId = session.selfId;
     if (!botId) {
-      throw new Error("Missing selfId for response routing");
+      this.logger.warn(
+        { sessionId: session.messageId },
+        "Missing selfId for response routing",
+      );
+      return;
     }
     const connection = this.connections.get(botId);
     if (!connection) {
-      throw new Error(`No adapter connection for botId: ${botId}`);
+      this.logger.warn(
+        { botId, sessionId: session.messageId },
+        "No adapter connection for botId",
+      );
+      return;
     }
     await connection.adapter.sendMessage(session, content, options);
   }

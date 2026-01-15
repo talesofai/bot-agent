@@ -102,6 +102,9 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
   }
 
   private async handleEvent(event: unknown): Promise<void> {
+    if (this.listenerCount("event") === 0) {
+      return;
+    }
     try {
       const message = parseMessage(event);
       if (message) {

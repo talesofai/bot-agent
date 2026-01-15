@@ -99,6 +99,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   }
 
   private async handleMessage(message: Message): Promise<void> {
+    if (this.listenerCount("event") === 0) {
+      return;
+    }
     try {
       const parsed = parseMessage(message, this.botUserId ?? undefined);
       if (!parsed) {

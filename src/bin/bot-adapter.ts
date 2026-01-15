@@ -10,7 +10,7 @@ import { MessageDispatcher } from "../entry/message-dispatcher";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 import { SessionBufferStore } from "../session/buffer";
-import { getBotIdAliasMap, resolveCanonicalBotId } from "../utils/bot-id";
+import { getBotIdAliasMap } from "../utils/bot-id";
 
 const config = getConfig();
 

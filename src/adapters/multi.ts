@@ -42,12 +42,31 @@ export class MultiAdapter implements PlatformAdapter {
   }
 
   async connect(bot: Bot): Promise<void> {
-    bot.status = "connected";
-    await Promise.all(
-      Array.from(this.entries.values()).map(async (entry) =>
-        entry.adapter.connect(entry.bot),
-      ),
+    const entries = Array.from(this.entries.values());
+    if (entries.length === 0) {
+      throw new Error("MultiAdapter requires at least one adapter");
+    }
+    const results = await Promise.allSettled(
+      entries.map(async (entry) => entry.adapter.connect(entry.bot)),
     );
+
+    let connected = 0;
+    for (let i = 0; i < results.length; i += 1) {
+      const result = results[i];
+      const platform = entries[i]?.adapter.platform ?? "unknown";
+      if (result.status === "fulfilled") {
+        connected += 1;
+        continue;
+      }
+      this.logger.error(
+        { err: result.reason, platform },
+        "Platform adapter failed to connect",
+      );
+    }
+    bot.status = connected > 0 ? "connected" : "disconnected";
+    if (connected === 0) {
+      throw new Error("All platform adapters failed to connect");
+    }
   }
 
   async disconnect(bot: Bot): Promise<void> {

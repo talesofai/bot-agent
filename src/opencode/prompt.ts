@@ -22,7 +22,9 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
       }
       const timestamp = formatHistoryTimestamp(entry.createdAt);
       const groupId = entry.groupId?.trim();
-      const suffix = groupId ? ` group:${groupId}` : "";
+      const context =
+        groupId === "0" ? "dm:0" : groupId ? `group:${groupId}` : "";
+      const suffix = context ? ` ${context}` : "";
       return `${entry.role} [${timestamp}${suffix}]: ${content}`;
     })
     .filter((line): line is string => Boolean(line));

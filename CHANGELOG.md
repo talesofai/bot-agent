@@ -26,6 +26,7 @@
 - 会话缓冲与任务去重键增加 `botId + groupId` 维度，避免跨群/跨 bot 串话与误合并
 - 私聊强制使用 `groupId=0`，并默认始终入队处理（不再依赖群触发规则）
 - Prompt 的 History 行追加 `groupId` 标记，确保跨群共享历史时可区分来源
+- 历史记录查询按 canonical botId 聚合并按时间倒序截取，History 行显示 `group:xxx`/`dm:0` 上下文
 
 ## [0.0.26] - 2026-01-15
 

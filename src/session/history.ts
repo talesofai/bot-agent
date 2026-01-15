@@ -91,10 +91,10 @@ export class PostgresHistoryStore implements HistoryStore {
                created_at AS "createdAt",
                group_id AS "groupId",
                meta
-          FROM history_entries
+         FROM history_entries
          WHERE bot_account_id = ${key.botAccountId}
            AND user_id = ${key.userId}
-         ORDER BY id DESC
+         ORDER BY created_at DESC, id DESC
          LIMIT ${limit}
       `;
       const ordered = rows.reverse().map((row) => parseHistoryRow(row));

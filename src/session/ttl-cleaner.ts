@@ -103,22 +103,12 @@ export class SessionTtlCleaner {
     sessionPath: string,
   ): Promise<{ status: SessionStatus | null; lastActiveMs: number | null }> {
     const meta = await this.readMeta(metaPath);
-    let lastActiveMs: number | null = null;
-    if (meta?.updatedAt) {
-      const parsed = Date.parse(meta.updatedAt);
-      if (!Number.isNaN(parsed)) {
-        lastActiveMs = parsed;
-      }
-    }
     try {
-      if (lastActiveMs === null) {
-        const stats = await stat(sessionPath);
-        lastActiveMs = stats.mtimeMs;
-      }
+      const stats = await stat(sessionPath);
+      return { status: meta?.status ?? null, lastActiveMs: stats.mtimeMs };
     } catch {
-      return { status: meta?.status ?? null, lastActiveMs };
+      return { status: meta?.status ?? null, lastActiveMs: null };
     }
-    return { status: meta?.status ?? null, lastActiveMs };
   }
 
   private async readDirSafe(path: string) {

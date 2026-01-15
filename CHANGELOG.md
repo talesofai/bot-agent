@@ -11,6 +11,7 @@
 
 - 多平台组合适配器，同时连接 QQ 与 Discord，消息处理链保持一致
 - 新增 PostgreSQL 的 K8s StatefulSet 清单（`deployments/k8s/postgres.yaml`）
+- 新增 CI：push/PR 运行 lint + test + typecheck（`tsc --noEmit`）
 
 ### Changed
 

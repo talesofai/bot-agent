@@ -18,16 +18,15 @@ FROM oven/bun:1-alpine
 
 WORKDIR /app
 
-# Install opencode
-ARG OPENCODE_INSTALL_URL=https://get.opencode.ai
-ARG OPENCODE_INSTALL_SHA256=
-RUN apk add --no-cache ca-certificates curl
-RUN curl -fsSL "$OPENCODE_INSTALL_URL" -o /tmp/opencode-install.sh \
-  && if [ -n "$OPENCODE_INSTALL_SHA256" ]; then \
-       echo "$OPENCODE_INSTALL_SHA256  /tmp/opencode-install.sh" | sha256sum -c -; \
-     fi \
-  && sh /tmp/opencode-install.sh \
-  && rm /tmp/opencode-install.sh
+# Install opencode CLI
+ARG OPENCODE_VERSION=v0.0.55
+ARG OPENCODE_SHA256=7f1f41203e7920aec48f3e2216d334e9ce8c6d0a7b107ceb758fefa4d4c98025
+RUN apk add --no-cache ca-certificates curl \
+  && curl -fsSL "https://github.com/opencode-ai/opencode/releases/download/${OPENCODE_VERSION}/opencode-linux-x86_64.tar.gz" -o /tmp/opencode.tar.gz \
+  && echo "${OPENCODE_SHA256}  /tmp/opencode.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin opencode \
+  && chmod +x /usr/local/bin/opencode \
+  && rm /tmp/opencode.tar.gz
 
 # Copy app artifacts
 COPY --from=builder /app /app

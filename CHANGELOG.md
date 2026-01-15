@@ -9,6 +9,10 @@
 
 ### Changed
 
+## [0.0.26] - 2026-01-15
+
+### Changed
+
 - 会话历史存储切换为 SQLite 文件
 - 历史文件后缀更新为 history.sqlite
 - 缓冲消息合并格式移至 opencode 提示词构建

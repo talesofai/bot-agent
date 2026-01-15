@@ -45,8 +45,8 @@ function extractHistoryEntries(
   if (Array.isArray(parsed)) {
     return mapEntries(parsed, createdAt);
   }
-  if (parsed && typeof parsed === "object") {
-    const obj = parsed as Record<string, unknown>;
+  if (isRecord(parsed)) {
+    const obj = parsed;
     const candidates =
       (Array.isArray(obj.messages) && obj.messages) ||
       (Array.isArray(obj.history) && obj.history) ||
@@ -89,10 +89,10 @@ function extractResult(
 function mapEntries(items: unknown[], createdAt: string): HistoryEntry[] {
   const entries: HistoryEntry[] = [];
   for (const item of items) {
-    if (!item || typeof item !== "object") {
+    if (!isRecord(item)) {
       continue;
     }
-    const obj = item as Record<string, unknown>;
+    const obj = item;
     if (typeof obj.role !== "string" || typeof obj.content !== "string") {
       continue;
     }
@@ -116,8 +116,8 @@ function extractOutput(
   parsed: unknown,
   entries: HistoryEntry[] | null,
 ): string | null {
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    const obj = parsed as Record<string, unknown>;
+  if (isRecord(parsed)) {
+    const obj = parsed;
     if (typeof obj.output === "string") {
       return obj.output;
     }
@@ -182,4 +182,8 @@ function* scanJsonBlocks(raw: string): Generator<string> {
       }
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -68,7 +68,7 @@ export class MessageSender {
 
 function buildPayload(
   content: string,
-  elements: SessionElement[],
+  elements: ReadonlyArray<SessionElement>,
 ): MessageCreateOptions {
   if (elements.length === 0) {
     return { content };

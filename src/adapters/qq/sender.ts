@@ -57,7 +57,7 @@ export class MessageSender {
 
   private buildMessage(
     content: string,
-    elements?: SessionElement[],
+    elements?: ReadonlyArray<SessionElement>,
   ): MilkyMessageSegment[] {
     const segments: MilkyMessageSegment[] = [];
 
@@ -78,7 +78,9 @@ export class MessageSender {
     return segments;
   }
 
-  private mapElements(elements: SessionElement[]): MilkyMessageSegment[] {
+  private mapElements(
+    elements: ReadonlyArray<SessionElement>,
+  ): MilkyMessageSegment[] {
     const segments: MilkyMessageSegment[] = [];
     for (const element of elements) {
       if (element.type === "text") {

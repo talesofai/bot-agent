@@ -13,7 +13,7 @@ export interface SessionEvent<TExtras = unknown> {
   channelId: string;
   messageId?: string;
   content: string;
-  elements: SessionElement[];
+  elements: ReadonlyArray<SessionElement>;
   timestamp: number;
   extras: TExtras;
 }
@@ -33,7 +33,7 @@ export interface Bot {
 }
 
 export interface SendMessageOptions {
-  elements?: SessionElement[];
+  elements?: ReadonlyArray<SessionElement>;
 }
 
 export type MessageHandler<TExtras = unknown> = (

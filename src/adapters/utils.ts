@@ -1,6 +1,8 @@
 import type { SessionElement } from "../types/platform";
 
-export function extractTextFromElements(elements: SessionElement[]): string {
+export function extractTextFromElements(
+  elements: ReadonlyArray<SessionElement>,
+): string {
   return elements
     .filter((element) => element.type === "text")
     .map((element) => element.text)
@@ -18,7 +20,9 @@ export function appendTextElement(
   elements.push({ type: "text", text });
 }
 
-export function trimTextElements(elements: SessionElement[]): SessionElement[] {
+export function trimTextElements(
+  elements: ReadonlyArray<SessionElement>,
+): SessionElement[] {
   const filtered = elements.filter(
     (element) => element.type !== "text" || hasNonWhitespace(element.text),
   );

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import type { SessionElement } from "../../types/platform";
 import { trimTextElements } from "../utils";
 
 describe("trimTextElements", () => {
   test("removes empty leading text and trims next text element", () => {
-    const elements = [
+    const elements: SessionElement[] = [
       { type: "text", text: "   " },
       { type: "image", url: "https://example.com/image.png" },
       { type: "text", text: "  hello" },
@@ -19,7 +20,7 @@ describe("trimTextElements", () => {
   });
 
   test("removes empty trailing text and trims previous text element", () => {
-    const elements = [
+    const elements: SessionElement[] = [
       { type: "text", text: "hello   " },
       { type: "image", url: "https://example.com/image.png" },
       { type: "text", text: "   " },

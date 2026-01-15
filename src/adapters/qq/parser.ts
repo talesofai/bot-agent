@@ -7,32 +7,6 @@ import {
 } from "../utils";
 
 /**
- * Milky event types
- */
-interface MilkyMessageEvent {
-  post_type: "message";
-  message_type: "group" | "private";
-  message_id: number;
-  user_id: number;
-  group_id?: number;
-  message?: MilkyMessageSegment[] | string;
-  raw_message?: string;
-  sender: {
-    user_id: number;
-    nickname: string;
-    card?: string;
-    role?: string;
-  };
-  time: number;
-  self_id: number;
-}
-
-interface MilkyMessageSegment {
-  type: string;
-  data: Record<string, unknown>;
-}
-
-/**
  * Parse Milky event into SessionEvent
  */
 export function parseMessage(
@@ -65,6 +39,13 @@ export function parseMessage(
   };
 }
 
+const milkyMessageSegmentSchema = z
+  .object({
+    type: z.string(),
+    data: z.record(z.unknown()),
+  })
+  .passthrough();
+
 const milkyMessageEventSchema = z
   .object({
     post_type: z.literal("message"),
@@ -72,7 +53,9 @@ const milkyMessageEventSchema = z
     message_id: z.number(),
     user_id: z.number(),
     group_id: z.number().optional(),
-    message: z.unknown().optional(),
+    message: z
+      .union([z.string(), z.array(milkyMessageSegmentSchema)])
+      .optional(),
     raw_message: z.string().optional(),
     sender: z
       .object({
@@ -86,6 +69,9 @@ const milkyMessageEventSchema = z
     self_id: z.number(),
   })
   .passthrough();
+
+type MilkyMessageEvent = z.infer<typeof milkyMessageEventSchema>;
+type MilkyMessageSegment = z.infer<typeof milkyMessageSegmentSchema>;
 
 function normalizeSegments(event: MilkyMessageEvent): {
   elements: SessionElement[];

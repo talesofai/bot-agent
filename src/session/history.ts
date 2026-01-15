@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { HistoryEntry } from "../types/session";
-import type { Sql } from "postgres";
+import type { JSONValue, Sql } from "postgres";
 import { createPostgresClient } from "../db/postgres";
 
 export interface HistoryReadOptions {
@@ -109,13 +109,15 @@ export class PostgresHistoryStore implements HistoryStore {
     await this.init();
     const { role, content, createdAt, groupId, ...meta } = entry;
     const resolvedGroupId = typeof groupId === "string" ? groupId : "0";
-    const metaPayload = Object.keys(meta).length > 0 ? meta : null;
+    const metaPayload =
+      Object.keys(meta).length > 0 ? normalizeHistoryMeta(meta) : null;
+    const metaParam = metaPayload ? this.sql.json(metaPayload) : null;
     try {
       await this.sql`
         INSERT INTO history_entries
           (bot_account_id, user_id, group_id, role, content, created_at, meta)
         VALUES
-          (${key.botAccountId}, ${key.userId}, ${resolvedGroupId}, ${role}, ${content}, ${createdAt}, ${metaPayload})
+          (${key.botAccountId}, ${key.userId}, ${resolvedGroupId}, ${role}, ${content}, ${createdAt}, ${metaParam})
       `;
     } catch (err) {
       this.logger.warn({ err, key }, "Failed to append history");
@@ -194,4 +196,73 @@ function applyMaxBytes(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeHistoryMeta(meta: Record<string, unknown>): JSONValue | null {
+  const normalized = toJsonValue(meta, new WeakSet());
+  if (normalized === undefined || normalized === null) {
+    return null;
+  }
+  if (typeof normalized !== "object" || Array.isArray(normalized)) {
+    return null;
+  }
+  if (Object.keys(normalized).length === 0) {
+    return null;
+  }
+  return normalized;
+}
+
+function toJsonValue(
+  value: unknown,
+  seen: WeakSet<object>,
+): JSONValue | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (typeof value !== "object") {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const items: JSONValue[] = [];
+    for (const entry of value) {
+      const normalized = toJsonValue(entry, seen);
+      items.push(normalized === undefined ? null : normalized);
+    }
+    return items;
+  }
+
+  if (seen.has(value)) {
+    return undefined;
+  }
+  seen.add(value);
+
+  const candidate = value as { toJSON?: unknown };
+  if (typeof candidate.toJSON === "function") {
+    try {
+      return toJsonValue(candidate.toJSON(), seen);
+    } catch {
+      return undefined;
+    }
+  }
+
+  const result: Record<string, JSONValue> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    const normalized = toJsonValue(entry, seen);
+    if (normalized === undefined) {
+      continue;
+    }
+    result[key] = normalized;
+  }
+  return result;
 }

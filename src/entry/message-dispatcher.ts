@@ -203,9 +203,9 @@ function applySessionKey(
 }
 
 function stripPrefixFromElements(
-  elements: SessionElement[],
+  elements: ReadonlyArray<SessionElement>,
   prefixLength: number,
-): SessionElement[] {
+): ReadonlyArray<SessionElement> {
   if (prefixLength <= 0) {
     return elements;
   }

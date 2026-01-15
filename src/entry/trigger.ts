@@ -54,6 +54,9 @@ export function resolveTriggerRule(
 
 export function shouldEnqueue(input: TriggerDecisionInput): boolean {
   const { message, rule } = input;
+  if (!message.guildId) {
+    return true;
+  }
   if (mentionsSelf(message)) {
     return true;
   }

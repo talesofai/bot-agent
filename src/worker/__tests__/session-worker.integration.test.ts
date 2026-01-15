@@ -116,15 +116,16 @@ describe("session worker integration", () => {
         selfId: "bot-1",
         userId,
         guildId: groupId,
-        channelId: "channel-1",
+        channelId: groupId,
         messageId: "msg-1",
         content: "Hello there",
         elements: [{ type: "text", text: "Hello there" }],
         timestamp: Date.now(),
         extras: {},
       } as const;
-      await bufferStore.append(sessionId, session);
+      await bufferStore.append({ botId: "bot-1", groupId, sessionId }, session);
       await sessionQueue.enqueue({
+        botId: "bot-1",
         groupId,
         sessionId,
         userId,
@@ -199,15 +200,16 @@ describe("session worker integration", () => {
         selfId: "bot-1",
         userId,
         guildId: groupId,
-        channelId: "channel-1",
+        channelId: groupId,
         messageId: "msg-1",
         content: "   ",
         elements: [],
         timestamp: Date.now(),
         extras: {},
       } as const;
-      await bufferStore.append(sessionId, session);
+      await bufferStore.append({ botId: "bot-1", groupId, sessionId }, session);
       await sessionQueue.enqueue({
+        botId: "bot-1",
         groupId,
         sessionId,
         userId,

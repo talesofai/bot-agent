@@ -27,6 +27,26 @@ function makeConfig(overrides: Partial<GroupConfig>): GroupConfig {
 }
 
 describe("shouldEnqueue", () => {
+  test("always enqueues direct messages", () => {
+    const message: SessionEvent = {
+      ...baseMessage,
+      guildId: undefined,
+      channelId: "dm-1",
+      elements: [{ type: "text", text: baseMessage.content }],
+    };
+    const config = makeConfig({ triggerMode: "mention" });
+    const rule = resolveTriggerRule({
+      groupConfig: config,
+      globalKeywords: [],
+      botConfig: undefined,
+    });
+    const allowed = shouldEnqueue({
+      message,
+      rule,
+    });
+    expect(allowed).toBe(true);
+  });
+
   test("matches mention mode", () => {
     const message: SessionEvent = {
       ...baseMessage,

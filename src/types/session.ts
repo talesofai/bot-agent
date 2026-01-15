@@ -14,6 +14,7 @@ export interface HistoryEntry {
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+  groupId?: string;
   [key: string]: unknown;
 }
 

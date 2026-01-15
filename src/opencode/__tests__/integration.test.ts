@@ -82,6 +82,7 @@ describe("opencode integration", () => {
         const job: SessionJob = {
           id: "opencode-integration",
           data: {
+            botId: "bot-1",
             groupId,
             sessionId: session.meta.sessionId,
             userId,

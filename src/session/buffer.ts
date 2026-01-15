@@ -8,6 +8,12 @@ export interface SessionBufferStoreOptions {
   pendingTtlSeconds?: number;
 }
 
+export interface SessionBufferKey {
+  botId: string;
+  groupId: string;
+  sessionId: string;
+}
+
 export class SessionBufferStore {
   private redis: IORedis;
   private keyPrefix: string;
@@ -21,17 +27,17 @@ export class SessionBufferStore {
     this.pendingTtlSeconds = options.pendingTtlSeconds ?? 60;
   }
 
-  async append(sessionId: string, message: SessionEvent): Promise<void> {
-    const key = this.bufferKey(sessionId);
-    await this.redis.rpush(key, JSON.stringify(message));
+  async append(key: SessionBufferKey, message: SessionEvent): Promise<void> {
+    const redisKey = this.bufferKey(key);
+    await this.redis.rpush(redisKey, JSON.stringify(message));
   }
 
-  async drain(sessionId: string): Promise<SessionEvent[]> {
-    const key = this.bufferKey(sessionId);
+  async drain(key: SessionBufferKey): Promise<SessionEvent[]> {
+    const redisKey = this.bufferKey(key);
     const raw = (await this.redis.eval(
       "local entries = redis.call('LRANGE', KEYS[1], 0, -1); if #entries > 0 then redis.call('DEL', KEYS[1]); end; return entries;",
       1,
-      key,
+      redisKey,
     )) as string[];
     if (!raw || raw.length === 0) {
       return [];
@@ -47,17 +53,17 @@ export class SessionBufferStore {
       .filter((entry): entry is SessionEvent => entry !== null);
   }
 
-  async markPending(sessionId: string): Promise<void> {
-    const key = this.pendingKey(sessionId);
-    await this.redis.set(key, "1", "EX", this.pendingTtlSeconds);
+  async markPending(key: SessionBufferKey): Promise<void> {
+    const redisKey = this.pendingKey(key);
+    await this.redis.set(redisKey, "1", "EX", this.pendingTtlSeconds);
   }
 
-  async consumePending(sessionId: string): Promise<boolean> {
-    const key = this.pendingKey(sessionId);
+  async consumePending(key: SessionBufferKey): Promise<boolean> {
+    const redisKey = this.pendingKey(key);
     const result = (await this.redis.eval(
       "local exists = redis.call('EXISTS', KEYS[1]); if exists == 1 then redis.call('DEL', KEYS[1]); end; return exists;",
       1,
-      key,
+      redisKey,
     )) as number;
     return result === 1;
   }
@@ -66,11 +72,11 @@ export class SessionBufferStore {
     await this.redis.quit();
   }
 
-  private bufferKey(sessionId: string): string {
-    return `${this.keyPrefix}:${sessionId}`;
+  private bufferKey(key: SessionBufferKey): string {
+    return `${this.keyPrefix}:${key.botId}:${key.groupId}:${key.sessionId}`;
   }
 
-  private pendingKey(sessionId: string): string {
-    return `${this.pendingKeyPrefix}:${sessionId}`;
+  private pendingKey(key: SessionBufferKey): string {
+    return `${this.pendingKeyPrefix}:${key.botId}:${key.groupId}:${key.sessionId}`;
   }
 }

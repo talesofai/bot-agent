@@ -4,6 +4,7 @@ import { assertSafePathSegment } from "../utils/path";
 import { assertValidSessionKey, buildSessionId } from "../session/utils";
 
 export interface SessionJobData {
+  botId: string;
   groupId: string;
   sessionId: string;
   userId: string;
@@ -49,6 +50,7 @@ export class BullmqSessionQueue {
     jobData: SessionJobData,
     opts?: JobsOptions,
   ): Promise<SessionJob> {
+    assertSafePathSegment(jobData.botId, "botId");
     assertSafePathSegment(jobData.groupId, "groupId");
     assertSafePathSegment(jobData.userId, "userId");
     assertValidSessionKey(jobData.key);

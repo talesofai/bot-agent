@@ -60,7 +60,8 @@ export class GroupFileRepository {
 
     const agentPath = join(groupPath, "agent.md");
     if (!(await this.exists(agentPath))) {
-      await writeFile(agentPath, DEFAULT_AGENT_MD);
+      const defaultAgent = groupId === "0" ? "" : DEFAULT_AGENT_MD;
+      await writeFile(agentPath, defaultAgent);
       this.logger.debug({ groupId }, "Created default agent.md");
     }
 

@@ -14,6 +14,7 @@ import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "../worker/runner";
 import { SessionActivityStore } from "./activity-store";
 import { SessionBufferStore } from "./buffer";
+import type { SessionBufferKey } from "./buffer";
 
 export interface SessionProcessorOptions {
   logger: Logger;
@@ -66,7 +67,8 @@ export class SessionProcessor {
     let sessionInfo: SessionInfo | null = null;
 
     try {
-      let buffered = await this.bufferStore.drain(jobData.sessionId);
+      const bufferKey = toBufferKey(jobData);
+      let buffered = await this.bufferStore.drain(bufferKey);
       if (buffered.length === 0) {
         return;
       }
@@ -112,7 +114,7 @@ export class SessionProcessor {
         await this.recordActivity(sessionInfo);
         await this.sendResponse(mergedSession, output);
 
-        buffered = await this.drainPendingBuffer(jobData.sessionId);
+        buffered = await this.drainPendingBuffer(bufferKey);
       }
     } catch (err) {
       this.logger.error(
@@ -170,12 +172,14 @@ export class SessionProcessor {
     return { history, launchSpec };
   }
 
-  private async drainPendingBuffer(sessionId: string): Promise<SessionEvent[]> {
-    let buffered = await this.bufferStore.drain(sessionId);
+  private async drainPendingBuffer(
+    key: SessionBufferKey,
+  ): Promise<SessionEvent[]> {
+    let buffered = await this.bufferStore.drain(key);
     if (buffered.length === 0) {
-      const pending = await this.bufferStore.consumePending(sessionId);
+      const pending = await this.bufferStore.consumePending(key);
       if (pending) {
-        buffered = await this.bufferStore.drain(sessionId);
+        buffered = await this.bufferStore.drain(key);
       }
     }
     return buffered;
@@ -353,5 +357,13 @@ function resolveHistoryKey(session: SessionEvent): HistoryKey | null {
   return {
     botAccountId: `${session.platform}:${session.selfId}`,
     userId: session.userId,
+  };
+}
+
+function toBufferKey(jobData: SessionJobData): SessionBufferKey {
+  return {
+    botId: jobData.botId,
+    groupId: jobData.groupId,
+    sessionId: jobData.sessionId,
   };
 }

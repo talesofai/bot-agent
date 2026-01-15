@@ -132,6 +132,7 @@ export class SessionWorker {
   }
 
   private validateJobData(jobData: SessionJobData): SessionJobData {
+    assertSafePathSegment(jobData.botId, "botId");
     assertSafePathSegment(jobData.groupId, "groupId");
     assertSafePathSegment(jobData.userId, "userId");
     assertSafePathSegment(jobData.sessionId, "sessionId");

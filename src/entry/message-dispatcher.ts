@@ -50,10 +50,14 @@ export class MessageDispatcher {
 
   async dispatch(message: SessionEvent): Promise<void> {
     try {
-      const groupId =
-        this.defaultGroupId ?? message.guildId ?? message.channelId;
+      const groupId = resolveDispatchGroupId(message, this.defaultGroupId);
       if (!groupId || !isSafePathSegment(groupId)) {
         this.logger.error({ groupId }, "Invalid groupId for message dispatch");
+        return;
+      }
+      const botId = message.selfId;
+      if (!botId || !isSafePathSegment(botId)) {
+        this.logger.error({ botId }, "Invalid botId for message dispatch");
         return;
       }
       if (!isSafePathSegment(message.userId)) {
@@ -139,16 +143,18 @@ export class MessageDispatcher {
 
       const session = applySessionKey(message, trimmedContent, prefixLength);
       const sessionId = buildSessionId(message.userId, key);
-      await this.bufferStore.append(sessionId, session);
-      await this.bufferStore.markPending(sessionId);
+      const bufferKey = { botId, groupId, sessionId };
+      await this.bufferStore.append(bufferKey, session);
+      await this.bufferStore.markPending(bufferKey);
       await this.sessionQueue.enqueue(
         {
+          botId,
           groupId,
           userId: message.userId,
           key,
           sessionId,
         },
-        { jobId: `trigger:${groupId}:${sessionId}` },
+        { jobId: `trigger:${botId}:${groupId}:${sessionId}` },
       );
     } catch (err) {
       this.logger.error(
@@ -157,6 +163,19 @@ export class MessageDispatcher {
       );
     }
   }
+}
+
+function resolveDispatchGroupId(
+  message: SessionEvent,
+  defaultGroupId?: string,
+): string | null {
+  if (!message.guildId) {
+    return "0";
+  }
+  if (defaultGroupId) {
+    return defaultGroupId;
+  }
+  return message.channelId;
 }
 
 function applySessionKey(

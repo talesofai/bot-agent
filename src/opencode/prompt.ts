@@ -21,7 +21,9 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
         return null;
       }
       const timestamp = formatHistoryTimestamp(entry.createdAt);
-      return `${entry.role} [${timestamp}]: ${content}`;
+      const groupId = entry.groupId?.trim();
+      const suffix = groupId ? ` group:${groupId}` : "";
+      return `${entry.role} [${timestamp}${suffix}]: ${content}`;
     })
     .filter((line): line is string => Boolean(line));
 

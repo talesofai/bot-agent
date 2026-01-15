@@ -1,5 +1,7 @@
 # 分布式 Opencode 架构设计 (User-Isolated)
 
+> 历史与路由已转向 PostgreSQL + Redis，详见 `docs/design/history-routing.md`。
+
 ## 1. 核心目标
 
 在 **仅使用 NAS 共享存储** 的前提下，实现 **多机水平扩展**，并保证 **用户会话隔离**。
@@ -13,8 +15,7 @@
 1.  **数据隔离 (Isolation)**:
     - **Group 级**: 物理目录隔离。
     - **Session 级**: 目录 `sessions/{sid}` 为执行单元。
-      - **命名规范**: `{userid}-{key}` (默认 key=0)。
-      - **多重会话**: 支持 `key` 扩展 (需配置开启)，允许同一用户拥有多个并行宇宙。
+      - **命名规范**: `{userId}`。
     - **用户级**: 逻辑强制检查，确保 Session 归属单一用户。
 
 2.  **权限模型 (Permissions)**:
@@ -26,7 +27,7 @@
     - **Admin/WebUI**: 修改 `agent.md`, `skills/` 等全局配置。
 
 3.  **并发模型**:
-    - **用户锁**: 基于 `sid` (`{userid}-{key}`) 加锁。不同 key 的 session 可并行。
+    - **用户锁**: 基于 `sid` (`{userId}`) 加锁。
     - **全局并发**: 只要 Session ID 不同，完全并行。
 
 ## 3. 目录结构规范
@@ -40,8 +41,6 @@
 │   └── images/
 └── sessions/               # [System RW]
     └── {session_id}/       # [Opencode RW] 用户独占工作区
-        ├── history.sqlite  # 会话历史
-        ├── meta.json       # { sessionId, groupId, ownerId, key, status, createdAt, updatedAt }
         ├── workspace/      # Opencode CWD (工作目录，内部文件按需生成)
 ```
 

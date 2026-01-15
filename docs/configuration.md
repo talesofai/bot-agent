@@ -53,6 +53,9 @@ LLBOT_REGISTRY_TTL_SEC=30
 # 注册刷新间隔（秒）
 LLBOT_REGISTRY_REFRESH_SEC=10
 
+# bot 路由注册表前缀
+BOT_ROUTE_PREFIX=bot:route
+
 # 注册器参数（仅 llbot 注册器使用）
 LLBOT_REGISTRY_BOT_ID=
 LLBOT_REGISTRY_WS_URL=
@@ -99,7 +102,7 @@ GROUPS_DATA_DIR=/data/groups
 DATA_DIR=/data
 ```
 
-`GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置与会话历史。
+`GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置。
 
 ### 日志配置
 
@@ -134,6 +137,10 @@ llbotRegistry:
   prefix: ${LLBOT_REGISTRY_PREFIX:-llbot:registry}
   ttlSeconds: ${LLBOT_REGISTRY_TTL_SEC:-30}
   refreshSeconds: ${LLBOT_REGISTRY_REFRESH_SEC:-10}
+
+# bot 路由注册表配置
+botRouteRegistry:
+  prefix: ${BOT_ROUTE_PREFIX:-bot:route}
 
 # Agent 配置
 agent:
@@ -187,16 +194,30 @@ logging:
 ├── skills/           # 群技能（默认技能规划中）
 │   ├── draw.md
 │   └── roleplay.md
-├── sessions/         # 用户会话
-│   └── {user}-{key}/
-│       ├── history.sqlite
-│       ├── meta.json
-│       └── workspace/
 └── assets/           # 群资源
     └── images/
 ```
 
 > 注意：群目录需要预先创建（或由运维脚本创建）。目录不存在时不会自动初始化，也不会触发消息入队。
+
+## bot 账号标识与路由
+
+### bot_account_id 规则
+
+```
+{platform}:{account_id}
+```
+
+示例：`qq:12345678`、`discord:987654321`
+
+### Redis 路由
+
+```
+HSET bot:route:{bot_account_id} llbot_ordinal 3 ws_url ws://llbot-3... updated_at ...
+EXPIRE bot:route:{bot_account_id} 30
+```
+
+数据库不保存 llbot 路由信息。
 
 ### 继承与覆盖规则
 

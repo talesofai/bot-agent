@@ -1,6 +1,6 @@
 # 架构设计
 
-本文档描述 Bot Agent 的系统架构和技术选型。
+本文档描述 Bot Agent 的系统架构和技术选型。历史与路由的目标设计见 `docs/design/history-routing.md`。
 
 ## 系统概览
 
@@ -44,14 +44,14 @@
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      存储层 (文件系统)                           │
+│                  存储层 (文件系统 + PostgreSQL)                  │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
 │  │ Group 123   │  │ Group 456   │  │ Group 789   │              │
 │  │ ├ agent.md  │  │ ├ agent.md  │  │ ├ agent.md  │              │
 │  │ ├ skills/   │  │ ├ skills/   │  │ ├ skills/   │              │
-│  │ ├ sessions/ │  │ ├ sessions/ │  │ ├ sessions/ │              │
 │  │ └ assets/   │  │ └ assets/   │  │ └ assets/   │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
+│            PostgreSQL: history_entries (user 维度)               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -104,7 +104,7 @@ opencode -p "用户消息内容" \
 
 **职责**：持久化群配置和会话历史
 
-每个群独立目录，结构如下：
+每个群独立目录，结构如下（历史已迁移至 PostgreSQL）：
 
 ```
 /data/groups/{group_id}/
@@ -112,11 +112,6 @@ opencode -p "用户消息内容" \
 ├── skills/           # 自定义技能
 │   ├── draw.md       # 绘画技能
 │   └── roleplay.md   # 角色扮演技能
-├── sessions/         # 用户会话
-│   └── {user}-{key}/
-│       ├── history.sqlite
-│       ├── meta.json
-│       └── workspace/
 ├── assets/           # 群资源
 │   └── images/
 └── config.yaml       # 群配置
@@ -140,10 +135,10 @@ opencode -p "用户消息内容" \
 ### Agent 调用流程
 
 ```
-1. Bot Agent 准备会话工作目录（sessions/{user}-{key}/workspace）
-2. 加载 agent.md 作为 system prompt
-3. 调用 opencode 非交互模式
-4. Bot Agent 读取 sessions/ 历史记录并组装 prompt（skills 注入规划中）
+1. Bot Agent 准备用户工作目录（sessions/{userId}/workspace）
+2. 读取群配置与 agent.md 作为 system prompt（私聊 groupId=0 时为空）
+3. 读取 PostgreSQL 中该 userId 的历史
+4. 调用 opencode 非交互模式
 5. opencode 执行推理，可能调用 talesofai MCP 工具
 6. 返回 JSON 格式响应
 7. Bot Agent 解析响应，发送消息

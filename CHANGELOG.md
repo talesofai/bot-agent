@@ -15,6 +15,7 @@
 ### Changed
 
 - 配置示例与文档更新为自动启用 Discord（无需切换 PLATFORM）
+- 会话/缓冲/任务/机器人配置使用 `{platform}-{canonicalBotId}` 作为 botId，避免跨平台 id 冲突
 
 ## [0.0.27] - 2026-01-15
 

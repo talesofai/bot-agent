@@ -15,7 +15,7 @@ import type { OpencodeRunner } from "../worker/runner";
 import { SessionActivityStore } from "./activity-store";
 import { SessionBufferStore } from "./buffer";
 import type { SessionBufferKey } from "./buffer";
-import { resolveCanonicalBotId } from "../utils/bot-id";
+import { buildBotAccountId } from "../utils/bot-id";
 
 export interface SessionProcessorOptions {
   logger: Logger;
@@ -368,9 +368,8 @@ function resolveHistoryKey(session: SessionEvent): HistoryKey | null {
   if (!session.selfId) {
     return null;
   }
-  const botId = resolveCanonicalBotId(session.selfId);
   return {
-    botAccountId: `${session.platform}:${botId}`,
+    botAccountId: buildBotAccountId(session.platform, session.selfId),
     userId: session.userId,
   };
 }

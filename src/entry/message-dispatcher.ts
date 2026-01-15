@@ -15,7 +15,7 @@ import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
 import { SessionBufferStore } from "../session/buffer";
-import { resolveCanonicalBotId } from "../utils/bot-id";
+import { buildBotFsId, resolveCanonicalBotId } from "../utils/bot-id";
 
 export interface MessageDispatcherOptions {
   adapter: PlatformAdapter;
@@ -64,13 +64,14 @@ export class MessageDispatcher {
         );
         return;
       }
-      const botId = resolveCanonicalBotId(rawBotId);
-      if (botId !== rawBotId) {
+      const canonicalBotId = resolveCanonicalBotId(rawBotId);
+      if (canonicalBotId !== rawBotId) {
         this.logger.info(
-          { botId: rawBotId, canonicalBotId: botId },
+          { botId: rawBotId, canonicalBotId },
           "Resolved botId alias",
         );
       }
+      const botId = buildBotFsId(message.platform, rawBotId);
       if (!isSafePathSegment(message.userId)) {
         this.logger.error(
           { userId: message.userId, groupId },
@@ -91,8 +92,7 @@ export class MessageDispatcher {
       const globalKeywords = routerSnapshot?.globalKeywords ?? [];
       const globalEchoRate = routerSnapshot?.globalEchoRate ?? 30;
       const botConfigs = routerSnapshot?.botConfigs ?? new Map();
-      const selfId = message.selfId ?? "";
-      const botConfig = selfId ? botConfigs.get(selfId) : undefined;
+      const botConfig = botConfigs.get(botId);
       const triggerRule = resolveTriggerRule({
         groupConfig,
         globalKeywords,

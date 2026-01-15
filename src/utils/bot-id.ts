@@ -7,6 +7,20 @@ export function resolveCanonicalBotId(botId: string): string {
   return mapped ?? botId;
 }
 
+export function buildBotAccountId(platform: string, botId: string): string {
+  assertSafePathSegment(platform, "platform");
+  const canonicalId = resolveCanonicalBotId(botId);
+  return `${platform}:${canonicalId}`;
+}
+
+export function buildBotFsId(platform: string, botId: string): string {
+  assertSafePathSegment(platform, "platform");
+  const canonicalId = resolveCanonicalBotId(botId);
+  const fsId = `${platform}-${canonicalId}`;
+  assertSafePathSegment(fsId, "botId");
+  return fsId;
+}
+
 export function getBotIdAliasMap(): Map<string, string> {
   return new Map(BOT_ID_ALIASES);
 }

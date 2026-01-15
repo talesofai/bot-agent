@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Logger } from "pino";
+import { z } from "zod";
 
 import type { SessionInfo, SessionMeta } from "../types/session";
 import { buildSessionId } from "./utils";
@@ -155,19 +156,18 @@ export class SessionRepository {
   }
 }
 
+const sessionMetaSchema = z
+  .object({
+    sessionId: z.string(),
+    groupId: z.string(),
+    ownerId: z.string(),
+    key: z.number().int(),
+    status: z.enum(["idle", "running"]),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .passthrough();
+
 function isSessionMeta(value: unknown): value is SessionMeta {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const obj = value as Record<string, unknown>;
-  return (
-    typeof obj.sessionId === "string" &&
-    typeof obj.groupId === "string" &&
-    typeof obj.ownerId === "string" &&
-    typeof obj.key === "number" &&
-    Number.isInteger(obj.key) &&
-    (obj.status === "idle" || obj.status === "running") &&
-    typeof obj.createdAt === "string" &&
-    typeof obj.updatedAt === "string"
-  );
+  return sessionMetaSchema.safeParse(value).success;
 }

@@ -7,7 +7,7 @@ ENV PATH="${BUN_INSTALL}/bin:${PATH}"
 ENV npm_config_registry=https://registry.npmjs.org
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl unzip build-essential bash \
+  && apt-get install -y --no-install-recommends ca-certificates curl unzip build-essential bash git \
   && curl -fsSL https://bun.sh/install | bash \
   && rm -rf /var/lib/apt/lists/*
 

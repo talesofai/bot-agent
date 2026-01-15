@@ -22,6 +22,7 @@
 ### Fixed
 
 - Docker 镜像默认 CMD 改为 `bun run start:adapter`，避免缺少 `start` 脚本导致容器退出
+- 默认 `agent.md` 模板改为读取 `configs/default-agent.md`，移除代码硬编码，确保行为可控且文档一致
 
 ## [0.0.27] - 2026-01-15
 

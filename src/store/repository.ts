@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { basename, dirname, join, resolve } from "node:path";
 import matter from "gray-matter";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "pino";
@@ -15,10 +16,8 @@ import {
 } from "../types/group";
 import { assertSafePathSegment } from "../utils/path";
 
-const DEFAULT_AGENT_MD = `# Agent
-
-你是一个友好的助手。
-`;
+const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const DEFAULT_AGENT_MD_PATH = join(PROJECT_ROOT, "configs", "default-agent.md");
 
 const DEFAULT_CONFIG_YAML = `# 群配置
 enabled: true
@@ -41,6 +40,7 @@ export interface GroupFileRepositoryOptions {
 export class GroupFileRepository {
   private dataDir: string;
   private logger: Logger;
+  private cachedDefaultAgent: string | null = null;
 
   constructor(options: GroupFileRepositoryOptions) {
     this.dataDir = options.dataDir;
@@ -58,7 +58,8 @@ export class GroupFileRepository {
 
     const agentPath = join(groupPath, "agent.md");
     if (!(await this.exists(agentPath))) {
-      const defaultAgent = groupId === "0" ? "" : DEFAULT_AGENT_MD;
+      const defaultAgent =
+        groupId === "0" ? "" : await this.loadDefaultAgentTemplate();
       await writeFile(agentPath, defaultAgent);
       this.logger.debug({ groupId }, "Created default agent.md");
     }
@@ -70,6 +71,22 @@ export class GroupFileRepository {
     }
 
     return groupPath;
+  }
+
+  private async loadDefaultAgentTemplate(): Promise<string> {
+    if (this.cachedDefaultAgent !== null) {
+      return this.cachedDefaultAgent;
+    }
+    try {
+      const content = await readFile(DEFAULT_AGENT_MD_PATH, "utf-8");
+      this.cachedDefaultAgent = content;
+      return content;
+    } catch (err) {
+      throw new Error(
+        `Missing default agent template at ${DEFAULT_AGENT_MD_PATH}; please provide configs/default-agent.md`,
+        { cause: err },
+      );
+    }
   }
 
   async loadGroup(groupId: string): Promise<GroupData | null> {

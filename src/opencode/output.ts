@@ -12,26 +12,29 @@ export function parseOpencodeOutput(
   if (!raw) {
     return null;
   }
-  const parsed = tryParseJson(raw.trim());
+  const parsed = parseJsonFromRaw(raw.trim());
   return parsed ? extractResult(parsed, createdAt) : null;
 }
 
-function tryParseJson(raw: string | null): unknown | null {
-  if (!raw) {
-    return null;
+function parseJsonFromRaw(raw: string): unknown | null {
+  const direct = tryParseJson(raw);
+  if (direct !== null) {
+    return direct;
   }
+  for (const block of scanJsonBlocks(raw)) {
+    const parsed = tryParseJson(block);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function tryParseJson(raw: string): unknown | null {
   try {
     return JSON.parse(raw);
   } catch {
-    const block = findJsonBlock(raw);
-    if (!block) {
-      return null;
-    }
-    try {
-      return JSON.parse(block);
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -131,7 +134,7 @@ function extractOutput(
   return null;
 }
 
-function findJsonBlock(raw: string): string | null {
+function* scanJsonBlocks(raw: string): Generator<string> {
   let start = -1;
   let inString = false;
   let escaped = false;
@@ -173,11 +176,10 @@ function findJsonBlock(raw: string): string | null {
       if ((ch === "}" && last === "{") || (ch === "]" && last === "[")) {
         stack.pop();
         if (stack.length === 0 && start >= 0) {
-          return raw.slice(start, i + 1);
+          yield raw.slice(start, i + 1);
+          start = -1;
         }
       }
     }
   }
-
-  return null;
 }

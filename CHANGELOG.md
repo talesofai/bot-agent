@@ -20,6 +20,7 @@
 - SessionWorker 直接发送消息，移除 ResponseQueue/ResponseWorker
 - opencode-ai 依赖升级至 1.1.20
 - 解析层过滤纯空白文本节点，trimTextElements 简化为 filter/map
+- Opencode 输出解析改为扫描 JSON 块并择优解析
 
 ## [0.0.25] - 2026-01-15
 

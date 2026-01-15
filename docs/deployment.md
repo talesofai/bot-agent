@@ -55,6 +55,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 - `deployments/k8s/llbot-deployment.yaml`
 - `deployments/k8s/llbot-service.yaml`
 - `deployments/k8s/redis.yaml`
+- `deployments/k8s/postgres.yaml`
 
 ## Secret 管理（推荐）
 
@@ -110,6 +111,7 @@ stringData:
   OPENAI_API_KEY: ""
   ANTHROPIC_API_KEY: ""
   GEMINI_API_KEY: ""
+  POSTGRES_PASSWORD: ""
   DATABASE_URL: ""
   API_TOKEN: "" # 预留给 Bot Agent API 认证
 ```
@@ -262,6 +264,7 @@ spec:
 ```bash
 kubectl apply -f deployments/k8s/bot-namespace.yaml
 kubectl apply -f deployments/k8s/redis.yaml
+kubectl apply -f deployments/k8s/postgres.yaml
 kubectl apply -f deployments/k8s/llbot-pvc.yaml
 kubectl apply -f deployments/k8s/llbot-secret.yaml
 kubectl apply -f deployments/k8s/llbot-configmap.yaml
@@ -275,6 +278,10 @@ kubectl apply -f deployments/k8s/session-cleaner-cronjob.yaml
 kubectl -n bot set image deployment/opencode-bot-agent-adapter opencode-bot-agent-adapter=registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
 kubectl -n bot set image deployment/opencode-bot-agent-worker opencode-bot-agent-worker=registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
 kubectl -n bot set image cronjob/session-cleaner session-cleaner=registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+
+# 若集群无法访问 docker.io，可将基础依赖也切到镜像仓库
+kubectl -n bot set image statefulset/redis redis=registry.cn-shanghai.aliyuncs.com/talesofai/redis:7.4-alpine
+kubectl -n bot set image statefulset/postgres postgres=registry.cn-shanghai.aliyuncs.com/talesofai/postgres:16-alpine
 ```
 
 如果你的节点是 ARM 架构，请使用 amd64 节点运行或自行构建对应架构镜像。

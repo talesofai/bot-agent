@@ -52,7 +52,8 @@ WEBUI_TOKEN=your-token
 OPENAI_API_KEY=sk-xxx
 DISCORD_TOKEN=your-token
 DISCORD_APPLICATION_ID=your-app-id
-DATABASE_URL=postgres://postgres:postgres@postgres:5432/opencode
+POSTGRES_PASSWORD=your-postgres-password
+DATABASE_URL=postgres://postgres:your-postgres-password@postgres:5432/opencode
 API_TOKEN=your-token
 ```
 

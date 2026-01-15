@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.0.27] - 2026-01-15
+
 ### Added
 
 - PostgreSQL 历史存储（`PostgresHistoryStore`），按 `bot_account_id + user_id` 读写并记录 `groupId`

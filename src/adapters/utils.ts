@@ -25,20 +25,45 @@ export function trimTextElements(elements: SessionElement[]): SessionElement[] {
   if (filtered.length === 0) {
     return [];
   }
-  return filtered.map((element, index) => {
-    if (element.type !== "text") {
-      return element;
+  const result = [...filtered];
+
+  let firstTextIndex = -1;
+  for (let i = 0; i < result.length; i += 1) {
+    if (result[i].type === "text") {
+      firstTextIndex = i;
+      break;
     }
-    if (index === 0) {
-      const text = element.text.trimStart();
-      return text === element.text ? element : { ...element, text };
+  }
+  if (firstTextIndex >= 0) {
+    const first = result[firstTextIndex] as Extract<
+      SessionElement,
+      { type: "text" }
+    >;
+    const text = first.text.trimStart();
+    if (text !== first.text) {
+      result[firstTextIndex] = { ...first, text };
     }
-    if (index === filtered.length - 1) {
-      const text = element.text.trimEnd();
-      return text === element.text ? element : { ...element, text };
+  }
+
+  let lastTextIndex = -1;
+  for (let i = result.length - 1; i >= 0; i -= 1) {
+    if (result[i].type === "text") {
+      lastTextIndex = i;
+      break;
     }
-    return element;
-  });
+  }
+  if (lastTextIndex >= 0) {
+    const last = result[lastTextIndex] as Extract<
+      SessionElement,
+      { type: "text" }
+    >;
+    const text = last.text.trimEnd();
+    if (text !== last.text) {
+      result[lastTextIndex] = { ...last, text };
+    }
+  }
+
+  return result;
 }
 
 function hasNonWhitespace(text: string): boolean {

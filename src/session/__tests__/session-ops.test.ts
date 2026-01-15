@@ -6,7 +6,7 @@ import { join } from "node:path";
 import pino from "pino";
 
 import { GroupFileRepository } from "../../store/repository";
-import { HistoryStore } from "../history";
+import { InMemoryHistoryStore } from "../history";
 import { SessionRepository } from "../repository";
 import { createSession } from "../session-ops";
 
@@ -156,7 +156,7 @@ describe("createSession", () => {
       dataDir: tempDir,
       logger,
     });
-    const historyStore = new HistoryStore(logger);
+    const historyStore = new InMemoryHistoryStore();
     const session = await createSession({
       groupId: "group-1",
       userId: "user-1",
@@ -165,17 +165,25 @@ describe("createSession", () => {
       groupRepository,
       sessionRepository,
     });
-    await historyStore.appendHistory(session.historyPath, {
-      role: "user",
-      content: "hello",
-      createdAt: "t",
+    await historyStore.appendHistory(
+      { botAccountId: "test:bot-1", userId: session.meta.ownerId },
+      {
+        role: "user",
+        content: "hello",
+        createdAt: "t",
+        groupId: session.meta.groupId,
+      },
+    );
+    const history = await historyStore.readHistory({
+      botAccountId: "test:bot-1",
+      userId: session.meta.ownerId,
     });
-    const history = await historyStore.readHistory(session.historyPath);
     expect(history).toEqual([
       {
         role: "user",
         content: "hello",
         createdAt: "t",
+        groupId: "group-1",
       },
     ]);
     rmSync(tempDir, { recursive: true, force: true });

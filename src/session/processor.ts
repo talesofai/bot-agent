@@ -6,7 +6,7 @@ import type { PlatformAdapter, SessionEvent } from "../types/platform";
 import type { HistoryEntry, SessionInfo } from "../types/session";
 import { GroupFileRepository } from "../store/repository";
 import { SessionRepository } from "./repository";
-import { HistoryStore } from "./history";
+import type { HistoryKey, HistoryStore } from "./history";
 import { createSession } from "./session-ops";
 import { buildBufferedInput, buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
@@ -85,10 +85,12 @@ export class SessionProcessor {
 
       while (buffered.length > 0) {
         const { mergedSession, promptInput } = buildBufferedInput(buffered);
+        const historyKey = resolveHistoryKey(mergedSession);
         const { history, launchSpec } = await this.buildPromptContext(
           jobData.groupId,
           sessionInfo,
           mergedSession,
+          historyKey,
           promptInput,
         );
 
@@ -103,6 +105,7 @@ export class SessionProcessor {
         await this.appendHistoryFromJob(
           sessionInfo,
           mergedSession,
+          historyKey,
           result.historyEntries,
           output,
         );
@@ -131,24 +134,25 @@ export class SessionProcessor {
   async close(): Promise<void> {
     await this.activityIndex.close();
     await this.bufferStore.close();
+    await this.historyStore.close();
   }
 
   private async buildPromptContext(
     groupId: string,
     sessionInfo: SessionInfo,
     sessionInput: SessionEvent,
+    historyKey: HistoryKey | null,
     promptInput: string,
   ): Promise<{
     history: HistoryEntry[];
     launchSpec: ReturnType<OpencodeLauncher["buildLaunchSpec"]>;
   }> {
-    const history = await this.historyStore.readHistory(
-      sessionInfo.historyPath,
-      {
-        maxEntries: this.historyMaxEntries,
-        maxBytes: this.historyMaxBytes,
-      },
-    );
+    const history = historyKey
+      ? await this.historyStore.readHistory(historyKey, {
+          maxEntries: this.historyMaxEntries,
+          maxBytes: this.historyMaxBytes,
+        })
+      : [];
     const groupConfig = await this.getGroupConfig(groupId);
     const agentPrompt = await this.getAgentPrompt(groupId);
     const systemPrompt = buildSystemPrompt(agentPrompt);
@@ -230,9 +234,13 @@ export class SessionProcessor {
   private async appendHistoryFromJob(
     sessionInfo: SessionInfo,
     session: SessionEvent,
+    historyKey: HistoryKey | null,
     historyEntries?: HistoryEntry[],
     output?: string,
   ): Promise<void> {
+    if (!historyKey) {
+      return;
+    }
     const entries: HistoryEntry[] = [];
 
     const nowIso = new Date().toISOString();
@@ -243,12 +251,18 @@ export class SessionProcessor {
       role: "user",
       content: userContent,
       createdAt: userCreatedAt,
+      groupId: sessionInfo.meta.groupId,
     });
 
     const nonUserEntries =
       historyEntries?.filter((entry) => entry.role !== "user") ?? [];
     if (nonUserEntries.length > 0) {
-      entries.push(...nonUserEntries);
+      entries.push(
+        ...nonUserEntries.map((entry) => ({
+          ...entry,
+          groupId: sessionInfo.meta.groupId,
+        })),
+      );
     }
 
     const hasAssistantEntry = nonUserEntries.some(
@@ -259,11 +273,12 @@ export class SessionProcessor {
         role: "assistant",
         content: output,
         createdAt: nowIso,
+        groupId: sessionInfo.meta.groupId,
       });
     }
 
     for (const entry of entries) {
-      await this.historyStore.appendHistory(sessionInfo.historyPath, entry);
+      await this.historyStore.appendHistory(historyKey, entry);
     }
   }
 
@@ -329,4 +344,14 @@ function resolveOutput(output?: string): string | undefined {
     return undefined;
   }
   return output.trim() ? output : undefined;
+}
+
+function resolveHistoryKey(session: SessionEvent): HistoryKey | null {
+  if (!session.selfId) {
+    return null;
+  }
+  return {
+    botAccountId: `${session.platform}:${session.selfId}`,
+    userId: session.userId,
+  };
 }

@@ -6,7 +6,7 @@ import pino from "pino";
 
 import type { SessionJob } from "../../queue";
 import { GroupFileRepository } from "../../store/repository";
-import { HistoryStore } from "../../session/history";
+import { InMemoryHistoryStore } from "../../session/history";
 import { SessionRepository } from "../../session/repository";
 import { createSession } from "../../session/session-ops";
 import { OpencodeLauncher } from "../launcher";
@@ -29,10 +29,11 @@ describe("opencode integration", () => {
       dataDir: tempDir,
       logger,
     });
-    const historyStore = new HistoryStore(logger);
+    const historyStore = new InMemoryHistoryStore();
     const groupId = "group-1";
     const userId = "user-1";
     const key = 0;
+    const historyKey = { botAccountId: "test:bot-1", userId };
 
     try {
       const opencodeBin = process.env.OPENCODE_BIN ?? "opencode";
@@ -57,12 +58,13 @@ describe("opencode integration", () => {
 
       const runTurn = async (input: string): Promise<void> => {
         const now = new Date().toISOString();
-        await historyStore.appendHistory(session.historyPath, {
+        await historyStore.appendHistory(historyKey, {
           role: "user",
           content: input,
           createdAt: now,
+          groupId,
         });
-        const history = await historyStore.readHistory(session.historyPath, {
+        const history = await historyStore.readHistory(historyKey, {
           maxEntries: 20,
         });
         await groupRepository.ensureGroupDir(groupId);
@@ -95,15 +97,19 @@ describe("opencode integration", () => {
         const createdAt = new Date().toISOString();
         if (result.historyEntries?.length) {
           for (const entry of result.historyEntries) {
-            await historyStore.appendHistory(session.historyPath, entry);
+            await historyStore.appendHistory(historyKey, {
+              ...entry,
+              groupId,
+            });
           }
           return;
         }
         if (result.output) {
-          await historyStore.appendHistory(session.historyPath, {
+          await historyStore.appendHistory(historyKey, {
             role: "assistant",
             content: result.output,
             createdAt,
+            groupId,
           });
           return;
         }
@@ -113,7 +119,7 @@ describe("opencode integration", () => {
       await runTurn("Say hi in one short sentence.");
       await runTurn("Now answer in one short sentence.");
 
-      const updated = await historyStore.readHistory(session.historyPath, {
+      const updated = await historyStore.readHistory(historyKey, {
         maxEntries: 50,
       });
       const assistantMessages = updated.filter(

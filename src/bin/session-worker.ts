@@ -7,6 +7,9 @@ import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 
 const config = getConfig();
+if (!config.DATABASE_URL) {
+  throw new Error("DATABASE_URL is required for session worker");
+}
 
 logger.info(
   {
@@ -50,6 +53,7 @@ const worker = new SessionWorker({
   id: "worker-1",
   dataDir: config.GROUPS_DATA_DIR,
   adapter,
+  databaseUrl: config.DATABASE_URL,
   redis: {
     url: config.REDIS_URL,
   },

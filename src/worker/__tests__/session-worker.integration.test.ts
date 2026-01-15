@@ -6,7 +6,7 @@ import pino from "pino";
 
 import { BullmqSessionQueue } from "../../queue";
 import { SessionBufferStore } from "../../session/buffer";
-import { HistoryStore } from "../../session/history";
+import { InMemoryHistoryStore } from "../../session/history";
 import { SessionRepository } from "../../session/repository";
 import { buildSessionId } from "../../session/utils";
 import type {
@@ -83,10 +83,12 @@ describe("session worker integration", () => {
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-test-${Date.now()}`;
     const adapter = new MemoryAdapter();
+    const historyStore = new InMemoryHistoryStore();
     const worker = new SessionWorker({
       id: "session-test",
       dataDir: tempDir,
       adapter,
+      historyStore,
       redis: {
         url: redisUrl,
       },
@@ -136,12 +138,17 @@ describe("session worker integration", () => {
         dataDir: tempDir,
         logger,
       });
-      const historyStore = new HistoryStore(logger);
-      const session = await sessionRepository.loadSession(groupId, sessionId);
-      expect(session).not.toBeNull();
-      const history = await historyStore.readHistory(session!.historyPath, {
-        maxEntries: 20,
-      });
+      const sessionInfo = await sessionRepository.loadSession(
+        groupId,
+        sessionId,
+      );
+      expect(sessionInfo).not.toBeNull();
+      const history = await historyStore.readHistory(
+        { botAccountId: "test:bot-1", userId },
+        {
+          maxEntries: 20,
+        },
+      );
       const assistant = history.filter((entry) => entry.role === "assistant");
       expect(assistant.length).toBeGreaterThan(0);
       expect(assistant[assistant.length - 1].content).toBe("Test response");
@@ -159,10 +166,12 @@ describe("session worker integration", () => {
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-empty-test-${Date.now()}`;
     const adapter = new MemoryAdapter();
+    const historyStore = new InMemoryHistoryStore();
     const worker = new SessionWorker({
       id: "session-empty-test",
       dataDir: tempDir,
       adapter,
+      historyStore,
       redis: {
         url: redisUrl,
       },
@@ -212,12 +221,17 @@ describe("session worker integration", () => {
         dataDir: tempDir,
         logger,
       });
-      const historyStore = new HistoryStore(logger);
-      const session = await sessionRepository.loadSession(groupId, sessionId);
-      expect(session).not.toBeNull();
-      const history = await historyStore.readHistory(session!.historyPath, {
-        maxEntries: 20,
-      });
+      const sessionInfo = await sessionRepository.loadSession(
+        groupId,
+        sessionId,
+      );
+      expect(sessionInfo).not.toBeNull();
+      const history = await historyStore.readHistory(
+        { botAccountId: "test:bot-1", userId },
+        {
+          maxEntries: 20,
+        },
+      );
       const userEntries = history.filter((entry) => entry.role === "user");
       expect(userEntries[userEntries.length - 1]?.content).toBe(" ");
     } finally {

@@ -8,6 +8,7 @@ export interface SessionWorkerPoolOptions {
   size: number;
   queueName: string;
   redisUrl: string;
+  databaseUrl: string;
   dataDir: string;
   adapter: PlatformAdapter;
   runner: OpencodeRunner;
@@ -29,6 +30,7 @@ export class SessionWorkerPool {
       id: "pool",
       dataDir: options.dataDir,
       adapter: options.adapter,
+      databaseUrl: options.databaseUrl,
       redis: {
         url: options.redisUrl,
       },

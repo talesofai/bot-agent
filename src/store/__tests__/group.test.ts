@@ -103,6 +103,7 @@ keywords:
   - help
 `,
       );
+      writeFileSync(join(groupPath, "agent.md"), "# Agent\n\nYou are helpful.");
 
       const group = await store.loadGroup("test-group");
 
@@ -121,6 +122,7 @@ keywords:
 maxSessions: 3
 `,
       );
+      writeFileSync(join(groupPath, "agent.md"), "# Agent\n\nYou are helpful.");
 
       const group = await store.loadGroup("multi-session");
 
@@ -131,6 +133,7 @@ maxSessions: 3
     test("should parse agent.md with frontmatter", async () => {
       const groupPath = join(testDir, "agent-group");
       mkdirSync(groupPath, { recursive: true });
+      writeFileSync(join(groupPath, "config.yaml"), "enabled: true\n");
       writeFileSync(
         join(groupPath, "agent.md"),
         `---
@@ -153,6 +156,9 @@ Be friendly and concise.
 
     test("should load skills from skills directory", async () => {
       const groupPath = join(testDir, "skills-group");
+      mkdirSync(groupPath, { recursive: true });
+      writeFileSync(join(groupPath, "config.yaml"), "enabled: true\n");
+      writeFileSync(join(groupPath, "agent.md"), "# Agent\n\nYou are helpful.");
       mkdirSync(join(groupPath, "skills"), { recursive: true });
       writeFileSync(
         join(groupPath, "skills", "draw.md"),
@@ -191,6 +197,7 @@ Be friendly and concise.
       const groupPath = join(testDir, "get-test");
       mkdirSync(groupPath, { recursive: true });
       writeFileSync(join(groupPath, "config.yaml"), "enabled: true");
+      writeFileSync(join(groupPath, "agent.md"), "# Agent\n\nYou are helpful.");
 
       await store.loadGroup("get-test");
 

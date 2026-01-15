@@ -5,7 +5,8 @@ import type { Logger } from "pino";
 import type { SessionJobData } from "../queue";
 import { GroupFileRepository } from "../store/repository";
 import { SessionRepository } from "../session/repository";
-import { HistoryStore } from "../session/history";
+import type { HistoryStore } from "../session/history";
+import { PostgresHistoryStore } from "../session/history";
 import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "./runner";
 import type { PlatformAdapter } from "../types/platform";
@@ -19,6 +20,8 @@ export interface SessionWorkerOptions {
   id: string;
   dataDir: string;
   adapter: PlatformAdapter;
+  databaseUrl?: string;
+  historyStore?: HistoryStore;
   redis: {
     url: string;
   };
@@ -59,7 +62,9 @@ export class SessionWorker {
       dataDir: options.dataDir,
       logger: this.logger,
     });
-    const historyStore = new HistoryStore(this.logger);
+    const historyStore =
+      options.historyStore ??
+      createDefaultHistoryStore(this.logger, options.databaseUrl);
     const launcher = options.launcher ?? new OpencodeLauncher();
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
@@ -137,4 +142,14 @@ export class SessionWorker {
     }
     return jobData;
   }
+}
+
+function createDefaultHistoryStore(
+  logger: Logger,
+  databaseUrl: string | undefined,
+): HistoryStore {
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required for Postgres history store");
+  }
+  return new PostgresHistoryStore(logger, { databaseUrl });
 }

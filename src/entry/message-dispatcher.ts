@@ -165,7 +165,7 @@ export class MessageDispatcher {
   }
 }
 
-function resolveDispatchGroupId(
+export function resolveDispatchGroupId(
   message: SessionEvent,
   defaultGroupId?: string,
 ): string | null {
@@ -175,7 +175,7 @@ function resolveDispatchGroupId(
   if (defaultGroupId) {
     return defaultGroupId;
   }
-  return message.channelId;
+  return message.guildId;
 }
 
 function applySessionKey(

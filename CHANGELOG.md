@@ -17,6 +17,7 @@
 - 文档：新增历史与路由设计说明并更新相关架构/配置描述
 - 文档：新增配置存储与缓存策略 ADR
 - 文档与部署：补齐 PostgreSQL 的启动与注入说明（Docker Compose/K8s）
+- 群聊分发恢复使用 guildId 作为 groupId，避免不同频道共享配置与上下文
 - QQ 路由缺失时发送消息改为记录告警并跳过
 - SessionWorker 默认使用 PostgreSQL 历史存储（`DATABASE_URL` 必填）
 - 测试脚本改为 `bun test ./src`，避免误跑 `example/` 下游工程的测试

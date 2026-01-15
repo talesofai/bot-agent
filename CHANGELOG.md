@@ -12,6 +12,7 @@
 - PostgreSQL 历史存储（`PostgresHistoryStore`），按 `bot_account_id + user_id` 读写并记录 `groupId`
 - 新增 `DATABASE_URL` 配置，用于连接 PostgreSQL
 - 新增 `BOT_ID_ALIASES` 映射，支持继承者 botId 复用旧目录
+- 新增 `HISTORY_MAX_ENTRIES` / `HISTORY_MAX_BYTES` 配置，限制历史窗口
 
 ### Changed
 
@@ -27,6 +28,7 @@
 - 私聊强制使用 `groupId=0`，并默认始终入队处理（不再依赖群触发规则）
 - Prompt 的 History 行追加 `groupId` 标记，确保跨群共享历史时可区分来源
 - 历史记录查询按 canonical botId 聚合并按时间倒序截取，History 行显示 `group:xxx`/`dm:0` 上下文
+- 集成测试自动探测可用的 Redis/Opencode 二进制，有依赖即运行，无依赖则跳过并保留单测
 
 ## [0.0.26] - 2026-01-15
 

@@ -7,6 +7,10 @@ export function resolveCanonicalBotId(botId: string): string {
   return mapped ?? botId;
 }
 
+export function getBotIdAliasMap(): Map<string, string> {
+  return new Map(BOT_ID_ALIASES);
+}
+
 export function parseBotIdAliases(raw?: string): Map<string, string> {
   const map = new Map<string, string>();
   if (!raw) {
@@ -23,6 +27,9 @@ export function parseBotIdAliases(raw?: string): Map<string, string> {
     }
     if (!isSafePathSegment(alias) || !isSafePathSegment(canonical)) {
       throw new Error("BOT_ID_ALIASES entries must be safe path segments");
+    }
+    if (alias === canonical) {
+      throw new Error("BOT_ID_ALIASES entry must map alias to a different id");
     }
     map.set(alias, canonical);
   }

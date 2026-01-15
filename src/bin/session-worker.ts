@@ -5,6 +5,7 @@ import { QQAdapterPool } from "../adapters/qq";
 import { ShellOpencodeRunner, SessionWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
+import { getBotIdAliasMap } from "../utils/bot-id";
 
 const config = getConfig();
 if (!config.DATABASE_URL) {
@@ -18,6 +19,13 @@ logger.info(
   },
   "Session worker starting",
 );
+const aliasMap = getBotIdAliasMap();
+if (aliasMap.size > 0) {
+  logger.info(
+    { botIdAliases: Object.fromEntries(aliasMap.entries()) },
+    "Loaded bot id aliases",
+  );
+}
 
 const sessionQueueName = "session-jobs";
 let adapter;
@@ -59,6 +67,10 @@ const worker = new SessionWorker({
   },
   queue: {
     name: sessionQueueName,
+  },
+  limits: {
+    historyEntries: config.HISTORY_MAX_ENTRIES,
+    historyBytes: config.HISTORY_MAX_BYTES,
   },
   runner: new ShellOpencodeRunner(),
   logger,

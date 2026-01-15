@@ -88,7 +88,10 @@ export class SessionWorker {
       runner: options.runner,
       activityIndex,
       bufferStore,
-      limits: options.limits,
+      limits: {
+        historyEntries: options.limits?.historyEntries ?? 100,
+        historyBytes: options.limits?.historyBytes ?? 200_000,
+      },
     });
 
     this.worker = new Worker<SessionJobData>(

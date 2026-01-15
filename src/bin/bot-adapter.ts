@@ -11,6 +11,7 @@ import { MessageDispatcher } from "../entry/message-dispatcher";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 import { SessionBufferStore } from "../session/buffer";
+import { getBotIdAliasMap, resolveCanonicalBotId } from "../utils/bot-id";
 
 const config = getConfig();
 
@@ -23,6 +24,14 @@ async function main(): Promise<void> {
     },
     "Bot adapter starting",
   );
+
+  const aliasMap = getBotIdAliasMap();
+  if (aliasMap.size > 0) {
+    logger.info(
+      { botIdAliases: Object.fromEntries(aliasMap.entries()) },
+      "Loaded bot id aliases",
+    );
+  }
 
   let adapter;
   switch (config.PLATFORM) {

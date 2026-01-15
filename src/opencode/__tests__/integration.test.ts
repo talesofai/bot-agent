@@ -14,8 +14,9 @@ import { ShellOpencodeRunner } from "../../worker/runner";
 import { buildSystemPrompt } from "../system-prompt";
 import { buildOpencodePrompt } from "../prompt";
 
-const integrationEnabled = process.env.OPENCODE_INTEGRATION === "1";
-const integrationTest = integrationEnabled ? test : test.skip;
+const opencodeEnabled = process.env.OPENCODE_INTEGRATION === "1";
+const opencodeAvailable = opencodeEnabled && (await canRunOpencode());
+const integrationTest = opencodeAvailable ? test : test.skip;
 
 describe("opencode integration", () => {
   integrationTest("runs opencode and writes history", async () => {
@@ -135,3 +136,15 @@ describe("opencode integration", () => {
     }
   });
 });
+
+async function canRunOpencode(): Promise<boolean> {
+  const opencodeBin = process.env.OPENCODE_BIN ?? "opencode";
+  const resolved = Bun.which(opencodeBin);
+  if (!resolved) {
+    return false;
+  }
+  const { exitCode } = Bun.spawnSync([resolved, "--version"], {
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  return exitCode === 0;
+}

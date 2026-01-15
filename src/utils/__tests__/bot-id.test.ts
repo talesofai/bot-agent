@@ -12,6 +12,10 @@ describe("parseBotIdAliases", () => {
   test("throws on invalid entries", () => {
     expect(() => parseBotIdAliases("bad-entry")).toThrow();
   });
+
+  test("throws on self mapping", () => {
+    expect(() => parseBotIdAliases("123:123")).toThrow();
+  });
 });
 
 describe("resolveCanonicalBotId", () => {

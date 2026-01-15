@@ -22,6 +22,8 @@ const envSchema = z
     REDIS_URL: z.string().default("redis://localhost:6379"),
     DATABASE_URL: z.string().optional(),
     BOT_ID_ALIASES: z.string().optional(),
+    HISTORY_MAX_ENTRIES: z.coerce.number().int().positive().optional(),
+    HISTORY_MAX_BYTES: z.coerce.number().int().positive().optional(),
     HTTP_PORT: z.coerce.number().int().min(1).default(8080),
     DEFAULT_GROUP_ID: z.string().optional(),
     LLBOT_REGISTRY_PREFIX: z.string().default("llbot:registry"),

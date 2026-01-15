@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import pino from "pino";
+import IORedis from "ioredis";
 
 import { BullmqSessionQueue } from "../../queue";
 import { SessionBufferStore } from "../../session/buffer";
@@ -73,8 +74,9 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-const redisEnabled = process.env.REDIS_INTEGRATION === "1";
-const integrationTest = redisEnabled ? test : test.skip;
+const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
+const redisAvailable = await canPingRedis(redisUrl);
+const integrationTest = redisAvailable ? test : test.skip;
 
 describe("session worker integration", () => {
   integrationTest("processes job and writes history", async () => {
@@ -246,3 +248,16 @@ describe("session worker integration", () => {
     }
   });
 });
+
+async function canPingRedis(redisUrl: string): Promise<boolean> {
+  const client = new IORedis(redisUrl, { maxRetriesPerRequest: 1 });
+  client.on("error", () => {});
+  try {
+    const pong = await client.ping();
+    return pong === "PONG";
+  } catch {
+    return false;
+  } finally {
+    await client.quit();
+  }
+}

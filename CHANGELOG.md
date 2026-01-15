@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- 多平台组合适配器，同时连接 QQ 与 Discord，消息处理链保持一致
+- 配置新增 `PLATFORMS` 可选覆盖；默认开启 QQ，提供 `DISCORD_TOKEN` 时自动启用 Discord
+
+### Changed
+
+- 配置示例与文档更新为自动启用 Discord（无需切换 PLATFORM）
+
 ## [0.0.27] - 2026-01-15
 
 ### Added

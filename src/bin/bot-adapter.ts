@@ -1,7 +1,6 @@
 import path from "node:path";
 import { getConfig } from "../config";
-import { DiscordAdapter } from "../adapters/discord";
-import { QQAdapterPool } from "../adapters/qq";
+import { createPlatformAdapters, MultiAdapter } from "../adapters";
 import { logger } from "../logger";
 import { GroupStore } from "../store";
 import { RouterStore } from "../store/router";
@@ -19,7 +18,7 @@ async function main(): Promise<void> {
   logger.info(
     {
       env: config.NODE_ENV ?? "development",
-      platform: config.PLATFORM,
+      platforms: config.platforms,
       bunVersion: Bun.version,
     },
     "Bot adapter starting",
@@ -33,22 +32,10 @@ async function main(): Promise<void> {
     );
   }
 
-  let adapter;
-  switch (config.PLATFORM) {
-    case "qq":
-      adapter = new QQAdapterPool({
-        redisUrl: config.REDIS_URL,
-        registryPrefix: config.LLBOT_REGISTRY_PREFIX,
-      });
-      break;
-    case "discord":
-      adapter = new DiscordAdapter({
-        token: config.DISCORD_TOKEN,
-      });
-      break;
-    default:
-      throw new Error(`Unknown platform: ${config.PLATFORM}`);
-  }
+  const adapter = new MultiAdapter({
+    adapters: createPlatformAdapters(config),
+    logger,
+  });
   const bot: Bot = {
     platform: adapter.platform,
     selfId: "",

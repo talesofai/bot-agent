@@ -41,8 +41,10 @@ OPENCODE_MODEL=claude-sonnet-4-20250514
 ### 连接配置
 
 ```env
-# 平台选择: qq | discord
-PLATFORM=qq
+# 平台选择（默认自动开启 QQ；提供 Discord token 时自动开启 Discord）
+# 如需显式限定，使用逗号分隔：PLATFORMS=qq,discord
+# PLATFORM=qq
+# PLATFORMS=qq,discord
 
 # llbot Redis 注册表前缀
 LLBOT_REGISTRY_PREFIX=llbot:registry
@@ -61,7 +63,7 @@ LLBOT_REGISTRY_BOT_ID=
 LLBOT_REGISTRY_WS_URL=
 LLBOT_PLATFORM=qq
 
-# Discord 平台配置
+# Discord 平台配置（提供 token 即自动启用 Discord 适配器）
 DISCORD_TOKEN=
 DISCORD_APPLICATION_ID=
 

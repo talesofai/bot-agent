@@ -1,7 +1,6 @@
 import { getConfig } from "../config";
 import { logger } from "../logger";
-import { DiscordAdapter } from "../adapters/discord";
-import { QQAdapterPool } from "../adapters/qq";
+import { createPlatformAdapters, MultiAdapter } from "../adapters";
 import { ShellOpencodeRunner, SessionWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
@@ -28,22 +27,10 @@ if (aliasMap.size > 0) {
 }
 
 const sessionQueueName = "session-jobs";
-let adapter;
-switch (config.PLATFORM) {
-  case "qq":
-    adapter = new QQAdapterPool({
-      redisUrl: config.REDIS_URL,
-      registryPrefix: config.LLBOT_REGISTRY_PREFIX,
-    });
-    break;
-  case "discord":
-    adapter = new DiscordAdapter({
-      token: config.DISCORD_TOKEN,
-    });
-    break;
-  default:
-    throw new Error(`Unknown platform: ${config.PLATFORM}`);
-}
+const adapter = new MultiAdapter({
+  adapters: createPlatformAdapters(config),
+  logger,
+});
 
 const bot: Bot = {
   platform: adapter.platform,

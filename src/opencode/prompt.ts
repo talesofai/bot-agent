@@ -37,16 +37,20 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
   return sections.join("\n\n");
 }
 
-export function mergeBufferedMessages(messages: SessionEvent[]): SessionEvent {
+export function buildBufferedInput(messages: SessionEvent[]): {
+  mergedSession: SessionEvent;
+  promptInput: string;
+} {
   const last = messages[messages.length - 1];
-  const combined = messages
-    .map((message) => formatBufferedMessage(message))
-    .filter((line) => line.length > 0)
-    .join("\n");
+  const mergedContent = mergeMessageContents(messages);
+  const promptInput = formatBufferedMessages(messages);
   return {
-    ...last,
-    content: combined,
-    elements: combined ? [{ type: "text", text: combined }] : [],
+    mergedSession: {
+      ...last,
+      content: mergedContent,
+      elements: mergedContent ? [{ type: "text", text: mergedContent }] : [],
+    },
+    promptInput,
   };
 }
 
@@ -65,6 +69,20 @@ function formatHistoryTimestamp(iso: string): string {
     parsed.getDay()
   ];
   return `${year}-${month}-${day} ${hour}:${minute}:${second} ${weekday}`;
+}
+
+function formatBufferedMessages(messages: SessionEvent[]): string {
+  return messages
+    .map((message) => formatBufferedMessage(message))
+    .filter((line) => line.length > 0)
+    .join("\n");
+}
+
+function mergeMessageContents(messages: SessionEvent[]): string {
+  return messages
+    .map((message) => message.content.trim())
+    .filter((content) => content.length > 0)
+    .join("\n");
 }
 
 function formatBufferedMessage(message: SessionEvent): string {

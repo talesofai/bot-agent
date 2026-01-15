@@ -8,7 +8,7 @@ import { SessionRepository } from "../session/repository";
 import { HistoryStore } from "../session/history";
 import { createSession } from "../session/session-ops";
 import { OpencodeLauncher } from "../opencode/launcher";
-import { buildOpencodePrompt, mergeBufferedMessages } from "../opencode/prompt";
+import { buildBufferedInput, buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import type { OpencodeRunner } from "./runner";
 import type { HistoryEntry, SessionInfo } from "../types/session";
@@ -157,11 +157,12 @@ export class SessionWorker {
       await this.recordActivity(sessionInfo);
 
       while (buffered.length > 0) {
-        const mergedSession = mergeBufferedMessages(buffered);
+        const { mergedSession, promptInput } = buildBufferedInput(buffered);
         const { history, launchSpec } = await this.buildPromptContext(
           jobData.groupId,
           sessionInfo,
           mergedSession,
+          promptInput,
         );
 
         const result = await this.runner.run({
@@ -204,6 +205,7 @@ export class SessionWorker {
     groupId: string,
     sessionInfo: SessionInfo,
     sessionInput: SessionEvent,
+    promptInput: string,
   ): Promise<{
     history: HistoryEntry[];
     launchSpec: ReturnType<OpencodeLauncher["buildLaunchSpec"]>;
@@ -218,11 +220,11 @@ export class SessionWorker {
     const groupConfig = await this.getGroupConfig(groupId);
     const agentPrompt = await this.getAgentPrompt(groupId);
     const systemPrompt = buildSystemPrompt(agentPrompt);
-    const promptInput = resolveSessionInput(sessionInput.content);
+    const resolvedInput = resolveSessionInput(promptInput);
     const prompt = buildOpencodePrompt({
       systemPrompt,
       history,
-      input: promptInput,
+      input: resolvedInput,
     });
     const launchSpec = this.launcher.buildLaunchSpec(
       sessionInfo,

@@ -7,11 +7,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- PostgreSQL 历史存储（`PostgresHistoryStore`），按 `bot_account_id + user_id` 读写并记录 `groupId`
+- 新增 `DATABASE_URL` 配置，用于连接 PostgreSQL
+
 ### Changed
 
 - 文档：新增历史与路由设计说明并更新相关架构/配置描述
 - 文档：新增配置存储与缓存策略 ADR
 - QQ 路由缺失时发送消息改为记录告警并跳过
+- SessionWorker 默认使用 PostgreSQL 历史存储（`DATABASE_URL` 必填）
+- 测试脚本改为 `bun test ./src`，避免误跑 `example/` 下游工程的测试
 
 ## [0.0.26] - 2026-01-15
 

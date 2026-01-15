@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { SessionElement, SessionEvent } from "../../types/platform";
 import {
   appendTextElement,
@@ -37,41 +38,54 @@ interface MilkyMessageSegment {
 export function parseMessage(
   event: unknown,
 ): SessionEvent<MilkyMessageEvent> | null {
-  if (!isMessageEvent(event)) {
+  const parsed = milkyMessageEventSchema.safeParse(event);
+  if (!parsed.success) {
     return null;
   }
+  const parsedEvent = parsed.data;
 
-  const { elements } = normalizeSegments(event);
+  const { elements } = normalizeSegments(parsedEvent);
   const content = extractTextFromElements(elements);
 
   return {
     type: "message",
     platform: "qq",
-    selfId: String(event.self_id),
-    channelId: String(event.group_id ?? event.user_id),
-    userId: String(event.user_id),
+    selfId: String(parsedEvent.self_id),
+    channelId: String(parsedEvent.group_id ?? parsedEvent.user_id),
+    userId: String(parsedEvent.user_id),
     guildId:
-      event.message_type === "group" ? String(event.group_id) : undefined,
-    messageId: String(event.message_id),
+      parsedEvent.message_type === "group"
+        ? String(parsedEvent.group_id)
+        : undefined,
+    messageId: String(parsedEvent.message_id),
     content,
     elements,
-    timestamp: event.time * 1000,
-    extras: event,
+    timestamp: parsedEvent.time * 1000,
+    extras: parsedEvent,
   };
 }
 
-function isMessageEvent(event: unknown): event is MilkyMessageEvent {
-  if (!event || typeof event !== "object") {
-    return false;
-  }
-  const e = event as Record<string, unknown>;
-  return (
-    e.post_type === "message" &&
-    (e.message_type === "group" || e.message_type === "private") &&
-    typeof e.message_id === "number" &&
-    typeof e.user_id === "number"
-  );
-}
+const milkyMessageEventSchema = z
+  .object({
+    post_type: z.literal("message"),
+    message_type: z.enum(["group", "private"]),
+    message_id: z.number(),
+    user_id: z.number(),
+    group_id: z.number().optional(),
+    message: z.unknown().optional(),
+    raw_message: z.string().optional(),
+    sender: z
+      .object({
+        user_id: z.number(),
+        nickname: z.string(),
+        card: z.string().optional(),
+        role: z.string().optional(),
+      })
+      .passthrough(),
+    time: z.number(),
+    self_id: z.number(),
+  })
+  .passthrough();
 
 function normalizeSegments(event: MilkyMessageEvent): {
   elements: SessionElement[];

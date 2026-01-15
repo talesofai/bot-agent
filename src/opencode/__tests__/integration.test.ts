@@ -47,6 +47,7 @@ describe("opencode integration", () => {
       }
       const session = await createSession({
         groupId,
+        botId: "bot-1",
         userId,
         key,
         groupRepository,

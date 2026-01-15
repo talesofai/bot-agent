@@ -31,6 +31,7 @@ describe("createSession", () => {
     await expect(
       createSession({
         groupId: "group-1",
+        botId: "bot-1",
         userId: "user-1",
         key: 2,
         maxSessions: 2,
@@ -54,6 +55,7 @@ describe("createSession", () => {
     });
     await createSession({
       groupId: "group-1",
+      botId: "bot-1",
       userId: "user-1",
       key: 1,
       maxSessions: 2,
@@ -63,6 +65,7 @@ describe("createSession", () => {
     await expect(
       createSession({
         groupId: "group-1",
+        botId: "bot-1",
         userId: "user-1",
         key: 1,
         maxSessions: 1,
@@ -87,6 +90,7 @@ describe("createSession", () => {
     await expect(
       createSession({
         groupId: "group-1",
+        botId: "bot-1",
         userId: "user-1",
         key: -1,
         maxSessions: 2,
@@ -111,6 +115,7 @@ describe("createSession", () => {
     await expect(
       createSession({
         groupId: "../escape",
+        botId: "bot-1",
         userId: "user-1",
         key: 0,
         maxSessions: 1,
@@ -135,6 +140,7 @@ describe("createSession", () => {
     await expect(
       createSession({
         groupId: "group-1",
+        botId: "bot-1",
         userId: "user/1",
         key: 0,
         maxSessions: 1,
@@ -159,6 +165,7 @@ describe("createSession", () => {
     const historyStore = new InMemoryHistoryStore();
     const session = await createSession({
       groupId: "group-1",
+      botId: "bot-1",
       userId: "user-1",
       key: 0,
       maxSessions: 1,

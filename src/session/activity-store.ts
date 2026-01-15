@@ -9,6 +9,7 @@ export interface SessionActivityStoreOptions {
 }
 
 export interface SessionKey {
+  botId: string;
   groupId: string;
   sessionId: string;
 }
@@ -69,24 +70,32 @@ export class SessionActivityStore {
   }
 
   private encodeMember(key: SessionKey): string {
-    if (!isSafePathSegment(key.groupId) || !isSafePathSegment(key.sessionId)) {
+    if (
+      !isSafePathSegment(key.botId) ||
+      !isSafePathSegment(key.groupId) ||
+      !isSafePathSegment(key.sessionId)
+    ) {
       this.logger.warn({ key }, "Unsafe session activity key");
       throw new Error("Unsafe session activity key");
     }
-    return `${key.groupId}:${key.sessionId}`;
+    return `${key.botId}:${key.groupId}:${key.sessionId}`;
   }
 
   private decodeMember(member: string): SessionKey | null {
-    const [groupId, ...rest] = member.split(":");
-    if (!groupId || rest.length === 0) {
+    const [botId, groupId, ...rest] = member.split(":");
+    if (!botId || !groupId || rest.length === 0) {
       this.logger.warn({ member }, "Invalid session activity member");
       return null;
     }
     const sessionId = rest.join(":");
-    if (!isSafePathSegment(groupId) || !isSafePathSegment(sessionId)) {
+    if (
+      !isSafePathSegment(botId) ||
+      !isSafePathSegment(groupId) ||
+      !isSafePathSegment(sessionId)
+    ) {
       this.logger.warn({ member }, "Unsafe session activity member");
       return null;
     }
-    return { groupId, sessionId };
+    return { botId, groupId, sessionId };
   }
 }

@@ -27,55 +27,68 @@ export class SessionTtlCleaner {
     const now = Date.now();
     let removed = 0;
 
-    const groupEntries = await this.readDirSafe(this.dataDir);
-    for (const groupEntry of groupEntries) {
-      if (!groupEntry.isDirectory() || groupEntry.name.startsWith(".")) {
+    const sessionsRoot = join(this.dataDir, "sessions");
+    const botEntries = await this.readDirSafe(sessionsRoot);
+    for (const botEntry of botEntries) {
+      if (!botEntry.isDirectory() || botEntry.name.startsWith(".")) {
         continue;
       }
-      const groupId = groupEntry.name;
-      if (!isSafePathSegment(groupId)) {
-        this.logger.warn({ groupId }, "Skipping unsafe group directory");
+      const botId = botEntry.name;
+      if (!isSafePathSegment(botId)) {
+        this.logger.warn({ botId }, "Skipping unsafe bot directory");
         continue;
       }
-      const sessionsDir = join(this.dataDir, groupId, "sessions");
-      const sessionEntries = await this.readDirSafe(sessionsDir);
-      for (const sessionEntry of sessionEntries) {
-        if (!sessionEntry.isDirectory()) {
+      const userEntries = await this.readDirSafe(join(sessionsRoot, botId));
+      for (const userEntry of userEntries) {
+        if (!userEntry.isDirectory()) {
           continue;
         }
-        const sessionId = sessionEntry.name;
-        if (!isSafePathSegment(sessionId)) {
-          this.logger.warn(
-            { groupId, sessionId },
-            "Skipping unsafe session directory",
-          );
+        const userId = userEntry.name;
+        if (!isSafePathSegment(userId)) {
+          this.logger.warn({ botId, userId }, "Skipping unsafe user directory");
           continue;
         }
-        const sessionPath = join(sessionsDir, sessionId);
-        const metaPath = join(sessionPath, "meta.json");
-        const { status, lastActiveMs } = await this.readSessionState(
-          metaPath,
-          sessionPath,
+        const sessionEntries = await this.readDirSafe(
+          join(sessionsRoot, botId, userId),
         );
-        if (lastActiveMs === null) {
-          this.logger.warn(
-            { groupId, sessionId },
-            "Skipping session without last active timestamp",
+        for (const sessionEntry of sessionEntries) {
+          if (!sessionEntry.isDirectory()) {
+            continue;
+          }
+          const sessionId = sessionEntry.name;
+          if (!isSafePathSegment(sessionId)) {
+            this.logger.warn(
+              { botId, userId, sessionId },
+              "Skipping unsafe session directory",
+            );
+            continue;
+          }
+          const sessionPath = join(sessionsRoot, botId, userId, sessionId);
+          const metaPath = join(sessionPath, "meta.json");
+          const { status, lastActiveMs } = await this.readSessionState(
+            metaPath,
+            sessionPath,
           );
-          continue;
-        }
-        const ageMs = now - lastActiveMs;
-        if (ageMs <= this.ttlMs) {
-          continue;
-        }
-        if (status === "running") {
-          this.logger.warn(
-            { groupId, sessionId, ageMs },
-            "Removing stale running session",
-          );
-        }
-        if (await this.removeSession(groupId, sessionId, sessionPath)) {
-          removed += 1;
+          if (lastActiveMs === null) {
+            this.logger.warn(
+              { botId, userId, sessionId },
+              "Skipping session without last active timestamp",
+            );
+            continue;
+          }
+          const ageMs = now - lastActiveMs;
+          if (ageMs <= this.ttlMs) {
+            continue;
+          }
+          if (status === "running") {
+            this.logger.warn(
+              { botId, userId, sessionId, ageMs },
+              "Removing stale running session",
+            );
+          }
+          if (await this.removeSession(botId, userId, sessionId, sessionPath)) {
+            removed += 1;
+          }
         }
       }
     }
@@ -120,15 +133,16 @@ export class SessionTtlCleaner {
   }
 
   private async removeSession(
-    groupId: string,
+    botId: string,
+    userId: string,
     sessionId: string,
-    sessionPath = join(this.dataDir, groupId, "sessions", sessionId),
+    sessionPath = join(this.dataDir, "sessions", botId, userId, sessionId),
   ): Promise<boolean> {
     try {
       await rm(sessionPath, { recursive: true, force: true });
     } catch (err) {
       this.logger.warn(
-        { err, groupId, sessionId },
+        { err, botId, userId, sessionId },
         "Failed to remove stale session directory",
       );
       return false;

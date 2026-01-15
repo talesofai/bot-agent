@@ -105,9 +105,13 @@ GROUPS_DATA_DIR=/data/groups
 
 # 数据根目录（用于 router/bots 等）
 DATA_DIR=/data
+
+# Bot ID 映射（可选，格式 alias:canonical，用逗号分隔）
+BOT_ID_ALIASES=
 ```
 
 `GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置。
+会话数据默认存放在 `${GROUPS_DATA_DIR}/sessions/{botId}/{userId}/{sessionId}`，其中 `botId` 为经过 `BOT_ID_ALIASES` 解析后的 canonical 标识。
 
 ### 日志配置
 

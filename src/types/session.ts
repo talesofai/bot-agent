@@ -3,6 +3,7 @@ export type SessionStatus = "idle" | "running";
 export interface SessionMeta {
   sessionId: string;
   groupId: string;
+  botId: string;
   ownerId: string;
   key: number;
   status: SessionStatus;

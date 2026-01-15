@@ -14,8 +14,6 @@ export interface SessionRepositoryOptions {
 }
 
 interface SessionPaths {
-  groupPath: string;
-  sessionsPath: string;
   sessionPath: string;
   metaPath: string;
   historyPath: string;
@@ -41,29 +39,38 @@ export class SessionRepository {
   }
 
   async loadSession(
-    groupId: string,
+    botId: string,
+    userId: string,
     sessionId: string,
   ): Promise<SessionInfo | null> {
-    const paths = this.buildSessionPaths(groupId, sessionId);
+    const paths = this.buildSessionPaths(botId, userId, sessionId);
     const meta = await this.readMeta(paths.metaPath);
     if (!meta) {
       return null;
     }
-    if (!this.isMetaConsistent(meta, groupId, sessionId)) {
+    if (!this.isMetaConsistent(meta, botId, userId, sessionId)) {
       return null;
     }
     return this.buildSessionInfo(meta, paths);
   }
 
   async createSession(meta: SessionMeta): Promise<SessionInfo> {
-    const paths = this.buildSessionPaths(meta.groupId, meta.sessionId);
+    const paths = this.buildSessionPaths(
+      meta.botId,
+      meta.ownerId,
+      meta.sessionId,
+    );
     await this.ensureSessionDir(paths);
     await this.writeMeta(paths.metaPath, meta);
     return this.buildSessionInfo(meta, paths);
   }
 
   async updateMeta(meta: SessionMeta): Promise<SessionInfo> {
-    const paths = this.buildSessionPaths(meta.groupId, meta.sessionId);
+    const paths = this.buildSessionPaths(
+      meta.botId,
+      meta.ownerId,
+      meta.sessionId,
+    );
     await this.writeMeta(paths.metaPath, meta);
     return this.buildSessionInfo(meta, paths);
   }
@@ -74,20 +81,23 @@ export class SessionRepository {
   ): SessionInfo {
     return {
       meta,
-      groupPath: paths.groupPath,
+      groupPath: this.getGroupPath(meta.groupId),
       workspacePath: paths.workspacePath,
       historyPath: paths.historyPath,
     };
   }
 
-  private buildSessionPaths(groupId: string, sessionId: string): SessionPaths {
+  private buildSessionPaths(
+    botId: string,
+    userId: string,
+    sessionId: string,
+  ): SessionPaths {
+    assertSafePathSegment(botId, "botId");
+    assertSafePathSegment(userId, "userId");
     assertSafePathSegment(sessionId, "sessionId");
-    const groupPath = this.getGroupPath(groupId);
-    const sessionsPath = join(groupPath, "sessions");
-    const sessionPath = join(sessionsPath, sessionId);
+    const sessionsRoot = join(this.dataDir, "sessions", botId, userId);
+    const sessionPath = join(sessionsRoot, sessionId);
     return {
-      groupPath,
-      sessionsPath,
       sessionPath,
       metaPath: join(sessionPath, "meta.json"),
       historyPath: join(sessionPath, "history.sqlite"),
@@ -96,7 +106,7 @@ export class SessionRepository {
   }
 
   private async ensureSessionDir(paths: SessionPaths): Promise<void> {
-    await mkdir(paths.sessionsPath, { recursive: true });
+    await mkdir(join(this.dataDir, "sessions"), { recursive: true });
     await mkdir(paths.sessionPath, { recursive: true });
     await mkdir(paths.workspacePath, { recursive: true });
     await mkdir(join(paths.workspacePath, "input"), { recursive: true });
@@ -137,17 +147,25 @@ export class SessionRepository {
 
   private isMetaConsistent(
     meta: SessionMeta,
-    groupId: string,
+    botId: string,
+    ownerId: string,
     sessionId: string,
   ): boolean {
-    if (meta.groupId === groupId && meta.sessionId === sessionId) {
+    if (
+      meta.botId === botId &&
+      meta.ownerId === ownerId &&
+      meta.sessionId === sessionId
+    ) {
       return true;
     }
     this.logger.warn(
       {
+        metaBotId: meta.botId,
+        metaOwnerId: meta.ownerId,
         metaGroupId: meta.groupId,
         metaSessionId: meta.sessionId,
-        groupId,
+        botId,
+        ownerId,
         sessionId,
       },
       "Session meta does not match expected identifiers",
@@ -161,6 +179,7 @@ const sessionMetaSchema = z
     sessionId: z.string(),
     groupId: z.string(),
     ownerId: z.string(),
+    botId: z.string(),
     key: z.number().int(),
     status: z.enum(["idle", "running"]),
     createdAt: z.string(),

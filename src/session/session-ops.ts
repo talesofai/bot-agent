@@ -6,6 +6,7 @@ import type { SessionRepository } from "./repository";
 
 export interface CreateSessionInput {
   groupId: string;
+  botId: string;
   userId: string;
   key?: number;
   maxSessions?: number;
@@ -16,15 +17,20 @@ export interface CreateSessionInput {
 export async function createSession(
   input: CreateSessionInput,
 ): Promise<SessionInfo> {
-  const { groupId, userId, groupRepository, sessionRepository } = input;
+  const { groupId, botId, userId, groupRepository, sessionRepository } = input;
   assertSafePathSegment(groupId, "groupId");
+  assertSafePathSegment(botId, "botId");
   assertSafePathSegment(userId, "userId");
 
   const key = input.key ?? 0;
   assertValidSessionKey(key);
 
   const sessionId = sessionRepository.getSessionId(userId, key);
-  const existing = await sessionRepository.loadSession(groupId, sessionId);
+  const existing = await sessionRepository.loadSession(
+    input.botId,
+    userId,
+    sessionId,
+  );
   if (existing) {
     if (existing.meta.ownerId !== userId) {
       throw new Error("Session ownership mismatch");
@@ -46,6 +52,7 @@ export async function createSession(
   const meta: SessionMeta = {
     sessionId,
     groupId,
+    botId: input.botId,
     ownerId: userId,
     key,
     status: "idle",

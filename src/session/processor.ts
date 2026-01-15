@@ -74,6 +74,7 @@ export class SessionProcessor {
       }
 
       sessionInfo = await this.ensureSession(
+        jobData.botId,
         jobData.groupId,
         jobData.userId,
         jobData.key,
@@ -186,24 +187,35 @@ export class SessionProcessor {
   }
 
   private async ensureSession(
+    botId: string,
     groupId: string,
     userId: string,
     key: number,
     sessionId: string,
   ): Promise<SessionInfo> {
     const existing = await this.sessionRepository.loadSession(
-      groupId,
+      botId,
+      userId,
       sessionId,
     );
     if (existing) {
       if (existing.meta.ownerId !== userId) {
         throw new Error("Session ownership mismatch");
       }
+      if (existing.meta.groupId !== groupId) {
+        const updatedMeta: SessionInfo["meta"] = {
+          ...existing.meta,
+          groupId,
+          updatedAt: new Date().toISOString(),
+        };
+        return this.sessionRepository.updateMeta(updatedMeta);
+      }
       return existing;
     }
     return createSession({
       groupId,
       userId,
+      botId,
       key,
       groupRepository: this.groupRepository,
       sessionRepository: this.sessionRepository,
@@ -289,6 +301,7 @@ export class SessionProcessor {
   private async recordActivity(sessionInfo: SessionInfo): Promise<void> {
     try {
       await this.activityIndex.recordActivity({
+        botId: sessionInfo.meta.botId,
         groupId: sessionInfo.meta.groupId,
         sessionId: sessionInfo.meta.sessionId,
       });

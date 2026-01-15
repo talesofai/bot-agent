@@ -140,7 +140,8 @@ describe("session worker integration", () => {
         logger,
       });
       const sessionInfo = await sessionRepository.loadSession(
-        groupId,
+        "bot-1",
+        userId,
         sessionId,
       );
       expect(sessionInfo).not.toBeNull();
@@ -224,7 +225,8 @@ describe("session worker integration", () => {
         logger,
       });
       const sessionInfo = await sessionRepository.loadSession(
-        groupId,
+        "bot-1",
+        userId,
         sessionId,
       );
       expect(sessionInfo).not.toBeNull();

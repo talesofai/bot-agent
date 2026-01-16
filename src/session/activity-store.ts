@@ -40,36 +40,6 @@ export class SessionActivityStore implements SessionActivityIndex {
     await this.redis.zadd(this.key, timestampMs, member);
   }
 
-  async fetchExpired(cutoffMs: number): Promise<SessionKey[]> {
-    const members = await this.redis.zrangebyscore(this.key, 0, cutoffMs);
-    const decoded: SessionKey[] = [];
-    const invalidMembers: string[] = [];
-    for (const member of members) {
-      const entry = this.decodeMember(member);
-      if (entry) {
-        decoded.push(entry);
-      } else {
-        invalidMembers.push(member);
-      }
-    }
-    if (invalidMembers.length > 0) {
-      try {
-        await this.redis.zrem(this.key, ...invalidMembers);
-      } catch (err) {
-        this.logger.warn(
-          { err, count: invalidMembers.length },
-          "Failed to remove invalid session activity members",
-        );
-      }
-    }
-    return decoded;
-  }
-
-  async remove(key: SessionKey): Promise<void> {
-    const member = this.encodeMember(key);
-    await this.redis.zrem(this.key, member);
-  }
-
   async close(): Promise<void> {
     await this.redis.quit();
   }
@@ -84,23 +54,5 @@ export class SessionActivityStore implements SessionActivityIndex {
       throw new Error("Unsafe session activity key");
     }
     return `${key.botId}:${key.groupId}:${key.sessionId}`;
-  }
-
-  private decodeMember(member: string): SessionKey | null {
-    const [botId, groupId, ...rest] = member.split(":");
-    if (!botId || !groupId || rest.length === 0) {
-      this.logger.warn({ member }, "Invalid session activity member");
-      return null;
-    }
-    const sessionId = rest.join(":");
-    if (
-      !isSafePathSegment(botId) ||
-      !isSafePathSegment(groupId) ||
-      !isSafePathSegment(sessionId)
-    ) {
-      this.logger.warn({ member }, "Unsafe session activity member");
-      return null;
-    }
-    return { botId, groupId, sessionId };
   }
 }

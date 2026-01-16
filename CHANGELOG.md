@@ -35,6 +35,7 @@
 - 文档：修复开发指南代码块 fence 并更新接口示例签名，确保与实际类型一致
 - 文档：更新 `AGENTS.md`，移除“TS 在规划中”的错误描述并补齐 `bun run`/Docker Compose 真实命令
 - Session TTL 清理：lastActive 改为读取 meta.updatedAt，避免目录 mtime 不更新导致误删
+- SessionActivityStore：移除未使用的 `fetchExpired`/`remove` 半成品接口，避免维护噪音
 - 测试：新增 SessionProcessor 缓冲尾部竞态回归用例，防止消息滞留/丢失回归
 - Docker：补齐 `.dockerignore` 并收敛 Dockerfile 复制范围，避免把本地 `data/` 与 `.env` 等打进镜像
 - Docker：`opencode-linux-x64` 改为 `@latest`，避免与 `opencode-ai@latest` 混用导致版本漂移

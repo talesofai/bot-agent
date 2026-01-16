@@ -90,6 +90,9 @@ DATABASE_URL=postgres://postgres:postgres@postgres:5432/opencode
 # HTTP 端口
 HTTP_PORT=8080
 
+# 可选：管理端点鉴权 token（未设置则禁用管理接口）
+API_TOKEN=
+
 # 入口默认群 ID（仅群聊生效；私聊固定 groupId=0；未设置时群聊使用消息 channelId 作为 groupId）
 DEFAULT_GROUP_ID=
 

@@ -20,6 +20,7 @@ export async function startHttpServer(
   const startedAt = Date.now();
   const version = await resolveVersion();
   const port = options.port ?? config.HTTP_PORT;
+  const apiToken = config.API_TOKEN?.trim() || null;
 
   const server = Bun.serve({
     port,
@@ -36,14 +37,20 @@ export async function startHttpServer(
         /^\/api\/v1\/groups\/([^/]+)\/reload$/,
       );
       if (reloadMatch) {
+        if (!options.onReloadGroup || !apiToken) {
+          return new Response("Not Found", { status: 404 });
+        }
+        if (!isAuthorized(req, apiToken)) {
+          return new Response("Unauthorized", {
+            status: 401,
+            headers: { "WWW-Authenticate": 'Bearer realm="api"' },
+          });
+        }
         if (req.method !== "POST") {
           return new Response("Method Not Allowed", {
             status: 405,
             headers: { Allow: "POST" },
           });
-        }
-        if (!options.onReloadGroup) {
-          return new Response("Not Found", { status: 404 });
         }
         let groupId: string;
         try {
@@ -90,4 +97,31 @@ function formatUptime(durationMs: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   return `${hours}h${minutes}m${seconds}s`;
+}
+
+function isAuthorized(req: Request, token: string): boolean {
+  const bearer = req.headers.get("authorization");
+  if (bearer) {
+    const parsed = parseBearerToken(bearer);
+    if (parsed !== null) {
+      return parsed === token;
+    }
+  }
+  const apiHeader = req.headers.get("x-api-token");
+  if (apiHeader) {
+    return apiHeader === token;
+  }
+  return false;
+}
+
+function parseBearerToken(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length < 7) {
+    return null;
+  }
+  if (!trimmed.toLowerCase().startsWith("bearer ")) {
+    return null;
+  }
+  const token = trimmed.slice(7).trim();
+  return token ? token : null;
 }

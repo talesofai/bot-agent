@@ -37,6 +37,7 @@
 - Typecheck：关闭 `skipLibCheck` 并补齐 `node:util`/`node:tls` 类型兼容层，确保 `tsc --noEmit` 全量检查通过
 - Docker Compose：移除无效的 `PLATFORM=qq` 配置，避免误导（代码不读取该 env）
 - Opencode：prompt 不再通过 argv 传递，改为临时文件注入并提供 `OPENCODE_PROMPT_MAX_BYTES` 上限，避免长度上限与进程列表泄露风险
+- HTTP API：管理端点仅在设置 `API_TOKEN` 时启用，并要求 Bearer/`X-API-Token` 认证；文档同步更新
 
 ## [0.0.27] - 2026-01-15
 

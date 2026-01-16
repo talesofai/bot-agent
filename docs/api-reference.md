@@ -1,6 +1,6 @@
 # API 参考
 
-本文档为接口草案，目前仅实现健康检查接口，其余接口仍在规划中。
+本文档为接口草案。默认仅实现健康检查接口，其余接口仍在规划中；如设置 `API_TOKEN`（建议放入 `configs/secrets/.env`），会额外启用受保护的管理接口（当前仅实现群重载）。
 
 > 状态：除健康检查外均为规划，接口与字段可能调整。
 
@@ -32,7 +32,7 @@ GET /metrics
 
 返回 Prometheus 格式的指标数据（规划中）。
 
-### 群管理（规划）
+### 群管理（部分实现）
 
 #### 列出所有群
 
@@ -114,11 +114,18 @@ Content-Type: application/json
 }
 ```
 
-#### 重载群配置（规划）
+#### 重载群配置
 
 ```http
 POST /api/v1/groups/{group_id}/reload
 ```
+
+需要 `API_TOKEN`，否则该端点不会暴露（返回 404）。
+
+**认证**（二选一）：
+
+- `Authorization: Bearer ${API_TOKEN}`
+- `X-API-Token: ${API_TOKEN}`
 
 ### Agent 配置（规划）
 

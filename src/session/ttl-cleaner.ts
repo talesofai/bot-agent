@@ -116,11 +116,33 @@ export class SessionTtlCleaner {
     sessionPath: string,
   ): Promise<{ status: SessionStatus | null; lastActiveMs: number | null }> {
     const meta = await this.readMeta(metaPath);
+    const status = meta?.status ?? null;
+    let lastActiveMs: number | null = null;
+
+    if (meta?.updatedAt) {
+      const parsed = Date.parse(meta.updatedAt);
+      if (Number.isFinite(parsed)) {
+        lastActiveMs = parsed;
+      }
+    }
+
+    if (lastActiveMs === null) {
+      lastActiveMs = await this.readMtimeMs(metaPath);
+    }
+
+    if (lastActiveMs === null) {
+      lastActiveMs = await this.readMtimeMs(sessionPath);
+    }
+
+    return { status, lastActiveMs };
+  }
+
+  private async readMtimeMs(path: string): Promise<number | null> {
     try {
-      const stats = await stat(sessionPath);
-      return { status: meta?.status ?? null, lastActiveMs: stats.mtimeMs };
+      const stats = await stat(path);
+      return stats.mtimeMs;
     } catch {
-      return { status: meta?.status ?? null, lastActiveMs: null };
+      return null;
     }
   }
 

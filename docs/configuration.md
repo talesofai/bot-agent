@@ -1,10 +1,10 @@
 # 配置说明
 
-本文档详细说明配置项。当前仓库包含 `configs/example.env`、`configs/default-agent.md` 与占位的 `configs/config.yaml`，热更新能力仍在迭代中。
+本文档详细说明配置项。当前仓库包含 `configs/example.env`、`configs/default-agent.md` 与示例的 `configs/config.example.yaml`，热更新能力仍在迭代中。
 
 ## 配置方式
 
-主配置当前仅支持 **环境变量 + 默认值**。`configs/config.yaml` 为占位模板，读取逻辑仍在规划中。
+主配置当前仅支持 **环境变量 + 默认值**。`configs/config.example.yaml` 仅为结构示例，不会被程序读取。
 
 如需从文件加载环境变量，请设置 `CONFIG_PATH` 指向单一 `.env` 文件（例如 `configs/.env`）。
 `CONFIG_PATH` 按项目根目录解析，避免使用绝对路径以便迁移。
@@ -52,9 +52,6 @@ LLBOT_REGISTRY_TTL_SEC=30
 
 # 注册刷新间隔（秒）
 LLBOT_REGISTRY_REFRESH_SEC=10
-
-# bot 路由注册表前缀
-BOT_ROUTE_PREFIX=bot:route
 
 # 注册器参数（仅 llbot 注册器使用）
 LLBOT_REGISTRY_BOT_ID=
@@ -136,7 +133,9 @@ MCP_TALESOFAI_URL=http://mcp.talesofai.com
 
 ## 配置文件
 
-### configs/config.yaml（规划）
+### configs/config.example.yaml（示例）
+
+该文件仅用于展示主配置结构，**不会被程序读取**。为避免误用，示例文件名明确带 `example`。
 
 ```yaml
 # 服务配置
@@ -150,10 +149,6 @@ llbotRegistry:
   ttlSeconds: ${LLBOT_REGISTRY_TTL_SEC:-30}
   refreshSeconds: ${LLBOT_REGISTRY_REFRESH_SEC:-10}
 
-# bot 路由注册表配置
-botRouteRegistry:
-  prefix: ${BOT_ROUTE_PREFIX:-bot:route}
-
 # Agent 配置
 agent:
   model: ${OPENCODE_MODEL:-claude-sonnet-4-20250514}
@@ -161,6 +156,10 @@ agent:
 # 群配置
 groups:
   dataDir: ${GROUPS_DATA_DIR:-/data/groups}
+
+# 数据根目录
+data:
+  dir: ${DATA_DIR:-/data}
 
 # MCP 配置
 mcp:
@@ -306,5 +305,5 @@ echoRate: null # 复读概率（0-100），空为继承上一级
 以下配置修改后需要重启服务：
 
 - 环境变量
-- （规划）`configs/config.yaml` 主配置
+- `configs/config.example.yaml`（示例；未启用读取）
 - API Key

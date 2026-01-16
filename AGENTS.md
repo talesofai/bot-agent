@@ -6,7 +6,7 @@
 
 - `src/` — TypeScript 源码与单元测试。
 - `dist/` — Bun build 产物（可由 `bun run build` 重新生成）。
-- `configs/` — 配置模板，如 `configs/config.yaml` 和 `configs/default-agent.md`。
+- `configs/` — 配置模板，如 `configs/config.example.yaml`、`configs/example.env` 和 `configs/default-agent.md`。
 - `deployments/` — Docker/K8s 部署资源（包括 `deployments/docker/Dockerfile`）。
 - `docs/` — 架构、开发和运维指南。
 - `data/` — 本地/容器运行时数据目录（默认挂载到 `/data`），包含 `groups/`、`router/`、`bots/`、`sessions/` 等。

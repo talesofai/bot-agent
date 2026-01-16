@@ -1,4 +1,5 @@
-# 规划占位配置：当前不会被实际读取，仅用于展示结构
+# 示例配置：当前不会被实际读取，仅用于展示结构
+# 生效配置请使用环境变量（见 configs/example.env）或通过 CONFIG_PATH 加载 .env 文件
 # 完整说明见 docs/configuration.md
 
 server:

@@ -11,6 +11,7 @@
 
 - SessionProcessor：`job.id=0` 不再被误判为缺少 id
 - PostgresHistoryStore：`created_at` 改为 `TIMESTAMPTZ` 并按 `id` 倒序读取，避免 TEXT 时间字段导致排序/索引性能劣化；启动时自动迁移旧列类型
+- 配置：移除迷惑性的 `configs/config.yaml`，改为 `configs/config.example.yaml` 并同步修正文档，避免“看起来会生效但实际不读取”的坑
 
 ## [0.0.28] - 2026-01-16
 
@@ -637,7 +638,7 @@
 
 - 初始项目结构与 Bun/TypeScript 脚手架
 - 占位入口 `src/index.ts` 与基础脚本配置
-- 配置模板（`configs/config.yaml`、`configs/default-agent.md`、`configs/example.env`）
+- 配置模板（`configs/config.example.yaml`、`configs/default-agent.md`、`configs/example.env`）
 - Claude Code 时间查询技能（`.claude/skills/time-lookup/SKILL.md`）
 - Claude Code 技能生成与优化技能（`.claude/skills/skill-authoring/SKILL.md`）
 - 技能模板与校验脚本（`.claude/skills/skill-authoring/assets/skill-template/SKILL.md`、`.claude/skills/skill-authoring/scripts/validate_skill.sh`）

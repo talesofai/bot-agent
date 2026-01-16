@@ -53,10 +53,10 @@
 - **复读触发**：群内所有 Bot 均可进入复读逻辑（无抢锁）。
 - **消息摘要**：
   - `contentHash` 包含图片、附件、富文本等内容，用于会话记录与追踪，不作为去重键。
-- **关键词来源**：
+  - **关键词来源**：
   - 全局关键词：`/data/router/global.yaml`。
   - 群关键词：`/data/groups/{group_id}/config.yaml`。
-  - 机器人关键词：`/data/bots/{bot_id}/config.yaml`。
+  - 机器人关键词：`/data/bots/{botId}/config.yaml`。
 
 ### 2.4 消息路由：归属一致性 (Ownership-Consistent Responses)
 

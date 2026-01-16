@@ -29,6 +29,7 @@
 - CI：移除 `opencode-ai` 作为项目依赖，避免 bun 在 Linux 环境安装 optional deps 失败
 - BullMQ：buffer 追加与是否需要新 job 改为 Redis 原子 gate，消除入队竞态窗口
 - BullMQ：gate TTL 仅由 worker 心跳续期，避免 job 失败后被消息延长导致会话卡死
+- 文档：机器人关键词配置路径改为 `/data/bots/{platform}-{canonicalBotId}/config.yaml`，与代码一致
 
 ## [0.0.27] - 2026-01-15
 

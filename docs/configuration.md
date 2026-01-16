@@ -273,7 +273,7 @@ echoRate: 30
 ### 机器人关键词配置
 
 ```yaml
-# /data/bots/{bot_id}/config.yaml
+# /data/bots/{botId}/config.yaml
 keywords:
   - "小布小布"
 keywordRouting:
@@ -283,7 +283,7 @@ keywordRouting:
 echoRate: null # 复读概率（0-100），空为继承上一级
 ```
 
-`bot_id` 为平台账号 ID（QQ 号或 Discord ID）。
+`botId` 为 `{platform}-{canonicalBotId}`，与会话目录中的 `botId` 一致（canonical 部分由 `BOT_ID_ALIASES` 解析，例如 `qq-123456` / `discord-987654`）。
 
 ## 配置热更新
 

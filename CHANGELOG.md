@@ -10,6 +10,7 @@
 ### Fixed
 
 - SessionProcessor：`job.id=0` 不再被误判为缺少 id
+- PostgresHistoryStore：`created_at` 改为 `TIMESTAMPTZ` 并按 `id` 倒序读取，避免 TEXT 时间字段导致排序/索引性能劣化；启动时自动迁移旧列类型
 
 ## [0.0.28] - 2026-01-16
 

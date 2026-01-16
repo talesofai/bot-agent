@@ -57,7 +57,7 @@ export interface PostgresHistoryStoreOptions {
 interface HistoryRow {
   role: HistoryEntry["role"];
   content: string;
-  createdAt: string;
+  createdAt: string | Date;
   groupId: string;
   meta: unknown;
 }
@@ -94,7 +94,7 @@ export class PostgresHistoryStore implements HistoryStore {
          FROM history_entries
          WHERE bot_account_id = ${key.botAccountId}
            AND user_id = ${key.userId}
-         ORDER BY created_at DESC, id DESC
+         ORDER BY id DESC
          LIMIT ${limit}
       `;
       const ordered = rows.reverse().map((row) => parseHistoryRow(row));
@@ -147,14 +147,42 @@ export class PostgresHistoryStore implements HistoryStore {
         group_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
-        created_at TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
         meta JSONB
       )
     `;
+    await this.ensureCreatedAtColumnType();
     await this.sql`
       CREATE INDEX IF NOT EXISTS history_entries_lookup_idx
         ON history_entries (bot_account_id, user_id, id)
     `;
+  }
+
+  private async ensureCreatedAtColumnType(): Promise<void> {
+    try {
+      const rows = await this.sql<{ dataType: string }[]>`
+        SELECT data_type AS "dataType"
+          FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'history_entries'
+           AND column_name = 'created_at'
+         LIMIT 1
+      `;
+      const dataType = rows[0]?.dataType;
+      if (!dataType) {
+        return;
+      }
+      if (dataType === "timestamp with time zone") {
+        return;
+      }
+      await this.sql`
+        ALTER TABLE history_entries
+          ALTER COLUMN created_at TYPE TIMESTAMPTZ
+          USING (created_at::timestamptz)
+      `;
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to ensure created_at column type");
+    }
   }
 }
 
@@ -166,13 +194,24 @@ function parseHistoryRow(row: HistoryRow): HistoryEntry {
   const base: HistoryEntry = {
     role: row.role,
     content: row.content,
-    createdAt: row.createdAt,
+    createdAt: normalizeCreatedAt(row.createdAt),
     groupId: row.groupId,
   };
   if (!row.meta || !isRecord(row.meta)) {
     return base;
   }
   return { ...base, ...row.meta };
+}
+
+function normalizeCreatedAt(value: string | Date): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+  return value;
 }
 
 function applyMaxBytes(

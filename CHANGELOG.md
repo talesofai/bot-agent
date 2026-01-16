@@ -30,6 +30,7 @@
 - BullMQ：buffer 追加与是否需要新 job 改为 Redis 原子 gate，消除入队竞态窗口
 - BullMQ：gate TTL 仅由 worker 心跳续期，避免 job 失败后被消息延长导致会话卡死
 - 文档：机器人关键词配置路径改为 `/data/bots/{platform}-{canonicalBotId}/config.yaml`，与代码一致
+- 文档：修复开发指南代码块 fence 并更新接口示例签名，确保与实际类型一致
 - Session TTL 清理：lastActive 改为读取 meta.updatedAt，避免目录 mtime 不更新导致误删
 - 测试：新增 SessionProcessor 缓冲尾部竞态回归用例，防止消息滞留/丢失回归
 - Docker：补齐 `.dockerignore` 并收敛 Dockerfile 复制范围，避免把本地 `data/` 与 `.env` 等打进镜像

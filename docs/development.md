@@ -50,31 +50,29 @@ docker compose -f deployments/docker/docker-compose.llbot-local.yml up -d
 
 查看日志：
 
-````bash
+```bash
 docker compose -f deployments/docker/docker-compose.llbot-local.yml logs -f luckylillia
+```
 
 本地启动 Adapter 与 Worker：
 
 ```bash
 bun run start:adapter
 bun run start:worker
-````
-
 ```
 
 ## 项目结构
 
-```
-
+```text
 opencode-bot-agent/
 ├── src/ # TypeScript 源码（含测试）
 ├── configs/ # 配置文件
 ├── deployments/ # 部署配置
 ├── docs/ # 文档
-└── data/ # 运行时数据（群目录）
-└── groups/{group_id}/
+└── data/ # 运行时数据
+    └── groups/{group_id}/
 
-````
+```
 
 ## 代码规范
 
@@ -88,21 +86,29 @@ opencode-bot-agent/
 
 ```typescript
 interface PlatformAdapter {
-  platform: string; // 'qq' | 'discord'
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  onMessage(handler: MessageHandler): void;
-  onConnect(handler: ConnectionHandler): void;
-  onDisconnect(handler: ConnectionHandler): void;
-  sendMessage(options: SendMessageOptions): Promise<void>;
+  platform: string;
+  connect(bot: Bot): Promise<void>;
+  disconnect(bot: Bot): Promise<void>;
+  onEvent(handler: MessageHandler): void;
+  sendMessage(
+    session: SessionEvent,
+    content: string,
+    options?: SendMessageOptions,
+  ): Promise<void>;
   getBotUserId(): string | null;
 }
-````
+```
 
 统一消息结构（Session）：
 
 ```typescript
-interface SessionEvent {
+type SessionElement =
+  | { type: "text"; text: string }
+  | { type: "image"; url: string }
+  | { type: "mention"; userId: string }
+  | { type: "quote"; messageId: string };
+
+interface SessionEvent<TExtras = unknown> {
   type: "message";
   platform: string;
   selfId: string;
@@ -111,14 +117,9 @@ interface SessionEvent {
   channelId: string;
   messageId?: string;
   content: string;
-  elements: Array<
-    | { type: "text"; text: string }
-    | { type: "image"; url: string }
-    | { type: "mention"; userId: string }
-    | { type: "quote"; messageId: string }
-  >;
+  elements: ReadonlyArray<SessionElement>;
   timestamp: number;
-  extras: Record<string, unknown>;
+  extras: TExtras;
 }
 ```
 

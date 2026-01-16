@@ -12,22 +12,30 @@ export function parseOpencodeOutput(
   if (!raw) {
     return null;
   }
-  const parsed = parseJsonFromRaw(raw.trim());
-  return parsed ? extractResult(parsed, createdAt) : null;
+  const candidates = parseJsonCandidates(raw.trim());
+  let best: OpencodeRunResult | null = null;
+  for (const candidate of candidates) {
+    const result = extractResult(candidate, createdAt);
+    if (result) {
+      best = result;
+    }
+  }
+  return best;
 }
 
-function parseJsonFromRaw(raw: string): unknown | null {
+function parseJsonCandidates(raw: string): unknown[] {
   const direct = tryParseJson(raw);
   if (direct !== null) {
-    return direct;
+    return [direct];
   }
+  const candidates: unknown[] = [];
   for (const block of scanJsonBlocks(raw)) {
     const parsed = tryParseJson(block);
     if (parsed !== null) {
-      return parsed;
+      candidates.push(parsed);
     }
   }
-  return null;
+  return candidates;
 }
 
 function tryParseJson(raw: string): unknown | null {
@@ -47,6 +55,21 @@ function extractHistoryEntries(
   }
   if (isRecord(parsed)) {
     const obj = parsed;
+    const message = isRecord(obj.message) ? obj.message : null;
+    if (
+      message &&
+      typeof message.role === "string" &&
+      typeof message.content === "string" &&
+      isHistoryRole(message.role)
+    ) {
+      return [
+        {
+          role: message.role as HistoryEntry["role"],
+          content: message.content,
+          createdAt,
+        },
+      ];
+    }
     const candidates =
       (Array.isArray(obj.messages) && obj.messages) ||
       (Array.isArray(obj.history) && obj.history) ||

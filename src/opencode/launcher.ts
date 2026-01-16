@@ -6,6 +6,7 @@ export interface OpencodeLaunchSpec {
   args: string[];
   cwd: string;
   env?: Record<string, string>;
+  prompt?: string;
 }
 
 export class OpencodeLauncher {
@@ -14,16 +15,28 @@ export class OpencodeLauncher {
     prompt: string,
     modelOverride?: string,
   ): OpencodeLaunchSpec {
-    const groupPath = sessionInfo.groupPath;
-    const model = modelOverride?.trim() || getConfig().OPENCODE_MODEL?.trim();
-    const args = ["-p", prompt, "-c", groupPath, "-f", "json"];
+    const config = getConfig();
+    const maxPromptBytes = config.OPENCODE_PROMPT_MAX_BYTES;
+    const promptBytes = Buffer.byteLength(prompt, "utf8");
+    if (promptBytes > maxPromptBytes) {
+      throw new Error(
+        `Prompt size ${promptBytes} exceeds OPENCODE_PROMPT_MAX_BYTES=${maxPromptBytes}`,
+      );
+    }
+
+    const model = modelOverride?.trim() || config.OPENCODE_MODEL?.trim();
+    const args = ["run", "--format", "json"];
     if (model) {
       args.push("-m", model);
     }
+    args.push(
+      "Use the attached prompt file as the full context and reply with the final answer only.",
+    );
     return {
       command: "opencode",
       args,
       cwd: sessionInfo.workspacePath,
+      prompt,
     };
   }
 }

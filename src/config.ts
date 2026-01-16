@@ -13,6 +13,11 @@ const envSchema = z.object({
   GROUPS_DATA_DIR: z.string().default("/data/groups"),
   DATA_DIR: z.string().optional(),
   OPENCODE_MODEL: z.string().default("claude-sonnet-4-20250514"),
+  OPENCODE_PROMPT_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(500_000),
   LOG_LEVEL: z.string().default("info"),
   LOG_FORMAT: z.string().default("json"),
   MCP_TALESOFAI_URL: z.string().url().optional(),

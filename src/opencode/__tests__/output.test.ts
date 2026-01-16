@@ -83,4 +83,17 @@ describe("parseOpencodeOutput", () => {
     const result = parseOpencodeOutput(raw, createdAt);
     expect(result).toEqual({ output: "ok" });
   });
+
+  test("parses jsonl by selecting the last usable event", () => {
+    const createdAt = "2026-01-13T00:00:00.000Z";
+    const raw = [
+      JSON.stringify({
+        type: "message",
+        message: { role: "assistant", content: "partial" },
+      }),
+      JSON.stringify({ output: "final" }),
+    ].join("\n");
+    const result = parseOpencodeOutput(raw, createdAt);
+    expect(result).toEqual({ output: "final" });
+  });
 });

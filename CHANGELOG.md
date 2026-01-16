@@ -11,6 +11,10 @@
 
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 
+### Security
+
+- 部署：补齐 `pmhq` 需要 `privileged: true` 的原因说明，并明确最小权限目标（`SYS_PTRACE` + `seccomp=unconfined`）
+
 ## [0.0.28] - 2026-01-16
 
 ### Added

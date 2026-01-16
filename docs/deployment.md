@@ -37,6 +37,19 @@ LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节�
 - `DATABASE_URL` 必须可用（建议通过 `configs/.env` 或 `configs/secrets/.env` 注入）
 - `REDIS_URL` 必须可用（BullMQ 依赖）
 
+### PMHQ 的 `privileged: true`（安全说明）
+
+`pmhq` 镜像来自上游 PMHQ（Pure memory hook QQNT）。它通过 **ptrace/进程注入** 去 hook QQNT，这类行为在容器里会被 Docker/K8s 的默认安全策略直接拦掉（默认丢弃 `CAP_SYS_PTRACE`，并启用默认 seccomp profile）。
+
+因此当前 Compose/K8s 清单将 `pmhq` 以 `privileged: true` 运行，属于“为了能跑先开大权限”的做法，安全与运维成本非常高。
+
+最低要求的目标（待验证）：用 **最小权限** 替代 `privileged`，优先尝试：
+
+- `cap_add: ["SYS_PTRACE"]`
+- `security_opt: ["seccomp=unconfined"]`（部分发行版还需要 `apparmor=unconfined`）
+
+在没有明确验证前，不要把 `pmhq` 与其他高价值工作负载混跑：建议专机/独立节点池、最小可访问网络、最小挂载目录，并严格限制宿主机权限与凭据暴露。
+
 ### 启动命令
 
 ```bash

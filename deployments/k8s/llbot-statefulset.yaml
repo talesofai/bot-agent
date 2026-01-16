@@ -56,6 +56,8 @@ spec:
           ports:
             - containerPort: 13000
           securityContext:
+            # PMHQ 通过 ptrace/进程注入 hook QQNT，默认 seccomp/capabilities 会阻止该行为。
+            # 目前用 privileged 确保可用；最小权限目标见 docs/deployment.md。
             privileged: true
           env:
             - name: ENABLE_HEADLESS

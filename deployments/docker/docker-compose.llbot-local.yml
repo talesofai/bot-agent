@@ -29,7 +29,12 @@ services:
     image: linyuchen/pmhq:latest
     platform: linux/amd64
     container_name: luckylillia-pmhq
+    # PMHQ 通过 ptrace/进程注入 hook QQNT，默认 seccomp/capabilities 会阻止该行为。
+    # 目前用 privileged 确保可用；最小权限目标见 docs/deployment.md。
     privileged: true
+    # TODO(least-privilege): 验证后替换为：
+    # cap_add: ["SYS_PTRACE"]
+    # security_opt: ["seccomp=unconfined"]
     environment:
       - ENABLE_HEADLESS=false
       - AUTO_LOGIN_QQ=

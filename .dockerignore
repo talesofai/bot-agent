@@ -6,3 +6,15 @@ dist
 bun.lockb
 tmp
 coverage
+data
+sessions
+.env
+.env.*
+configs/.env
+configs/secrets
+*.pem
+*.key
+*.crt
+*.sqlite
+*.sqlite3
+*.db

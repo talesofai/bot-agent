@@ -20,7 +20,9 @@ RUN git init \
   && bun install --frozen-lockfile --ignore-scripts
 
 # Copy source code
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
+COPY configs ./configs
 
 # Build
 RUN bun run build
@@ -46,7 +48,13 @@ RUN bun install -g opencode-ai@latest --ignore-scripts \
   && bun install -g opencode-linux-x64@1.1.19
 
 # Copy app artifacts
-COPY --from=builder /app /app
+COPY --from=builder /app/dist /app/dist
+COPY --from=builder /app/src /app/src
+COPY --from=builder /app/configs /app/configs
+COPY --from=builder /app/package.json /app/package.json
+COPY --from=builder /app/bun.lock /app/bun.lock
+COPY --from=builder /app/tsconfig.json /app/tsconfig.json
+COPY --from=builder /app/node_modules /app/node_modules
 
 # Create data directory
 RUN mkdir -p /data/groups

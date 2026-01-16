@@ -34,6 +34,7 @@
 - 测试：新增 SessionProcessor 缓冲尾部竞态回归用例，防止消息滞留/丢失回归
 - Docker：补齐 `.dockerignore` 并收敛 Dockerfile 复制范围，避免把本地 `data/` 与 `.env` 等打进镜像
 - Typecheck：关闭 `skipLibCheck` 并补齐 `node:util`/`node:tls` 类型兼容层，确保 `tsc --noEmit` 全量检查通过
+- Docker Compose：移除无效的 `PLATFORM=qq` 配置，避免误导（代码不读取该 env）
 
 ## [0.0.27] - 2026-01-15
 

@@ -75,7 +75,6 @@ services:
       - ../../configs/.env
       - ../../configs/secrets/.env
     environment:
-      - PLATFORM=qq
       - REDIS_URL=redis://redis:6379
       - LLBOT_REGISTRY_PREFIX=llbot:registry
     volumes:

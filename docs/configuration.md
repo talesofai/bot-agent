@@ -114,7 +114,7 @@ BOT_ID_ALIASES=
 ```
 
 `GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置。
-会话数据默认存放在 `${GROUPS_DATA_DIR}/sessions/{botId}/{userId}/{sessionId}`，其中 `botId` 为 `{platform}-{canonicalBotId}`（canonical 部分由 `BOT_ID_ALIASES` 解析）。
+会话数据默认存放在 `${GROUPS_DATA_DIR}/sessions/{botId}/{groupId}/{userId}/{sessionId}`，其中 `botId` 为 `{platform}-{canonicalBotId}`（canonical 部分由 `BOT_ID_ALIASES` 解析）。
 
 ### 日志配置
 

@@ -76,6 +76,54 @@ describe("createSession", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
+  test("does not reuse session across groups", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const first = await createSession({
+      groupId: "group-1",
+      botId: "bot-1",
+      userId: "user-1",
+      key: 0,
+      maxSessions: 1,
+      groupRepository,
+      sessionRepository,
+    });
+    const second = await createSession({
+      groupId: "group-2",
+      botId: "bot-1",
+      userId: "user-1",
+      key: 0,
+      maxSessions: 1,
+      groupRepository,
+      sessionRepository,
+    });
+
+    expect(first.meta.sessionId).toBe(second.meta.sessionId);
+    expect(first.meta.groupId).toBe("group-1");
+    expect(second.meta.groupId).toBe("group-2");
+    expect(first.workspacePath).not.toBe(second.workspacePath);
+    expect(
+      first.workspacePath.endsWith(
+        join("sessions", "bot-1", "group-1", "user-1", "user-1-0", "workspace"),
+      ),
+    ).toBe(true);
+    expect(
+      second.workspacePath.endsWith(
+        join("sessions", "bot-1", "group-2", "user-1", "user-1-0", "workspace"),
+      ),
+    ).toBe(true);
+
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
   test("rejects negative key", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });

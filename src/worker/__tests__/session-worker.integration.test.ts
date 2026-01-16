@@ -144,6 +144,7 @@ describe("session worker integration", () => {
       });
       const sessionInfo = await sessionRepository.loadSession(
         "bot-1",
+        groupId,
         userId,
         sessionId,
       );
@@ -230,6 +231,7 @@ describe("session worker integration", () => {
       });
       const sessionInfo = await sessionRepository.loadSession(
         "bot-1",
+        groupId,
         userId,
         sessionId,
       );

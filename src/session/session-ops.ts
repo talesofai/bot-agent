@@ -28,6 +28,7 @@ export async function createSession(
   const sessionId = sessionRepository.getSessionId(userId, key);
   const existing = await sessionRepository.loadSession(
     input.botId,
+    groupId,
     userId,
     sessionId,
   );

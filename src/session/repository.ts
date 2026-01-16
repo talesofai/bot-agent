@@ -40,15 +40,16 @@ export class SessionRepository {
 
   async loadSession(
     botId: string,
+    groupId: string,
     userId: string,
     sessionId: string,
   ): Promise<SessionInfo | null> {
-    const paths = this.buildSessionPaths(botId, userId, sessionId);
+    const paths = this.buildSessionPaths(botId, groupId, userId, sessionId);
     const meta = await this.readMeta(paths.metaPath);
     if (!meta) {
       return null;
     }
-    if (!this.isMetaConsistent(meta, botId, userId, sessionId)) {
+    if (!this.isMetaConsistent(meta, botId, groupId, userId, sessionId)) {
       return null;
     }
     return this.buildSessionInfo(meta, paths);
@@ -57,6 +58,7 @@ export class SessionRepository {
   async createSession(meta: SessionMeta): Promise<SessionInfo> {
     const paths = this.buildSessionPaths(
       meta.botId,
+      meta.groupId,
       meta.ownerId,
       meta.sessionId,
     );
@@ -68,6 +70,7 @@ export class SessionRepository {
   async updateMeta(meta: SessionMeta): Promise<SessionInfo> {
     const paths = this.buildSessionPaths(
       meta.botId,
+      meta.groupId,
       meta.ownerId,
       meta.sessionId,
     );
@@ -89,13 +92,15 @@ export class SessionRepository {
 
   private buildSessionPaths(
     botId: string,
+    groupId: string,
     userId: string,
     sessionId: string,
   ): SessionPaths {
     assertSafePathSegment(botId, "botId");
+    assertSafePathSegment(groupId, "groupId");
     assertSafePathSegment(userId, "userId");
     assertSafePathSegment(sessionId, "sessionId");
-    const sessionsRoot = join(this.dataDir, "sessions", botId, userId);
+    const sessionsRoot = join(this.dataDir, "sessions", botId, groupId, userId);
     const sessionPath = join(sessionsRoot, sessionId);
     return {
       sessionPath,
@@ -148,11 +153,13 @@ export class SessionRepository {
   private isMetaConsistent(
     meta: SessionMeta,
     botId: string,
+    groupId: string,
     ownerId: string,
     sessionId: string,
   ): boolean {
     if (
       meta.botId === botId &&
+      meta.groupId === groupId &&
       meta.ownerId === ownerId &&
       meta.sessionId === sessionId
     ) {
@@ -165,6 +172,7 @@ export class SessionRepository {
         metaGroupId: meta.groupId,
         metaSessionId: meta.sessionId,
         botId,
+        groupId,
         ownerId,
         sessionId,
       },

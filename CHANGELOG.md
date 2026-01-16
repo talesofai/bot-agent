@@ -10,6 +10,7 @@
 ### Fixed
 
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
+- Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
 
 ### Security
 

@@ -278,20 +278,13 @@ export class SessionProcessor {
   ): Promise<SessionInfo> {
     const existing = await this.sessionRepository.loadSession(
       botId,
+      groupId,
       userId,
       sessionId,
     );
     if (existing) {
       if (existing.meta.ownerId !== userId) {
         throw new Error("Session ownership mismatch");
-      }
-      if (existing.meta.groupId !== groupId) {
-        const updatedMeta: SessionInfo["meta"] = {
-          ...existing.meta,
-          groupId,
-          updatedAt: new Date().toISOString(),
-        };
-        return this.sessionRepository.updateMeta(updatedMeta);
       }
       return existing;
     }

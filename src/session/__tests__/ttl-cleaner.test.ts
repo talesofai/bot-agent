@@ -31,15 +31,23 @@ describe("SessionTtlCleaner", () => {
 
     const botId = "qq-123";
     const userId = "user-1";
+    const groupId = "group-1";
     const sessionId = "user-1-0";
-    const sessionPath = join(tempDir, "sessions", botId, userId, sessionId);
+    const sessionPath = join(
+      tempDir,
+      "sessions",
+      botId,
+      groupId,
+      userId,
+      sessionId,
+    );
     mkdirSync(sessionPath, { recursive: true });
 
     const now = Date.now();
     const metaPath = join(sessionPath, "meta.json");
     const meta = {
       sessionId,
-      groupId: "group-1",
+      groupId,
       botId,
       ownerId: userId,
       key: 0,
@@ -71,15 +79,23 @@ describe("SessionTtlCleaner", () => {
 
     const botId = "qq-123";
     const userId = "user-1";
+    const groupId = "group-1";
     const sessionId = "user-1-0";
-    const sessionPath = join(tempDir, "sessions", botId, userId, sessionId);
+    const sessionPath = join(
+      tempDir,
+      "sessions",
+      botId,
+      groupId,
+      userId,
+      sessionId,
+    );
     mkdirSync(sessionPath, { recursive: true });
 
     const now = Date.now();
     const metaPath = join(sessionPath, "meta.json");
     const meta = {
       sessionId,
-      groupId: "group-1",
+      groupId,
       botId,
       ownerId: userId,
       key: 0,

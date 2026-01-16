@@ -45,7 +45,7 @@ WORKDIR /app
 
 # Install opencode CLI from npm to pick the correct platform binary
 RUN bun install -g opencode-ai@latest --ignore-scripts \
-  && bun install -g opencode-linux-x64@1.1.19
+  && bun install -g opencode-linux-x64@latest --ignore-scripts
 
 # Copy app artifacts
 COPY --from=builder /app/dist /app/dist

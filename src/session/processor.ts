@@ -180,6 +180,26 @@ export class SessionProcessor {
           history,
           launchSpec,
         });
+        const stillOwnerAfterRun = await this.bufferStore.claimGate(
+          bufferKey,
+          gateToken,
+        );
+        if (!stillOwnerAfterRun) {
+          this.logger.warn(
+            { sessionId: jobData.sessionId, botId: jobData.botId },
+            "Discarding session result due to gate token mismatch after run",
+          );
+          try {
+            await this.bufferStore.requeueFront(bufferKey, buffered);
+          } catch (err) {
+            this.logger.error(
+              { err, sessionId: jobData.sessionId, botId: jobData.botId },
+              "Failed to requeue buffered messages after gate loss",
+            );
+          }
+          shouldSetIdle = false;
+          return;
+        }
         const output = resolveOutput(result.output);
 
         await this.appendHistoryFromJob(

@@ -17,6 +17,10 @@ export interface SessionBufferKey {
 export interface SessionBuffer {
   getGateTtlSeconds(): number;
   append(key: SessionBufferKey, message: SessionEvent): Promise<void>;
+  requeueFront(
+    key: SessionBufferKey,
+    messages: ReadonlyArray<SessionEvent>,
+  ): Promise<void>;
   appendAndRequestJob(
     key: SessionBufferKey,
     message: SessionEvent,
@@ -50,6 +54,23 @@ export class SessionBufferStore implements SessionBuffer {
   async append(key: SessionBufferKey, message: SessionEvent): Promise<void> {
     const redisKey = this.bufferKey(key);
     await this.redis.rpush(redisKey, JSON.stringify(message));
+  }
+
+  async requeueFront(
+    key: SessionBufferKey,
+    messages: ReadonlyArray<SessionEvent>,
+  ): Promise<void> {
+    if (messages.length === 0) {
+      return;
+    }
+    const redisKey = this.bufferKey(key);
+    const batchSize = 100;
+    for (let end = messages.length; end > 0; end -= batchSize) {
+      const start = Math.max(0, end - batchSize);
+      const slice = messages.slice(start, end);
+      const raw = slice.map((message) => JSON.stringify(message)).reverse();
+      await this.redis.lpush(redisKey, ...raw);
+    }
   }
 
   async appendAndRequestJob(

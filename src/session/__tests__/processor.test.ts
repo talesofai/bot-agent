@@ -83,6 +83,18 @@ class MemorySessionBuffer implements SessionBuffer {
     this.buffers.set(encoded, existing);
   }
 
+  async requeueFront(
+    key: SessionBufferKey,
+    messages: ReadonlyArray<SessionEvent>,
+  ): Promise<void> {
+    if (messages.length === 0) {
+      return;
+    }
+    const encoded = encodeKey(key);
+    const existing = this.buffers.get(encoded) ?? [];
+    this.buffers.set(encoded, [...messages, ...existing]);
+  }
+
   async appendAndRequestJob(
     key: SessionBufferKey,
     message: SessionEvent,
@@ -258,5 +270,102 @@ describe("SessionProcessor", () => {
     expect(adapter.messages).toEqual(["ok-1", "ok-2"]);
     expect(bufferStore.hasGate(bufferKey)).toBe(false);
     expect(bufferStore.bufferLength(bufferKey)).toBe(0);
+  });
+
+  test("requeues drained messages when gate token changes during run", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const launcher = new OpencodeLauncher();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const first: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "123",
+      userId: jobData.userId,
+      guildId: jobData.groupId,
+      channelId: jobData.groupId,
+      messageId: "msg-1",
+      content: "hello",
+      elements: [{ type: "text", text: "hello" }],
+      timestamp: Date.now(),
+      extras: {},
+    };
+    const second: SessionEvent = {
+      ...first,
+      messageId: "msg-2",
+      content: "second",
+      elements: [{ type: "text", text: "second" }],
+    };
+
+    const acquired = await bufferStore.appendAndRequestJob(
+      bufferKey,
+      first,
+      jobData.gateToken,
+    );
+    expect(acquired).toBe(jobData.gateToken);
+
+    const runner: OpencodeRunner = {
+      async run(): Promise<OpencodeRunResult> {
+        await bufferStore.releaseGate(bufferKey, jobData.gateToken);
+        await bufferStore.append(bufferKey, second);
+        await bufferStore.claimGate(bufferKey, "new-gate-token");
+        return { output: "stale-output" };
+      },
+    };
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      launcher,
+      runner,
+      activityIndex,
+      bufferStore,
+      limits: { historyEntries: 10, historyBytes: 10_000 },
+    });
+
+    try {
+      await processor.process({ id: "job-1", data: jobData }, jobData);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+
+    expect(adapter.messages).toEqual([]);
+    const pending = await bufferStore.drain(bufferKey);
+    expect(pending.map((entry) => entry.messageId)).toEqual(["msg-1", "msg-2"]);
+    const history = await historyStore.readHistory({
+      botAccountId: "qq:123",
+      userId: jobData.userId,
+    });
+    expect(history).toEqual([]);
   });
 });

@@ -14,7 +14,12 @@ export interface SessionKey {
   sessionId: string;
 }
 
-export class SessionActivityStore {
+export interface SessionActivityIndex {
+  recordActivity(key: SessionKey, timestampMs?: number): Promise<void>;
+  close(): Promise<void>;
+}
+
+export class SessionActivityStore implements SessionActivityIndex {
   private redis: IORedis;
   private logger: Logger;
   private key: string;

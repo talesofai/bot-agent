@@ -1,4 +1,3 @@
-import type { Job } from "bullmq";
 import type { Logger } from "pino";
 
 import type { SessionJob, SessionJobData } from "../queue";
@@ -12,10 +11,14 @@ import { buildBufferedInput, buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
 import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "../worker/runner";
-import { SessionActivityStore } from "./activity-store";
-import { SessionBufferStore } from "./buffer";
-import type { SessionBufferKey } from "./buffer";
+import type { SessionActivityIndex } from "./activity-store";
+import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { buildBotAccountId } from "../utils/bot-id";
+
+export interface SessionJobContext {
+  id?: string | number | null;
+  data: SessionJobData;
+}
 
 export interface SessionProcessorOptions {
   logger: Logger;
@@ -25,8 +28,8 @@ export interface SessionProcessorOptions {
   historyStore: HistoryStore;
   launcher: OpencodeLauncher;
   runner: OpencodeRunner;
-  activityIndex: SessionActivityStore;
-  bufferStore: SessionBufferStore;
+  activityIndex: SessionActivityIndex;
+  bufferStore: SessionBuffer;
   limits?: {
     historyEntries?: number;
     historyBytes?: number;
@@ -41,8 +44,8 @@ export class SessionProcessor {
   private historyStore: HistoryStore;
   private launcher: OpencodeLauncher;
   private runner: OpencodeRunner;
-  private activityIndex: SessionActivityStore;
-  private bufferStore: SessionBufferStore;
+  private activityIndex: SessionActivityIndex;
+  private bufferStore: SessionBuffer;
   private historyMaxEntries?: number;
   private historyMaxBytes?: number;
 
@@ -61,7 +64,7 @@ export class SessionProcessor {
   }
 
   async process(
-    job: Job<SessionJobData>,
+    job: SessionJobContext,
     jobData: SessionJobData,
   ): Promise<void> {
     let statusUpdated = false;
@@ -370,7 +373,7 @@ export class SessionProcessor {
     }
   }
 
-  private mapJob(job: Job<SessionJobData>): SessionJob {
+  private mapJob(job: SessionJobContext): SessionJob {
     const id = job.id ? String(job.id) : `job-${Date.now()}`;
     return { id, data: job.data };
   }

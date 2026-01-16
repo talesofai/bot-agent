@@ -14,7 +14,23 @@ export interface SessionBufferKey {
   sessionId: string;
 }
 
-export class SessionBufferStore {
+export interface SessionBuffer {
+  getGateTtlSeconds(): number;
+  append(key: SessionBufferKey, message: SessionEvent): Promise<void>;
+  appendAndRequestJob(
+    key: SessionBufferKey,
+    message: SessionEvent,
+    token: string,
+  ): Promise<string | null>;
+  drain(key: SessionBufferKey): Promise<SessionEvent[]>;
+  claimGate(key: SessionBufferKey, token: string): Promise<boolean>;
+  refreshGate(key: SessionBufferKey, token: string): Promise<boolean>;
+  tryReleaseGate(key: SessionBufferKey, token: string): Promise<boolean>;
+  releaseGate(key: SessionBufferKey, token: string): Promise<boolean>;
+  close(): Promise<void>;
+}
+
+export class SessionBufferStore implements SessionBuffer {
   private redis: IORedis;
   private keyPrefix: string;
   private gateKeyPrefix: string;

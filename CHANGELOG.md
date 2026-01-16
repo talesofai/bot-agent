@@ -31,6 +31,7 @@
 - BullMQ：gate TTL 仅由 worker 心跳续期，避免 job 失败后被消息延长导致会话卡死
 - 文档：机器人关键词配置路径改为 `/data/bots/{platform}-{canonicalBotId}/config.yaml`，与代码一致
 - Session TTL 清理：lastActive 改为读取 meta.updatedAt，避免目录 mtime 不更新导致误删
+- 测试：新增 SessionProcessor 缓冲尾部竞态回归用例，防止消息滞留/丢失回归
 
 ## [0.0.27] - 2026-01-15
 

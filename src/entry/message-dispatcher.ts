@@ -14,7 +14,7 @@ import {
 import { EchoTracker } from "./echo";
 import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
-import { SessionBufferStore } from "../session/buffer";
+import type { SessionBuffer } from "../session/buffer";
 import { buildBotFsId, resolveCanonicalBotId } from "../utils/bot-id";
 
 export interface MessageDispatcherOptions {
@@ -22,7 +22,7 @@ export interface MessageDispatcherOptions {
   groupStore: GroupStore;
   routerStore: RouterStore | null;
   sessionQueue: BullmqSessionQueue;
-  bufferStore: SessionBufferStore;
+  bufferStore: SessionBuffer;
   echoTracker: EchoTracker;
   logger: Logger;
   defaultGroupId?: string;
@@ -33,7 +33,7 @@ export class MessageDispatcher {
   private groupStore: GroupStore;
   private routerStore: RouterStore | null;
   private sessionQueue: BullmqSessionQueue;
-  private bufferStore: SessionBufferStore;
+  private bufferStore: SessionBuffer;
   private echoTracker: EchoTracker;
   private logger: Logger;
   private defaultGroupId?: string;

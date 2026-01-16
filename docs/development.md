@@ -61,6 +61,8 @@ bun run start:adapter
 bun run start:worker
 ```
 
+两个进程都会启动 `/health`：adapter 使用 `HTTP_PORT`（默认 8080），worker 使用 `WORKER_HTTP_PORT`（默认 8081），避免本地同机多进程端口冲突。
+
 ## 项目结构
 
 ```text

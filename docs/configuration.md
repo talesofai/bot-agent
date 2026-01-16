@@ -84,8 +84,11 @@ DATABASE_URL=postgres://postgres:postgres@postgres:5432/opencode
 ### HTTP 服务配置
 
 ```env
-# HTTP 端口
+# HTTP 端口（Adapter）
 HTTP_PORT=8080
+
+# HTTP 端口（Worker；0 表示随机端口）
+WORKER_HTTP_PORT=8081
 
 # 可选：管理端点鉴权 token（未设置则禁用管理接口）
 API_TOKEN=

@@ -45,7 +45,7 @@ export async function startHttpServer(
     },
   });
 
-  options.logger.info({ port }, "HTTP server started");
+  options.logger.info({ port: server.port }, "HTTP server started");
   return server;
 }
 

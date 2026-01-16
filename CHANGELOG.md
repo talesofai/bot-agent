@@ -9,9 +9,7 @@
 
 ### Fixed
 
-- SessionProcessor：`job.id=0` 不再被误判为缺少 id
-- PostgresHistoryStore：`created_at` 改为 `TIMESTAMPTZ` 并按 `id` 倒序读取，避免 TEXT 时间字段导致排序/索引性能劣化；启动时自动迁移旧列类型
-- 配置：移除迷惑性的 `configs/config.yaml`，改为 `configs/config.example.yaml` 并同步修正文档，避免“看起来会生效但实际不读取”的坑
+- HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 
 ## [0.0.28] - 2026-01-16
 

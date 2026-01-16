@@ -71,7 +71,7 @@ adapter.connect(bot).catch((err) => {
 worker.start();
 
 let httpServer: HttpServer | null = null;
-startHttpServer({ logger })
+startHttpServer({ logger, port: config.WORKER_HTTP_PORT })
   .then((server) => {
     httpServer = server;
   })

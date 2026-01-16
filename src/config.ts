@@ -27,6 +27,7 @@ const envSchema = z.object({
   HISTORY_MAX_ENTRIES: z.coerce.number().int().positive().optional(),
   HISTORY_MAX_BYTES: z.coerce.number().int().positive().optional(),
   HTTP_PORT: z.coerce.number().int().min(1).default(8080),
+  WORKER_HTTP_PORT: z.coerce.number().int().min(0).default(8081),
   API_TOKEN: z.string().optional(),
   DEFAULT_GROUP_ID: z.string().optional(),
   LLBOT_REGISTRY_PREFIX: z.string().default("llbot:registry"),

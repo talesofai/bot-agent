@@ -6,6 +6,7 @@ metadata:
   name: bot-data
   namespace: bot
 spec:
+  storageClassName: alicloud-disk-topology-alltype
   accessModes:
     - ReadWriteOnce
   resources:

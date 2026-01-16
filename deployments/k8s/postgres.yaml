@@ -20,6 +20,8 @@ spec:
           ports:
             - containerPort: 5432
           env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
             - name: POSTGRES_DB
               value: "opencode"
             - name: POSTGRES_USER
@@ -43,11 +45,12 @@ spec:
     - metadata:
         name: pgdata
       spec:
+        storageClassName: alicloud-disk-topology-alltype
         accessModes:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 10Gi
+            storage: 20Gi
 ---
 apiVersion: v1
 kind: Service

@@ -37,11 +37,12 @@ spec:
     - metadata:
         name: redis-data
       spec:
+        storageClassName: alicloud-disk-topology-alltype
         accessModes:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 10Gi
+            storage: 20Gi
 ---
 apiVersion: v1
 kind: Service

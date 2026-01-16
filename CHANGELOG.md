@@ -43,6 +43,8 @@
 - BullMQ：gate TTL 仅由 worker 心跳续期，避免 job 失败后被消息延长导致会话卡死
 - SessionProcessor：opencode 运行后校验 gate ownership，gate 变更时回滚 drain 的缓冲并跳过写历史/回复，避免过期 job 产生副作用
 - K8s：移除旧版 `luckylillia`/`pmhq` Deployment 清单并更名 `bot-data` PVC 清单，避免与 `llbot` StatefulSet 同目录误 apply 打架
+- K8s：PVC 显式指定 ACK StorageClass（`alicloud-disk-topology-alltype`）并将 Postgres/Redis 数据盘最小值提高到 20Gi，避免无 default StorageClass / 最小盘限制导致 Pending/ProvisioningFailed
+- K8s：Postgres 设置 `PGDATA=/var/lib/postgresql/data/pgdata`，避免 PVC 根目录 `lost+found` 触发 `initdb` 启动失败
 - 文档：机器人关键词配置路径改为 `/data/bots/{platform}-{canonicalBotId}/config.yaml`，与代码一致
 - 文档：修复开发指南代码块 fence 并更新接口示例签名，确保与实际类型一致
 - 文档：更新 `AGENTS.md`，移除“TS 在规划中”的错误描述并补齐 `bun run`/Docker Compose 真实命令

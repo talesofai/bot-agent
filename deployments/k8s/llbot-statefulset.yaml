@@ -87,6 +87,7 @@ spec:
     - metadata:
         name: data
       spec:
+        storageClassName: alicloud-disk-topology-alltype
         accessModes:
           - ReadWriteOnce
         resources:

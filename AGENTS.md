@@ -2,25 +2,27 @@
 
 ## 项目结构与模块组织
 
-本仓库目前主要包含配置、部署资源和文档。TypeScript 实现已在规划中（详见 `docs/development-plan.md`）。关键路径如下：
+本仓库已落地 TypeScript 主实现（源码位于 `src/`，测试位于 `src/**/__tests__`）。关键路径如下：
 
+- `src/` — TypeScript 源码与单元测试。
+- `dist/` — Bun build 产物（可由 `bun run build` 重新生成）。
 - `configs/` — 配置模板，如 `configs/config.yaml` 和 `configs/default-agent.md`。
 - `deployments/` — Docker/K8s 部署资源（包括 `deployments/docker/Dockerfile`）。
 - `docs/` — 架构、开发和运维指南。
-- `data/groups/{group_id}/` — 运行时群组数据（Agent 提示词、技能、上下文、资源）。
-
-添加 TypeScript 源码时，请保持清晰的顶层布局（例如 `src/`、`test/`），并在此处记录结构。
+- `data/` — 本地/容器运行时数据目录（默认挂载到 `/data`），包含 `groups/`、`router/`、`bots/`、`sessions/` 等。
 
 ## 构建、测试与开发命令
 
 - `cp configs/example.env configs/.env` — 创建本地环境变量文件。
-- `docker-compose up -d luckylillia` — 启动 LuckyLilliaBot（Bot Agent 实现落地后再启用完整栈）。
-- `docker-compose logs -f` — 实时查看所有服务日志。
-- `docker-compose logs -f opencode-bot-agent` — 仅实时查看 Bot Agent 日志。
-- `docker-compose logs -f luckylillia` — 仅实时查看 LuckyLilliaBot 日志。
-- 提交前必须在本地执行 `bun run format` 并确保格式检查通过后方可提交。
-
-一旦 TypeScript 应用就绪，请在此处添加具体的 `bun run` 脚本。
+- `bun run dev:adapter` / `bun run dev:worker` — 开发模式（watch）运行 Adapter/Worker。
+- `bun run start:adapter` / `bun run start:worker` — 生产模式运行 Adapter/Worker。
+- `bun run check` — 运行 `lint + test + typecheck`（提交前必跑）。
+- `bun run format` — Prettier 格式化（提交前必跑）。
+- `docker compose -f deployments/docker/docker-compose.yml up -d` — 启动完整栈（Redis + Postgres + LuckyLilliaBot + Adapter + Worker）。
+- `docker compose -f deployments/docker/docker-compose.yml logs -f` — 实时查看所有服务日志。
+- `docker compose -f deployments/docker/docker-compose.yml logs -f opencode-bot-agent-adapter` — 仅查看 Adapter 日志。
+- `docker compose -f deployments/docker/docker-compose.yml logs -f opencode-bot-agent-worker` — 仅查看 Worker 日志。
+- `docker compose -f deployments/docker/docker-compose.yml logs -f luckylillia` — 仅查看 LuckyLilliaBot 日志。
 
 ## 部署要点与注意事项（K8s）
 
@@ -40,13 +42,13 @@
 - 已选定 TypeScript 作为开发语言（详见 `docs/adr/001-language-selection.md`）。
 - 使用一致的命名规范：配置文件使用 `kebab-case`，变量使用 `camelCase`，类型/类使用 `PascalCase`。
 - 保持配置和 Agent 提示词为 YAML/Markdown 格式；参照 `configs/` 中的现有命名。
-- 引入 TS 工具链后，统一使用 ESLint + Prettier 并在此处记录相关命令。
+- 统一使用 ESLint + Prettier：`bun run lint`、`bun run typecheck`、`bun run format`。
 
 ## 测试指南
 
-- 在规划的 TypeScript 模块旁添加测试（例如 `test/`）。
+- 在 `src/**/__tests__` 下添加/维护测试。
 - 倾向于使用能描述行为的清晰测试名称。
-- 添加工具链后，在此处记录测试运行器和覆盖率预期。
+- 测试命令：`bun test ./src`（或 `bun run test`）。
 
 ## 提交与 Pull Request 指南
 

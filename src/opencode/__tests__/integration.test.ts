@@ -89,6 +89,7 @@ describe("opencode integration", () => {
             sessionId: session.meta.sessionId,
             userId,
             key,
+            gateToken: "gate-token",
           },
         };
         const result = await runner.run({

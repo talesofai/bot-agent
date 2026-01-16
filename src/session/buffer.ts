@@ -4,8 +4,8 @@ import type { SessionEvent } from "../types/platform";
 export interface SessionBufferStoreOptions {
   redisUrl: string;
   keyPrefix?: string;
-  pendingKeyPrefix?: string;
-  pendingTtlSeconds?: number;
+  gateKeyPrefix?: string;
+  gateTtlSeconds?: number;
 }
 
 export interface SessionBufferKey {
@@ -17,19 +17,39 @@ export interface SessionBufferKey {
 export class SessionBufferStore {
   private redis: IORedis;
   private keyPrefix: string;
-  private pendingKeyPrefix: string;
-  private pendingTtlSeconds: number;
+  private gateKeyPrefix: string;
+  private gateTtlSeconds: number;
 
   constructor(options: SessionBufferStoreOptions) {
     this.redis = new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.keyPrefix = options.keyPrefix ?? "session:buffer";
-    this.pendingKeyPrefix = options.pendingKeyPrefix ?? "session:pending";
-    this.pendingTtlSeconds = options.pendingTtlSeconds ?? 60;
+    this.gateKeyPrefix = options.gateKeyPrefix ?? "session:gate";
+    this.gateTtlSeconds = options.gateTtlSeconds ?? 600;
   }
 
   async append(key: SessionBufferKey, message: SessionEvent): Promise<void> {
     const redisKey = this.bufferKey(key);
     await this.redis.rpush(redisKey, JSON.stringify(message));
+  }
+
+  async appendAndRequestJob(
+    key: SessionBufferKey,
+    message: SessionEvent,
+    token: string,
+  ): Promise<string | null> {
+    const redisKey = this.bufferKey(key);
+    const gateKey = this.gateKey(key);
+    const raw = JSON.stringify(message);
+    const result = (await this.redis.eval(
+      "redis.call('RPUSH', KEYS[1], ARGV[1]); local gate = redis.call('GET', KEYS[2]); if not gate then redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3]); return ARGV[2]; end; redis.call('EXPIRE', KEYS[2], ARGV[3]); return nil;",
+      2,
+      redisKey,
+      gateKey,
+      raw,
+      token,
+      String(this.gateTtlSeconds),
+    )) as string | null;
+    return result ?? null;
   }
 
   async drain(key: SessionBufferKey): Promise<SessionEvent[]> {
@@ -53,17 +73,38 @@ export class SessionBufferStore {
       .filter((entry): entry is SessionEvent => entry !== null);
   }
 
-  async markPending(key: SessionBufferKey): Promise<void> {
-    const redisKey = this.pendingKey(key);
-    await this.redis.set(redisKey, "1", "EX", this.pendingTtlSeconds);
+  async claimGate(key: SessionBufferKey, token: string): Promise<boolean> {
+    const gateKey = this.gateKey(key);
+    const result = (await this.redis.eval(
+      "local gate = redis.call('GET', KEYS[1]); if not gate then redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2]); return 1; end; if gate == ARGV[1] then redis.call('EXPIRE', KEYS[1], ARGV[2]); return 1; end; return 0;",
+      1,
+      gateKey,
+      token,
+      String(this.gateTtlSeconds),
+    )) as number;
+    return result === 1;
   }
 
-  async consumePending(key: SessionBufferKey): Promise<boolean> {
-    const redisKey = this.pendingKey(key);
+  async tryReleaseGate(key: SessionBufferKey, token: string): Promise<boolean> {
+    const redisKey = this.bufferKey(key);
+    const gateKey = this.gateKey(key);
     const result = (await this.redis.eval(
-      "local exists = redis.call('EXISTS', KEYS[1]); if exists == 1 then redis.call('DEL', KEYS[1]); end; return exists;",
-      1,
+      "if redis.call('LLEN', KEYS[1]) ~= 0 then return 0; end; local gate = redis.call('GET', KEYS[2]); if gate == ARGV[1] then redis.call('DEL', KEYS[2]); end; return 1;",
+      2,
       redisKey,
+      gateKey,
+      token,
+    )) as number;
+    return result === 1;
+  }
+
+  async releaseGate(key: SessionBufferKey, token: string): Promise<boolean> {
+    const gateKey = this.gateKey(key);
+    const result = (await this.redis.eval(
+      "local gate = redis.call('GET', KEYS[1]); if gate == ARGV[1] then redis.call('DEL', KEYS[1]); return 1; end; return 0;",
+      1,
+      gateKey,
+      token,
     )) as number;
     return result === 1;
   }
@@ -76,7 +117,7 @@ export class SessionBufferStore {
     return `${this.keyPrefix}:${key.botId}:${key.groupId}:${key.sessionId}`;
   }
 
-  private pendingKey(key: SessionBufferKey): string {
-    return `${this.pendingKeyPrefix}:${key.botId}:${key.groupId}:${key.sessionId}`;
+  private gateKey(key: SessionBufferKey): string {
+    return `${this.gateKeyPrefix}:${key.botId}:${key.groupId}:${key.sessionId}`;
   }
 }

@@ -9,6 +9,7 @@ export interface SessionJobData {
   sessionId: string;
   userId: string;
   key: number;
+  gateToken: string;
 }
 
 export interface SessionJob {
@@ -54,6 +55,7 @@ export class BullmqSessionQueue {
     assertSafePathSegment(jobData.groupId, "groupId");
     assertSafePathSegment(jobData.userId, "userId");
     assertValidSessionKey(jobData.key);
+    assertSafePathSegment(jobData.gateToken, "gateToken");
     const derivedSessionId = buildSessionId(jobData.userId, jobData.key);
     assertSafePathSegment(derivedSessionId, "sessionId");
     if (jobData.sessionId !== derivedSessionId) {

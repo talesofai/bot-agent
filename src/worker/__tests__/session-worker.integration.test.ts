@@ -132,6 +132,7 @@ describe("session worker integration", () => {
         sessionId,
         userId,
         key,
+        gateToken: "gate-token",
       });
 
       const response = await adapter.waitForMessage(5000);
@@ -217,6 +218,7 @@ describe("session worker integration", () => {
         sessionId,
         userId,
         key,
+        gateToken: "gate-token",
       });
 
       const response = await adapter.waitForMessage(5000);

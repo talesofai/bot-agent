@@ -139,6 +139,7 @@ export class SessionWorker {
     assertSafePathSegment(jobData.groupId, "groupId");
     assertSafePathSegment(jobData.userId, "userId");
     assertSafePathSegment(jobData.sessionId, "sessionId");
+    assertSafePathSegment(jobData.gateToken, "gateToken");
     assertValidSessionKey(jobData.key);
     const derivedSessionId = buildSessionId(jobData.userId, jobData.key);
     if (jobData.sessionId !== derivedSessionId) {

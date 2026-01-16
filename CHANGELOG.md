@@ -27,6 +27,7 @@
 - 文档：修正“群目录需预创建否则不入队”的描述，实际行为为自动创建并继续处理
 - 修复 TypeScript 类型检查：事件元素改为只读并补齐 QQ 事件解析与历史 meta JSON 序列化
 - CI：移除 `opencode-ai` 作为项目依赖，避免 bun 在 Linux 环境安装 optional deps 失败
+- BullMQ：buffer 追加与是否需要新 job 改为 Redis 原子 gate，消除入队竞态窗口
 
 ## [0.0.27] - 2026-01-15
 

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Logger } from "pino";
 import type { SessionEvent, SessionElement } from "../types/platform";
 import type { PlatformAdapter } from "../types/platform";
@@ -156,18 +156,28 @@ export class MessageDispatcher {
       const session = applySessionKey(message, trimmedContent, prefixLength);
       const sessionId = buildSessionId(message.userId, key);
       const bufferKey = { botId, groupId, sessionId };
-      await this.bufferStore.append(bufferKey, session);
-      await this.bufferStore.markPending(bufferKey);
-      await this.sessionQueue.enqueue(
-        {
+      const gateToken = randomBytes(12).toString("hex");
+      const acquiredToken = await this.bufferStore.appendAndRequestJob(
+        bufferKey,
+        session,
+        gateToken,
+      );
+      if (!acquiredToken) {
+        return;
+      }
+      try {
+        await this.sessionQueue.enqueue({
           botId,
           groupId,
           userId: message.userId,
           key,
           sessionId,
-        },
-        { jobId: `trigger:${botId}:${groupId}:${sessionId}` },
-      );
+          gateToken: acquiredToken,
+        });
+      } catch (err) {
+        await this.bufferStore.releaseGate(bufferKey, acquiredToken);
+        throw err;
+      }
     } catch (err) {
       this.logger.error(
         { err, messageId: message.messageId },

@@ -66,28 +66,62 @@ export class SessionProcessor {
   ): Promise<void> {
     let statusUpdated = false;
     let sessionInfo: SessionInfo | null = null;
+    let shouldSetIdle = true;
 
     try {
       const bufferKey = toBufferKey(jobData);
-      let buffered = await this.bufferStore.drain(bufferKey);
-      if (buffered.length === 0) {
+      const gateToken = jobData.gateToken;
+      const gateOk = await this.bufferStore.claimGate(bufferKey, gateToken);
+      if (!gateOk) {
+        this.logger.debug(
+          { sessionId: jobData.sessionId, botId: jobData.botId },
+          "Skipping session job due to gate token mismatch",
+        );
         return;
       }
 
-      sessionInfo = await this.ensureSession(
-        jobData.botId,
-        jobData.groupId,
-        jobData.userId,
-        jobData.key,
-        jobData.sessionId,
-      );
-      await this.recordActivity(sessionInfo);
+      let keepRunning = true;
+      while (keepRunning) {
+        const stillOwner = await this.bufferStore.claimGate(
+          bufferKey,
+          gateToken,
+        );
+        if (!stillOwner) {
+          this.logger.debug(
+            { sessionId: jobData.sessionId, botId: jobData.botId },
+            "Stopping session job due to gate token mismatch",
+          );
+          shouldSetIdle = false;
+          return;
+        }
+        const buffered = await this.bufferStore.drain(bufferKey);
+        if (buffered.length === 0) {
+          const shouldStop = await this.bufferStore.tryReleaseGate(
+            bufferKey,
+            gateToken,
+          );
+          if (shouldStop) {
+            keepRunning = false;
+            continue;
+          }
+          continue;
+        }
 
-      sessionInfo = await this.updateStatus(sessionInfo, "running");
-      statusUpdated = true;
-      await this.recordActivity(sessionInfo);
+        if (!sessionInfo) {
+          sessionInfo = await this.ensureSession(
+            jobData.botId,
+            jobData.groupId,
+            jobData.userId,
+            jobData.key,
+            jobData.sessionId,
+          );
+          await this.recordActivity(sessionInfo);
 
-      while (buffered.length > 0) {
+          sessionInfo = await this.updateStatus(sessionInfo, "running");
+          statusUpdated = true;
+          await this.recordActivity(sessionInfo);
+        }
+
         const { mergedSession, promptInput } = buildBufferedInput(buffered);
         const historyKey = resolveHistoryKey(mergedSession);
         const { history, launchSpec } = await this.buildPromptContext(
@@ -115,8 +149,6 @@ export class SessionProcessor {
         );
         await this.recordActivity(sessionInfo);
         await this.sendResponse(mergedSession, output);
-
-        buffered = await this.drainPendingBuffer(bufferKey);
       }
     } catch (err) {
       this.logger.error(
@@ -125,7 +157,7 @@ export class SessionProcessor {
       );
       throw err;
     } finally {
-      if (statusUpdated && sessionInfo) {
+      if (statusUpdated && sessionInfo && shouldSetIdle) {
         try {
           await this.updateStatus(sessionInfo, "idle");
         } catch (err) {
@@ -172,19 +204,6 @@ export class SessionProcessor {
       groupConfig.model,
     );
     return { history, launchSpec };
-  }
-
-  private async drainPendingBuffer(
-    key: SessionBufferKey,
-  ): Promise<SessionEvent[]> {
-    let buffered = await this.bufferStore.drain(key);
-    if (buffered.length === 0) {
-      const pending = await this.bufferStore.consumePending(key);
-      if (pending) {
-        buffered = await this.bufferStore.drain(key);
-      }
-    }
-    return buffered;
   }
 
   private async ensureSession(

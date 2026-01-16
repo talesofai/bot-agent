@@ -394,7 +394,7 @@ export class SessionProcessor {
   }
 
   private mapJob(job: SessionJobContext): SessionJob {
-    const id = job.id ? String(job.id) : `job-${Date.now()}`;
+    const id = String(job.id ?? `job-${Date.now()}`);
     return { id, data: job.data };
   }
 

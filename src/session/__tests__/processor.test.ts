@@ -7,7 +7,11 @@ import pino from "pino";
 import { GroupFileRepository } from "../../store/repository";
 import type { SessionEvent } from "../../types/platform";
 import type { SessionJobData } from "../../queue";
-import type { OpencodeRunner, OpencodeRunResult } from "../../worker/runner";
+import type {
+  OpencodeRunner,
+  OpencodeRunInput,
+  OpencodeRunResult,
+} from "../../worker/runner";
 import type {
   PlatformAdapter,
   Bot,
@@ -182,6 +186,93 @@ function encodeKey(key: SessionBufferKey): string {
 }
 
 describe("SessionProcessor", () => {
+  test("preserves numeric job id 0", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const launcher = new OpencodeLauncher();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const first: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "123",
+      userId: jobData.userId,
+      guildId: jobData.groupId,
+      channelId: jobData.groupId,
+      messageId: "msg-1",
+      content: "hello",
+      elements: [{ type: "text", text: "hello" }],
+      timestamp: Date.now(),
+      extras: {},
+    };
+
+    const acquired = await bufferStore.appendAndRequestJob(
+      bufferKey,
+      first,
+      jobData.gateToken,
+    );
+    expect(acquired).toBe(jobData.gateToken);
+
+    class CapturingRunner implements OpencodeRunner {
+      lastJobId: string | null = null;
+
+      async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
+        this.lastJobId = input.job.id;
+        return { output: "ok" };
+      }
+    }
+
+    const runner = new CapturingRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      launcher,
+      runner,
+      activityIndex,
+      bufferStore,
+      limits: { historyEntries: 10, historyBytes: 10_000 },
+    });
+
+    try {
+      await processor.process({ id: 0, data: jobData }, jobData);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+
+    expect(runner.lastJobId).toBe("0");
+    expect(adapter.messages).toEqual(["ok"]);
+  });
+
   test("processes messages that arrive after an empty drain", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });

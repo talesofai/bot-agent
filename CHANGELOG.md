@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- SessionProcessor：`job.id=0` 不再被误判为缺少 id
+
 ## [0.0.28] - 2026-01-16
 
 ### Added

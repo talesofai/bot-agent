@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.0.28] - 2026-01-16
+
 ### Added
 
 - 多平台组合适配器，同时连接 QQ 与 Discord，消息处理链保持一致
@@ -19,6 +21,7 @@
 - 会话/缓冲/任务/机器人配置使用 `{platform}-{canonicalBotId}` 作为 botId，避免跨平台 id 冲突
 - K8s 清单默认使用通用镜像名 `opencode-bot-agent:latest`，部署时用 `kubectl set image` 切换为阿里云镜像
 - Redis 的 K8s 清单改为 StatefulSet + PVC，避免重启丢数据
+- K8s：worker 注入 `OPENAI_BASE_URL`（从 `llbot-secrets`），支持通过 LiteLLM 等代理改写 OpenAI Base URL
 
 ### Fixed
 

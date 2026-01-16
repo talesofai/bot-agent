@@ -24,7 +24,11 @@ export class SessionBufferStore {
     this.redis = new IORedis(options.redisUrl, { maxRetriesPerRequest: null });
     this.keyPrefix = options.keyPrefix ?? "session:buffer";
     this.gateKeyPrefix = options.gateKeyPrefix ?? "session:gate";
-    this.gateTtlSeconds = options.gateTtlSeconds ?? 600;
+    this.gateTtlSeconds = options.gateTtlSeconds ?? 60;
+  }
+
+  getGateTtlSeconds(): number {
+    return this.gateTtlSeconds;
   }
 
   async append(key: SessionBufferKey, message: SessionEvent): Promise<void> {
@@ -41,7 +45,7 @@ export class SessionBufferStore {
     const gateKey = this.gateKey(key);
     const raw = JSON.stringify(message);
     const result = (await this.redis.eval(
-      "redis.call('RPUSH', KEYS[1], ARGV[1]); local gate = redis.call('GET', KEYS[2]); if not gate then redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3]); return ARGV[2]; end; redis.call('EXPIRE', KEYS[2], ARGV[3]); return nil;",
+      "redis.call('RPUSH', KEYS[1], ARGV[1]); local ok = redis.call('SET', KEYS[2], ARGV[2], 'NX', 'EX', ARGV[3]); if ok then return ARGV[2]; end; return nil;",
       2,
       redisKey,
       gateKey,
@@ -85,11 +89,23 @@ export class SessionBufferStore {
     return result === 1;
   }
 
+  async refreshGate(key: SessionBufferKey, token: string): Promise<boolean> {
+    const gateKey = this.gateKey(key);
+    const result = (await this.redis.eval(
+      "local gate = redis.call('GET', KEYS[1]); if gate == ARGV[1] then redis.call('EXPIRE', KEYS[1], ARGV[2]); return 1; end; return 0;",
+      1,
+      gateKey,
+      token,
+      String(this.gateTtlSeconds),
+    )) as number;
+    return result === 1;
+  }
+
   async tryReleaseGate(key: SessionBufferKey, token: string): Promise<boolean> {
     const redisKey = this.bufferKey(key);
     const gateKey = this.gateKey(key);
     const result = (await this.redis.eval(
-      "if redis.call('LLEN', KEYS[1]) ~= 0 then return 0; end; local gate = redis.call('GET', KEYS[2]); if gate == ARGV[1] then redis.call('DEL', KEYS[2]); end; return 1;",
+      "if redis.call('LLEN', KEYS[1]) ~= 0 then return 0; end; local gate = redis.call('GET', KEYS[2]); if not gate then return 1; end; if gate == ARGV[1] then redis.call('DEL', KEYS[2]); return 1; end; return 0;",
       2,
       redisKey,
       gateKey,

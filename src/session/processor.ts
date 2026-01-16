@@ -67,6 +67,15 @@ export class SessionProcessor {
     let statusUpdated = false;
     let sessionInfo: SessionInfo | null = null;
     let shouldSetIdle = true;
+    let gateHeartbeat: ReturnType<typeof setInterval> | null = null;
+    let gateRefreshInFlight = false;
+
+    const stopGateHeartbeat = () => {
+      if (gateHeartbeat) {
+        clearInterval(gateHeartbeat);
+        gateHeartbeat = null;
+      }
+    };
 
     try {
       const bufferKey = toBufferKey(jobData);
@@ -79,6 +88,36 @@ export class SessionProcessor {
         );
         return;
       }
+
+      const gateHeartbeatMs = Math.max(
+        1000,
+        Math.min(
+          30_000,
+          Math.floor((this.bufferStore.getGateTtlSeconds() * 1000) / 2),
+        ),
+      );
+      gateHeartbeat = setInterval(() => {
+        if (gateRefreshInFlight) {
+          return;
+        }
+        gateRefreshInFlight = true;
+        void this.bufferStore
+          .refreshGate(bufferKey, gateToken)
+          .then((ok) => {
+            if (!ok) {
+              stopGateHeartbeat();
+            }
+          })
+          .catch((err) => {
+            this.logger.warn(
+              { err, sessionId: jobData.sessionId },
+              "Failed to refresh session gate",
+            );
+          })
+          .finally(() => {
+            gateRefreshInFlight = false;
+          });
+      }, gateHeartbeatMs);
 
       let keepRunning = true;
       while (keepRunning) {
@@ -157,6 +196,7 @@ export class SessionProcessor {
       );
       throw err;
     } finally {
+      stopGateHeartbeat();
       if (statusUpdated && sessionInfo && shouldSetIdle) {
         try {
           await this.updateStatus(sessionInfo, "idle");

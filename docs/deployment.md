@@ -44,18 +44,21 @@ cd /opt/opencode-bot-agent
 docker compose -f deployments/docker/docker-compose.yml up -d
 ```
 
-## Kubernetes 部署（规划）
+## Kubernetes 部署（仍在迭代）
 
-当前仓库已提供 `deployments/k8s/` 目录，主要覆盖 LuckyLilliaBot/PMHQ 基础资源，Bot Agent 需结合后文示例单独部署：
+当前仓库已提供 `deployments/k8s/` 目录，采用 `llbot` StatefulSet（单 Pod 内含 `luckylillia` + `pmhq` 两个容器）：
 
 - `deployments/k8s/bot-namespace.yaml`
-- `deployments/k8s/llbot-pvc.yaml`
+- `deployments/k8s/bot-data-pvc.yaml`（Bot Agent /data 持久化）
 - `deployments/k8s/llbot-configmap.yaml`
-- `deployments/k8s/pmhq-deployment.yaml`
-- `deployments/k8s/llbot-deployment.yaml`
-- `deployments/k8s/llbot-service.yaml`
+- `deployments/k8s/llbot-services.yaml`（headless + 单 Pod WebUI Service）
+- `deployments/k8s/llbot-statefulset.yaml`
+- `deployments/k8s/llbot-ingress.yaml`（可选）
 - `deployments/k8s/redis.yaml`
 - `deployments/k8s/postgres.yaml`
+- `deployments/k8s/opencode-bot-agent-adapter.yaml`
+- `deployments/k8s/opencode-bot-agent-worker.yaml`
+- `deployments/k8s/session-cleaner-cronjob.yaml`
 
 ## Secret 管理（推荐）
 
@@ -119,7 +122,7 @@ stringData:
 ### PersistentVolumeClaim
 
 ```yaml
-# deployments/k8s/llbot-pvc.yaml
+# deployments/k8s/bot-data-pvc.yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -130,46 +133,28 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: 100Gi
 ```
 
-### LLBot Deployment
+### LLBot StatefulSet
 
-LLBot 仅负责 QQ 客户端与 WebUI。主服务通过 Redis 注册表发现 llbot，并建立 WS 连接；每个 llbot Pod 内需要运行注册器定期写入 `llbot:registry:{botId}`。为了允许主服务直连，`onlyLocalhost` 必须关闭。建议将 `/data` 挂载为 RWX（NAS），用于 `groups/`、`router/`、`bots/`。
+LLBot 仅负责 QQ 客户端与 WebUI。主服务通过 Redis 注册表发现 llbot，并建立 WS 连接；每个 llbot Pod 内需要运行注册器定期写入 `llbot:registry:{botId}`。为了允许主服务直连，`onlyLocalhost` 必须关闭。
 
 注册器可直接运行本仓库脚本（示例）：
 
 ```bash
 LLBOT_REGISTRY_BOT_ID=123 \
-LLBOT_REGISTRY_WS_URL=ws://llbot-0-headless:3000 \
+LLBOT_REGISTRY_WS_URL=ws://llbot-0.llbot-0-headless:3000 \
 LLBOT_REGISTRY_TTL_SEC=30 \
 LLBOT_REGISTRY_REFRESH_SEC=10 \
 bun run llbot:registrar
 ```
 
-```yaml
-# deployments/k8s/llbot-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: luckylillia
-  namespace: bot
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: luckylillia
-  template:
-    metadata:
-      labels:
-        app: luckylillia
-    spec:
-      containers:
-        - name: luckylillia
-          image: linyuchen/llbot:latest
----
-见 `deployments/k8s/llbot-service.yaml`。
-```
+LLBot 的 Kubernetes 资源见：
+
+- `deployments/k8s/llbot-statefulset.yaml`
+- `deployments/k8s/llbot-services.yaml`
+- `deployments/k8s/llbot-ingress.yaml`（可选）
 
 ### Bot Agent Deployment
 
@@ -265,11 +250,11 @@ spec:
 kubectl apply -f deployments/k8s/bot-namespace.yaml
 kubectl apply -f deployments/k8s/redis.yaml
 kubectl apply -f deployments/k8s/postgres.yaml
-kubectl apply -f deployments/k8s/llbot-pvc.yaml
+kubectl apply -f deployments/k8s/bot-data-pvc.yaml
 kubectl apply -f deployments/k8s/llbot-secret.yaml
 kubectl apply -f deployments/k8s/llbot-configmap.yaml
-kubectl apply -f deployments/k8s/llbot-deployment.yaml
-kubectl apply -f deployments/k8s/llbot-service.yaml
+kubectl apply -f deployments/k8s/llbot-services.yaml
+kubectl apply -f deployments/k8s/llbot-statefulset.yaml
 kubectl apply -f deployments/k8s/opencode-bot-agent-adapter.yaml
 kubectl apply -f deployments/k8s/opencode-bot-agent-worker.yaml
 kubectl apply -f deployments/k8s/session-cleaner-cronjob.yaml
@@ -294,10 +279,10 @@ LuckyLilliaBot 需要扫码登录。在 K8s 环境中：
 
 ```bash
 # 查看日志获取二维码
-kubectl logs -f deployment/luckylillia -n bot
+kubectl logs -f pod/llbot-0 -c luckylillia -n bot
 
 # 或者端口转发，访问 WebUI
-kubectl port-forward svc/luckylillia 3080:3080 -n bot
+kubectl port-forward svc/llbot-0 3080:3080 -n bot
 ```
 
 ### Session 持久化

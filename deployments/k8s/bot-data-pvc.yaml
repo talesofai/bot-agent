@@ -1,3 +1,5 @@
+# Shared persistent storage for Bot Agent (/data).
+# NOTE: `llbot` uses per-pod PVCs via StatefulSet volumeClaimTemplates.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

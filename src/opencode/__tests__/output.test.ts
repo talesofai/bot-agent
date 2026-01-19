@@ -118,6 +118,12 @@ describe("parseOpencodeOutput", () => {
       }),
     ].join("\n");
     const result = parseOpencodeOutput(raw, createdAt);
-    expect(result).toEqual({ output: "pong" });
+    expect(result).toEqual({
+      output: "pong",
+      streamEvents: [
+        { type: "text", text: "pon" },
+        { type: "text", text: "g" },
+      ],
+    });
   });
 });

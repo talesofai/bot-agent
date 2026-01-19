@@ -23,6 +23,7 @@ import { SessionRepository } from "../repository";
 import { SessionProcessor } from "../processor";
 import type { SessionActivityIndex } from "../activity-store";
 import type { SessionBuffer, SessionBufferKey } from "../buffer";
+import { buildBotAccountId } from "../../utils/bot-id";
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "session-processor-test-"));
@@ -186,6 +187,148 @@ function encodeKey(key: SessionBufferKey): string {
 }
 
 describe("SessionProcessor", () => {
+  test("stores stream events but excludes them from prompt history", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const launcher = new OpencodeLauncher();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const historyKey = {
+      botAccountId: buildBotAccountId("qq", "123"),
+      userId: jobData.userId,
+    };
+    const now = new Date().toISOString();
+    await historyStore.appendHistory(historyKey, {
+      role: "assistant",
+      content: "visible",
+      createdAt: now,
+      groupId: jobData.groupId,
+    });
+    await historyStore.appendHistory(historyKey, {
+      role: "system",
+      content: "hidden",
+      createdAt: now,
+      groupId: jobData.groupId,
+      includeInContext: false,
+    });
+
+    class TraceRunner implements OpencodeRunner {
+      runs = 0;
+      lastHistory: OpencodeRunInput["history"] = [];
+
+      async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
+        this.runs += 1;
+        this.lastHistory = input.history;
+        return {
+          output: `ok-${this.runs}`,
+          streamEvents: [
+            { type: "thinking", text: "thought" },
+            { type: "text", text: "delta" },
+          ],
+        };
+      }
+    }
+
+    const runner = new TraceRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      launcher,
+      runner,
+      activityIndex,
+      bufferStore,
+      limits: { historyEntries: 50, historyBytes: 50_000 },
+    });
+
+    try {
+      const first: SessionEvent = {
+        type: "message",
+        platform: "qq",
+        selfId: "123",
+        userId: jobData.userId,
+        guildId: jobData.groupId,
+        channelId: jobData.groupId,
+        messageId: "msg-1",
+        content: "hello",
+        elements: [{ type: "text", text: "hello" }],
+        timestamp: Date.now(),
+        extras: {},
+      };
+      const acquired = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        first,
+        jobData.gateToken,
+      );
+      expect(acquired).toBe(jobData.gateToken);
+
+      await processor.process({ id: 0, data: jobData }, jobData);
+
+      expect(runner.lastHistory.map((entry) => entry.content)).toEqual([
+        "visible",
+      ]);
+      expect(adapter.messages).toEqual(["ok-1"]);
+
+      const stored = await historyStore.readHistory(historyKey, {
+        maxEntries: 20,
+      });
+      expect(stored.some((entry) => entry.includeInContext === false)).toBe(
+        true,
+      );
+
+      const second: SessionEvent = {
+        ...first,
+        messageId: "msg-2",
+        content: "next",
+        elements: [{ type: "text", text: "next" }],
+        timestamp: Date.now(),
+      };
+      const acquiredAgain = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        second,
+        jobData.gateToken,
+      );
+      expect(acquiredAgain).toBe(jobData.gateToken);
+
+      await processor.process({ id: 1, data: jobData }, jobData);
+      expect(
+        runner.lastHistory.some((entry) => entry.includeInContext === false),
+      ).toBe(false);
+      expect(adapter.messages).toEqual(["ok-1", "ok-2"]);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("preserves numeric job id 0", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });

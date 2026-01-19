@@ -1,8 +1,14 @@
 import type { HistoryEntry } from "../types/session";
 
+export interface OpencodeStreamEvent {
+  type: string;
+  text: string;
+}
+
 export interface OpencodeRunResult {
   output?: string;
   historyEntries?: HistoryEntry[];
+  streamEvents?: OpencodeStreamEvent[];
 }
 
 export function parseOpencodeOutput(
@@ -13,9 +19,17 @@ export function parseOpencodeOutput(
     return null;
   }
   const candidates = parseJsonCandidates(raw.trim());
-  const streamOutput = extractOutputFromEventStream(candidates);
+  const streamEvents = extractStreamEvents(candidates);
+  const streamOutput = streamEvents.length
+    ? streamEvents.map((event) => event.text).join("")
+    : null;
   let best: OpencodeRunResult | null =
-    streamOutput === null ? null : { output: streamOutput };
+    streamOutput === null
+      ? null
+      : {
+          output: streamOutput,
+          streamEvents: streamEvents.length ? streamEvents : undefined,
+        };
 
   for (const candidate of candidates) {
     const result = extractResult(candidate, createdAt);
@@ -23,7 +37,13 @@ export function parseOpencodeOutput(
       best = result;
     }
   }
-  return best;
+  if (!best) {
+    return null;
+  }
+  if (streamEvents.length === 0) {
+    return best;
+  }
+  return { ...best, streamEvents };
 }
 
 function parseJsonCandidates(raw: string): unknown[] {
@@ -41,25 +61,19 @@ function parseJsonCandidates(raw: string): unknown[] {
   return candidates;
 }
 
-function extractOutputFromEventStream(items: unknown[]): string | null {
-  const chunks: string[] = [];
+function extractStreamEvents(items: unknown[]): OpencodeStreamEvent[] {
+  const events: OpencodeStreamEvent[] = [];
   for (const item of items) {
     if (!isRecord(item) || typeof item.type !== "string") {
-      continue;
-    }
-    if (item.type !== "text") {
       continue;
     }
     const part = isRecord(item.part) ? item.part : null;
     if (!part || typeof part.text !== "string") {
       continue;
     }
-    chunks.push(part.text);
+    events.push({ type: item.type, text: part.text });
   }
-  if (chunks.length === 0) {
-    return null;
-  }
-  return chunks.join("");
+  return events;
 }
 
 function tryParseJson(raw: string): unknown | null {

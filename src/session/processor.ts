@@ -11,6 +11,7 @@ import { buildBufferedInput, buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/default-system-prompt";
 import type { OpencodeLaunchSpec } from "../opencode/launcher";
 import { OpencodeLauncher } from "../opencode/launcher";
+import type { OpencodeStreamEvent } from "../opencode/output";
 import type { OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
@@ -211,6 +212,7 @@ export class SessionProcessor {
             mergedSession,
             historyKey,
             result.historyEntries,
+            result.streamEvents,
             output,
           );
           await this.recordActivity(sessionInfo);
@@ -274,13 +276,16 @@ export class SessionProcessor {
           maxBytes: this.historyMaxBytes,
         })
       : [];
+    const visibleHistory = history.filter(
+      (entry) => entry.includeInContext !== false,
+    );
     const groupConfig = await this.getGroupConfig(groupId);
     const agentPrompt = await this.getAgentPrompt(groupId);
     const systemPrompt = buildSystemPrompt(agentPrompt);
     const resolvedInput = resolveSessionInput(promptInput);
     const prompt = buildOpencodePrompt({
       systemPrompt,
-      history,
+      history: visibleHistory,
       input: resolvedInput,
     });
     const launchSpec = await this.launcher.buildLaunchSpec(
@@ -288,7 +293,7 @@ export class SessionProcessor {
       prompt,
       groupConfig.model,
     );
-    return { history, launchSpec };
+    return { history: visibleHistory, launchSpec };
   }
 
   private async ensureSession(
@@ -350,6 +355,7 @@ export class SessionProcessor {
     session: SessionEvent,
     historyKey: HistoryKey | null,
     historyEntries?: HistoryEntry[],
+    streamEvents?: OpencodeStreamEvent[],
     output?: string,
   ): Promise<void> {
     if (!historyKey) {
@@ -367,6 +373,26 @@ export class SessionProcessor {
       createdAt: userCreatedAt,
       groupId: sessionInfo.meta.groupId,
     });
+
+    if (streamEvents && streamEvents.length > 0) {
+      for (const [index, event] of streamEvents.entries()) {
+        if (!event.text) {
+          continue;
+        }
+        entries.push({
+          role: "system",
+          content: event.text,
+          createdAt: nowIso,
+          groupId: sessionInfo.meta.groupId,
+          includeInContext: false,
+          trace: {
+            source: "opencode",
+            type: event.type,
+            index,
+          },
+        });
+      }
+    }
 
     const nonUserEntries =
       historyEntries?.filter((entry) => entry.role !== "user") ?? [];

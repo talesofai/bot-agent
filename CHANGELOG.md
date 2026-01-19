@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- Discord：支持“回复 bot 消息”触发（不需要额外 @ mention），避免对话链断掉
+- 输出：识别 Markdown/裸图片链接并按富内容发送（Discord embed / QQ image segment），确保“图片”不是纯链接
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 - Opencode：prompt file 以 `--file` 追加到 message 之后，避免被 CLI 误当作文件列表吞掉导致 `opencode run` 直接失败
 - Opencode：支持解析 `--format json` 的事件流输出（text chunks），确保能提取最终回复

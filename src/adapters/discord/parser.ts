@@ -26,7 +26,7 @@ export function parseMessage(
   }
 
   const rawContent = message.content ?? "";
-  const elements = buildElements(rawContent, message);
+  const elements = buildElements(rawContent, message, botId);
   const content = extractTextFromElements(elements);
 
   return {
@@ -49,7 +49,11 @@ export function parseMessage(
   };
 }
 
-function buildElements(rawContent: string, message: Message): SessionElement[] {
+function buildElements(
+  rawContent: string,
+  message: Message,
+  botId: string,
+): SessionElement[] {
   const elements: SessionElement[] = [];
   const mentionIds = new Set(message.mentions.users.keys());
   if (rawContent) {
@@ -76,6 +80,17 @@ function buildElements(rawContent: string, message: Message): SessionElement[] {
     if (attachment.url) {
       elements.push({ type: "image", url: attachment.url });
     }
+  }
+
+  const repliedUserId = message.mentions.repliedUser?.id;
+  if (
+    botId &&
+    repliedUserId === botId &&
+    !elements.some(
+      (element) => element.type === "mention" && element.userId === botId,
+    )
+  ) {
+    elements.unshift({ type: "mention", userId: botId });
   }
 
   return trimTextElements(elements);

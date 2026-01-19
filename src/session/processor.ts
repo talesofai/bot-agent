@@ -15,6 +15,7 @@ import type { OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { buildBotAccountId } from "../utils/bot-id";
+import { extractOutputElements } from "./output-elements";
 
 export interface SessionJobContext {
   id?: string | number | null;
@@ -399,8 +400,16 @@ export class SessionProcessor {
     if (!output) {
       return;
     }
+    const { content, elements } = extractOutputElements(output);
+    if (!content && elements.length === 0) {
+      return;
+    }
     try {
-      await this.adapter.sendMessage(session, output);
+      await this.adapter.sendMessage(
+        session,
+        content,
+        elements.length > 0 ? { elements } : undefined,
+      );
     } catch (err) {
       this.logger.error(
         { err, sessionId: session.messageId },

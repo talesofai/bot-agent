@@ -31,6 +31,8 @@ describe("OpencodeLauncher external mode", () => {
         "gpt-5.1",
       );
 
+      expect(spec.args).toContain("--agent");
+      expect(spec.args).toContain("chat-final-responder");
       expect(spec.args).toContain("-m");
       expect(spec.args).toContain("litellm/gpt-5.1");
       expect(spec.env?.OPENCODE_CONFIG).toBe(
@@ -50,6 +52,13 @@ describe("OpencodeLauncher external mode", () => {
         "opencode",
         "auth.json",
       );
+      const agentPath = path.join(
+        tempHome,
+        ".config",
+        "opencode",
+        "agent",
+        "chat-final-responder.md",
+      );
 
       const configJson = JSON.parse(
         readFileSync(configPath, "utf8"),
@@ -67,6 +76,9 @@ describe("OpencodeLauncher external mode", () => {
       ) as OpencodeAuth;
       expect(authJson.litellm.type).toBe("api");
       expect(authJson.litellm.key).toBe("sk-test");
+
+      const agentFile = readFileSync(agentPath, "utf8");
+      expect(agentFile).toContain("chat agent");
     } finally {
       restoreEnv(prevEnv);
       resetConfig();

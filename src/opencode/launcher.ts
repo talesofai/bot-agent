@@ -50,6 +50,9 @@ export class OpencodeLauncher {
         })
       : prepareDefaultMode(env);
 
+    if (externalModeEnabled) {
+      args.push("--agent", CHAT_AGENT_NAME);
+    }
     args.push("-m", model);
     args.push(
       "Use the attached prompt file as the full context and reply with the final answer only.",
@@ -73,6 +76,31 @@ type ExternalModeInput = {
   env: Record<string, string | null>;
 };
 
+const CHAT_AGENT_NAME = "chat-final-responder";
+const CHAT_AGENT_CONTENT = `---
+description: Tool-free chat agent for opencode-bot.
+mode: primary
+tools:
+  bash: false
+  read: false
+  write: false
+  edit: false
+  list: false
+  glob: false
+  grep: false
+  webfetch: false
+  task: false
+  todowrite: false
+  todoread: false
+---
+You are a direct chat responder specialized in providing immediate, tool-free final answers.
+
+Rules:
+- Never invoke tools or external services.
+- Use the attached prompt file as the full context.
+- Reply with the final answer only.
+`;
+
 async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
   const allowedModels = parseModelsCsv(input.modelsCsv);
   if (allowedModels.length === 0) {
@@ -93,10 +121,18 @@ async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
     "auth.json",
   );
   const configPath = path.join(homeDir, ".config", "opencode", "opencode.json");
+  const agentPath = path.join(
+    homeDir,
+    ".config",
+    "opencode",
+    "agent",
+    `${CHAT_AGENT_NAME}.md`,
+  );
 
   await Promise.all([
     upsertAuthFile(authPath, input.apiKey),
     writeOpencodeConfig(configPath, input.baseUrl, allowedModels),
+    writeChatAgent(agentPath),
   ]);
 
   input.env.OPENCODE_CONFIG = configPath;
@@ -215,6 +251,14 @@ async function writeOpencodeConfig(
   await writeJsonAtomic(configPath, config, 0o600);
 }
 
+async function writeChatAgent(agentPath: string): Promise<void> {
+  await mkdir(path.dirname(agentPath), { recursive: true });
+  if (existsSync(agentPath)) {
+    return;
+  }
+  await writeTextAtomic(agentPath, CHAT_AGENT_CONTENT, 0o600);
+}
+
 async function writeJsonAtomic(
   filePath: string,
   payload: unknown,
@@ -227,5 +271,20 @@ async function writeJsonAtomic(
   );
   const content = `${JSON.stringify(payload, null, 2)}\n`;
   await writeFile(tmpPath, content, { encoding: "utf8", mode });
+  await rename(tmpPath, filePath);
+}
+
+async function writeTextAtomic(
+  filePath: string,
+  content: string,
+  mode: number,
+): Promise<void> {
+  const dir = path.dirname(filePath);
+  const tmpPath = path.join(
+    dir,
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  const normalized = content.endsWith("\n") ? content : `${content}\n`;
+  await writeFile(tmpPath, normalized, { encoding: "utf8", mode });
   await rename(tmpPath, filePath);
 }

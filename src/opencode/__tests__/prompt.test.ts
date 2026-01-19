@@ -4,15 +4,14 @@ import { buildOpencodePrompt } from "../prompt";
 import { buildSystemPrompt } from "../system-prompt";
 
 describe("buildSystemPrompt", () => {
-  test("appends MCP usage method", () => {
+  test("returns trimmed agent prompt", () => {
     const system = buildSystemPrompt("You are helpful.");
-    expect(system).toContain("You are helpful.");
-    expect(system).toContain("# MCP Usage");
+    expect(system).toBe("You are helpful.");
   });
 
-  test("returns MCP usage when agent prompt empty", () => {
+  test("falls back to default prompt when empty", () => {
     const system = buildSystemPrompt("   ");
-    expect(system).toContain("# MCP Usage");
+    expect(system).toBe("You are a helpful assistant.");
   });
 });
 

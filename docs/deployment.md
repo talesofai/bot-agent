@@ -25,7 +25,10 @@ LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节�
 └── data/
     ├── llbot/          # LuckyLilliaBot (LLBot) 数据
     ├── postgres/       # PostgreSQL 数据（历史与可变状态）
-    └── groups/         # 群数据
+    ├── redis/          # Redis 数据（BullMQ Backend）
+    ├── groups/         # 群数据（GROUPS_DATA_DIR；默认 /data/groups）
+    ├── router/         # 全局关键词（DATA_DIR；默认 /data）
+    └── bots/           # 机器人关键词（DATA_DIR；默认 /data）
 ```
 
 ### docker-compose.yml

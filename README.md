@@ -45,35 +45,41 @@
 
 ## 📁 项目结构
 
-```
-opencode-bot-agent/
-├── src/                   # TypeScript 源码（含测试）
-├── configs/               # 配置文件
-├── deployments/           # 部署配置
-│   ├── docker/           # Docker 相关
-│   └── k8s/              # Kubernetes 相关
-├── docs/                  # 文档
-└── data/                  # 运行时数据（容器内默认挂载到 /data）
-    ├── groups/            # GROUPS_DATA_DIR（默认 /data/groups）
-    │   ├── {group_id}/
-    │   │   ├── agent.md   # 群 Agent 人设（覆盖默认）
-    │   │   ├── config.yaml # 群配置
-    │   │   ├── skills/    # 群技能（skills/*.md）
-    │   │   └── assets/    # 群资源
-    │   │       └── images/
-    │   └── sessions/      # 会话目录（每个用户/会话一个目录）
-    │       └── {botId}/{groupId}/{userId}/{sessionId}/
-    │           ├── meta.json
-    │           ├── history.sqlite
-    │           └── workspace/
-    │               ├── input/
-    │               └── output/
-    ├── router/            # DATA_DIR（默认 /data）
-    │   └── global.yaml
-    └── bots/
-        └── {botId}/
-            └── config.yaml
-```
+````
+	opencode-bot-agent/
+	├── src/                   # TypeScript 源码（含测试）
+	├── configs/               # 配置文件
+	├── deployments/           # 部署配置
+	│   ├── docker/           # Docker 相关
+	│   └── k8s/              # Kubernetes 相关
+	├── docs/                  # 文档
+	└── data/                  # 运行时数据（容器内默认挂载到 /data）
+	    ├── groups/            # GROUPS_DATA_DIR（默认 /data/groups）
+	    │   ├── {group_id}/
+	    │   │   ├── agent.md   # 群 Agent 人设（覆盖默认）
+	    │   │   ├── config.yaml # 群配置
+	    │   │   ├── skills/    # 群技能（skills/*.md）
+	    │   │   └── assets/    # 群资源
+	    │   │       └── images/
+	    │   └── sessions/      # 会话目录（每个用户/会话一个目录）
+	    │       └── {botId}/{groupId}/{userId}/{sessionId}/
+	    │           ├── meta.json
+	    │           ├── history.sqlite
+	    │           └── workspace/
+	    │               ├── input/
+	    │               └── output/
+	    ├── router/            # DATA_DIR（默认 /data）
+	    │   └── global.yaml
+	    ├── bots/
+	    │   └── {botId}/
+	    │       ├── config.yaml
+	    │       └── skills/    # 可选：机器人级 opencode skills 覆盖
+	    ├── global/
+	    │   └── skills/        # 可选：全局 opencode skills 覆盖
+	    ├── llbot/             # Docker Compose：LuckyLilliaBot 数据
+	    ├── postgres/          # Docker Compose：PostgreSQL 数据
+	    └── redis/             # Docker Compose：Redis 数据
+	```
 
 默认 Agent 设计来自 `configs/default-agent.md`。通用技能仍在规划中，目前仅加载群内 `skills/`。
 
@@ -91,3 +97,4 @@ Docker Compose 文件位于 `deployments/docker/docker-compose.yml`。
 ## 📝 License
 
 MIT License
+````

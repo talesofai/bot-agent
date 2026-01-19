@@ -72,7 +72,13 @@ opencode-bot-agent/
 ├── deployments/ # 部署配置
 ├── docs/ # 文档
 └── data/ # 运行时数据
-    └── groups/{group_id}/
+    ├── groups/ # 群数据（GROUPS_DATA_DIR；默认 /data/groups）
+    │   ├── {group_id}/
+    │   └── sessions/{botId}/{groupId}/{userId}/{sessionId}/
+    ├── router/ # 全局关键词（DATA_DIR；默认 /data）
+    │   └── global.yaml
+    └── bots/{botId}/ # 机器人关键词（DATA_DIR；默认 /data）
+        └── config.yaml
 
 ```
 

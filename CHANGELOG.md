@@ -11,9 +11,11 @@
 
 - 文档：新增 0.0.29 Vision（配置语义收敛与可测试性）
 - Opencode：新增全局技能 `url-access-check`（脚本校验 URL/图片可访问性），并在每次运行前同步到会话 workspace 的 `.claude/skills/`，避免输出“不可用链接”
+- 测试：新增 RouterStore 默认配置与 bot 配置落盘用例
 
 ### Fixed
 
+- Router：Adapter 启动初始化 `/data/router/global.yaml`；首次遇到 botId 时创建 `/data/bots/{botId}/config.yaml`，与目录结构文档一致
 - Discord：支持“回复 bot 消息”触发（不需要额外 @ mention），避免对话链断掉
 - Discord：即使消息内容被裁剪/缺失，仍可通过 mentions 元数据识别 @bot 触发，避免“@ 了但不入队”
 - 输出：识别 Markdown/裸图片链接并按富内容发送（Discord embed / QQ image segment），确保“图片”不是纯链接

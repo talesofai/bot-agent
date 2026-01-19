@@ -73,6 +73,7 @@ export class MessageDispatcher {
         );
       }
       const botId = buildBotFsId(message.platform, rawBotId);
+      await this.routerStore?.ensureBotConfig(botId);
       if (!isSafePathSegment(message.userId)) {
         this.logger.error(
           { userId: message.userId, groupId },

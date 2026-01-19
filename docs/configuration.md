@@ -264,6 +264,8 @@ keywords:
 echoRate: 30
 ```
 
+> 首次启动时若 `router/global.yaml` 不存在，Adapter 会自动创建默认文件（空关键词 + `echoRate=30`），方便运维直接改文件生效。
+
 ### 机器人关键词配置
 
 ```yaml
@@ -278,6 +280,19 @@ echoRate: null # 复读概率（0-100），空为继承上一级
 ```
 
 `botId` 为 `{platform}-{canonicalBotId}`，与会话目录中的 `botId` 一致（canonical 部分由 `BOT_ID_ALIASES` 解析，例如 `qq-123456` / `discord-987654`）。
+
+> 当某个 Bot 第一次参与消息分发（收到消息）时，Adapter 会自动创建 `/data/bots/{botId}/config.yaml` 默认文件（空关键词 + 全开 `keywordRouting`），之后可直接编辑该文件进行机器人级路由配置。
+
+### Opencode Skills 覆盖（可选）
+
+Bot Agent 每次启动 opencode 前，会把技能目录同步到会话工作区的 `.claude/skills/`。目录与优先级如下（同名 skill 以后者覆盖前者）：
+
+1. 内置：`configs/skills/`（必须存在）
+2. 全局覆盖：`/data/global/skills/`
+3. 群覆盖：`/data/groups/{group_id}/skills/`（`groupId=0` 时跳过）
+4. 机器人覆盖：`/data/bots/{botId}/skills/`
+
+这里的 skill 目录结构为 `{skillName}/SKILL.md` + `{skillName}/scripts/*`。
 
 ## 配置热更新
 

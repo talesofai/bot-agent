@@ -59,6 +59,13 @@ async function main(): Promise<void> {
   }
   const dataRoot = config.DATA_DIR ?? path.dirname(config.GROUPS_DATA_DIR);
   const routerStore = new RouterStore({ dataDir: dataRoot });
+  try {
+    await routerStore.init();
+  } catch (err) {
+    logger.error({ err, dataRoot }, "Failed to initialize RouterStore");
+    process.exit(1);
+    return;
+  }
 
   const sessionQueue = new BullmqSessionQueue({
     redisUrl: config.REDIS_URL,

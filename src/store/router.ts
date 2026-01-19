@@ -1,15 +1,29 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "pino";
 import { logger as defaultLogger } from "../logger";
-import { isSafePathSegment } from "../utils/path";
+import { assertSafePathSegment, isSafePathSegment } from "../utils/path";
 import {
   EchoRateSchema,
   KeywordRoutingSchema,
   type KeywordRouting,
 } from "../types/group";
+
+const DEFAULT_GLOBAL_CONFIG_YAML = `# 全局关键词配置
+keywords: []
+echoRate: 30
+`;
+
+const DEFAULT_BOT_CONFIG_YAML = `# 机器人关键词配置
+keywords: []
+keywordRouting:
+  enableGlobal: true
+  enableGroup: true
+  enableBot: true
+echoRate: null
+`;
 
 const GlobalConfigSchema = z
   .object({
@@ -54,6 +68,9 @@ export class RouterStore {
   private cacheTtlMs: number;
   private cached: RouterSnapshot | null = null;
   private cachedAt = 0;
+  private initPromise: Promise<void> | null = null;
+  private initialized = false;
+  private ensuredBots = new Set<string>();
 
   constructor(options: RouterStoreOptions) {
     this.dataDir = options.dataDir;
@@ -63,7 +80,38 @@ export class RouterStore {
     this.cacheTtlMs = options.cacheTtlMs ?? 3000;
   }
 
+  async init(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+    if (!this.initPromise) {
+      this.initPromise = this.initialize();
+    }
+    await this.initPromise;
+  }
+
+  async ensureBotConfig(botId: string): Promise<void> {
+    assertSafePathSegment(botId, "botId");
+    if (this.ensuredBots.has(botId)) {
+      return;
+    }
+    await this.init();
+
+    const botDir = join(this.dataDir, "bots", botId);
+    await mkdir(botDir, { recursive: true });
+    const configPath = join(botDir, "config.yaml");
+    const created = await this.writeFileIfMissing(
+      configPath,
+      DEFAULT_BOT_CONFIG_YAML,
+    );
+    if (created) {
+      this.invalidateCache();
+    }
+    this.ensuredBots.add(botId);
+  }
+
   async getSnapshot(): Promise<RouterSnapshot> {
+    await this.init();
     const now = Date.now();
     if (this.cached && now - this.cachedAt < this.cacheTtlMs) {
       return this.cached;
@@ -72,6 +120,19 @@ export class RouterStore {
     this.cached = snapshot;
     this.cachedAt = now;
     return snapshot;
+  }
+
+  private async initialize(): Promise<void> {
+    const routerDir = join(this.dataDir, "router");
+    const botsDir = join(this.dataDir, "bots");
+    await mkdir(routerDir, { recursive: true });
+    await mkdir(botsDir, { recursive: true });
+
+    const globalConfigPath = join(routerDir, "global.yaml");
+    await this.writeFileIfMissing(globalConfigPath, DEFAULT_GLOBAL_CONFIG_YAML);
+
+    this.initialized = true;
+    this.invalidateCache();
   }
 
   private async loadSnapshot(): Promise<RouterSnapshot> {
@@ -171,4 +232,30 @@ export class RouterStore {
       return null;
     }
   }
+
+  private async writeFileIfMissing(
+    path: string,
+    content: string,
+  ): Promise<boolean> {
+    try {
+      await writeFile(path, content, { encoding: "utf-8", flag: "wx" });
+      return true;
+    } catch (err) {
+      if (isErrnoException(err) && err.code === "EEXIST") {
+        return false;
+      }
+      throw new Error(`Failed to write default config at ${path}`, {
+        cause: err,
+      });
+    }
+  }
+
+  private invalidateCache(): void {
+    this.cached = null;
+    this.cachedAt = 0;
+  }
+}
+
+function isErrnoException(value: unknown): value is NodeJS.ErrnoException {
+  return Boolean(value && typeof value === "object" && "code" in value);
 }

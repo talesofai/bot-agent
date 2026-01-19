@@ -4,20 +4,17 @@ import { buildOpencodePrompt } from "../prompt";
 import { buildSystemPrompt } from "../default-system-prompt";
 
 describe("buildSystemPrompt", () => {
-  test("returns trimmed agent prompt", () => {
+  test("appends base rules to agent prompt", () => {
     const system = buildSystemPrompt("You are helpful.");
-    expect(system).toBe("You are helpful.");
+    expect(system).toContain("You are helpful.");
+    expect(system).toContain("硬性规则：");
   });
 
   test("falls back to default prompt when empty", () => {
     const system = buildSystemPrompt("   ");
-    expect(system).toBe(
-      [
-        "你是一个可靠的中文助理。",
-        "直接回答问题；不确定就说不知道，不要编造。",
-        "需要给出链接/图片时，先在当前环境验证可访问性；验证失败就不要输出该链接。",
-      ].join("\n"),
-    );
+    expect(system).toContain("你是一个可靠的中文助理。");
+    expect(system).toContain("硬性规则：");
+    expect(system).toContain("url-access-check");
   });
 });
 

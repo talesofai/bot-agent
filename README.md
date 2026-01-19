@@ -64,7 +64,6 @@
 	    │   └── sessions/      # 会话目录（每个用户/会话一个目录）
 	    │       └── {botId}/{groupId}/{userId}/{sessionId}/
 	    │           ├── meta.json
-	    │           ├── history.sqlite
 	    │           └── workspace/
 	    │               ├── input/
 	    │               └── output/
@@ -86,7 +85,7 @@
 ## 🗃️ 历史与记录存放位置
 
 - **对话历史（用于上下文）**：写入 Postgres `history_entries` 表（由 `DATABASE_URL` 指定）。
-- **会话运行记录（文件）**：位于 `${GROUPS_DATA_DIR}/sessions/{botId}/{groupId}/{userId}/{sessionId}`，包含 `meta.json`、`history.sqlite` 与 `workspace/` 目录。
+- **会话运行记录（文件）**：位于 `${GROUPS_DATA_DIR}/sessions/{botId}/{groupId}/{userId}/{sessionId}`，包含 `meta.json` 与 `workspace/` 目录。
 - **运行日志**：默认输出到 stdout/stderr（Docker 用 `docker compose logs -f ...`，K8s 用 `kubectl logs ...` 查看），不写入 `data/`。
 
 ## 🧩 部署目录

@@ -16,7 +16,6 @@ export interface SessionRepositoryOptions {
 interface SessionPaths {
   sessionPath: string;
   metaPath: string;
-  historyPath: string;
   workspacePath: string;
 }
 
@@ -86,7 +85,6 @@ export class SessionRepository {
       meta,
       groupPath: this.getGroupPath(meta.groupId),
       workspacePath: paths.workspacePath,
-      historyPath: paths.historyPath,
     };
   }
 
@@ -105,7 +103,6 @@ export class SessionRepository {
     return {
       sessionPath,
       metaPath: join(sessionPath, "meta.json"),
-      historyPath: join(sessionPath, "history.sqlite"),
       workspacePath: join(sessionPath, "workspace"),
     };
   }

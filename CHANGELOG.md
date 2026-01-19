@@ -20,15 +20,17 @@
 - Discord：即使消息内容被裁剪/缺失，仍可通过 mentions 元数据识别 @bot 触发，避免“@ 了但不入队”
 - 输出：识别 Markdown/裸图片链接并按富内容发送（Discord embed / QQ image segment），确保“图片”不是纯链接
 - Discord：对外链图片尝试下载并以附件发送（best-effort），避免部分站点禁用 embed 导致“只有链接没图片”
+- Discord：外链图片不可下载/非图片响应时丢弃该图片元素，避免出现“空图片框”
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 - Opencode：prompt file 以 `--file` 追加到 message 之后，避免被 CLI 误当作文件列表吞掉导致 `opencode run` 直接失败
 - Opencode：支持解析 `--format json` 的事件流输出（text chunks），确保能提取最终回复
 - Opencode：外部模式使用自定义 chat agent，避免在无交互环境卡在权限询问/工具执行
+- Opencode：system prompt 永远追加 URL 可用性校验硬性规则（`url-access-check`），避免模型编造/输出不可用链接
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
 - Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败
 - K8s：`bot-data` 改为 NAS RWX（`alibabacloud-cnfs-nas`），避免 adapter/worker 分布到不同节点时触发 Multi-Attach
 - K8s：worker 注入 `DISCORD_TOKEN`，确保 Discord 消息可由 worker 正常回复
-- 文档：README 补充历史/记录存放位置并修正 data 目录结构说明
+- 文档：README 补充历史/记录存放位置并修正 data 目录结构说明（移除 `history.sqlite` 描述，历史仅写入 Postgres）
 
 ### Changed
 

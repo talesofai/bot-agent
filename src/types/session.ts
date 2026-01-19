@@ -23,5 +23,4 @@ export interface SessionInfo {
   meta: SessionMeta;
   groupPath: string;
   workspacePath: string;
-  historyPath: string;
 }

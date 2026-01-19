@@ -57,7 +57,6 @@ describe("ShellOpencodeRunner", () => {
         },
         groupPath: tempDir,
         workspacePath: tempDir,
-        historyPath: path.join(tempDir, "history.sqlite"),
       };
       const result = await runner.run({
         job,

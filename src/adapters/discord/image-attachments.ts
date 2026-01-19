@@ -13,6 +13,11 @@ const DISCORD_CDN_HOSTS = new Set([
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
+type FetchImageAttachmentResult =
+  | { kind: "attachment"; attachment: AttachmentBuilder }
+  | { kind: "keep" }
+  | { kind: "drop" };
+
 export async function resolveDiscordImageAttachments(
   elements: ReadonlyArray<SessionElement>,
   options?: {
@@ -63,16 +68,20 @@ export async function resolveDiscordImageAttachments(
       filenameHint: `image-${fileIndex + 1}`,
     }).catch((err) => {
       logger?.debug?.({ err, url: element.url }, "Failed to fetch image");
-      return null;
+      return { kind: "keep" } as const;
     });
 
-    if (!attachment) {
+    if (attachment.kind === "keep") {
       remaining.push(element);
       continue;
     }
 
+    if (attachment.kind === "drop") {
+      continue;
+    }
+
     fileIndex += 1;
-    files.push(attachment);
+    files.push(attachment.attachment);
   }
 
   return { elements: remaining, files };
@@ -98,7 +107,7 @@ async function fetchImageAttachment(
     fetchFn: FetchFn;
     filenameHint: string;
   },
-): Promise<AttachmentBuilder | null> {
+): Promise<FetchImageAttachmentResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
@@ -107,25 +116,25 @@ async function fetchImageAttachment(
       signal: controller.signal,
     });
     if (!response.ok) {
-      return null;
+      return { kind: "drop" };
     }
 
     const contentLength = response.headers.get("content-length");
     if (contentLength) {
       const length = Number(contentLength);
       if (Number.isFinite(length) && length > options.maxBytes) {
-        return null;
+        return { kind: "keep" };
       }
     }
 
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType && !contentType.toLowerCase().startsWith("image/")) {
-      return null;
+      return { kind: "drop" };
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
     if (buffer.byteLength > options.maxBytes) {
-      return null;
+      return { kind: "keep" };
     }
 
     const filename = resolveFilename({
@@ -133,7 +142,10 @@ async function fetchImageAttachment(
       contentType,
       fallback: options.filenameHint,
     });
-    return new AttachmentBuilder(buffer, { name: filename });
+    return {
+      kind: "attachment",
+      attachment: new AttachmentBuilder(buffer, { name: filename }),
+    };
   } finally {
     clearTimeout(timeout);
   }

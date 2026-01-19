@@ -133,7 +133,6 @@ function makeSessionInfo(): SessionInfo {
     },
     groupPath: "/tmp/group-1",
     workspacePath: "/tmp/session-workspace",
-    historyPath: "/tmp/history.sqlite",
   };
 }
 

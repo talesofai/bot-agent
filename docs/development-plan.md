@@ -246,20 +246,21 @@ interface SessionEvent {
 
 ---
 
-## 群目录结构
+## 群目录结构（运行时）
 
 ```
-/data/groups/{group_id}/
-├── agent.md          # Agent 人设
-├── config.yaml       # 群配置
-├── skills/           # 技能
-│   ├── draw.md
-│   └── roleplay.md
-├── sessions/         # 会话
-│   └── {user}-{key}/
-│       └── history.sqlite
-└── assets/           # 资源
-    └── images/
+/data/groups/
+├── {group_id}/
+│   ├── agent.md          # Agent 人设
+│   ├── config.yaml       # 群配置
+│   ├── skills/           # 技能
+│   │   ├── draw.md
+│   │   └── roleplay.md
+│   └── assets/           # 资源
+│       └── images/
+└── sessions/{botId}/{groupId}/{userId}/{sessionId}/
+    ├── meta.json
+    └── workspace/
 ```
 
 ---

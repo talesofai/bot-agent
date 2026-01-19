@@ -96,13 +96,19 @@ permission:
   "*": allow
   doom_loop: allow
   external_directory: allow
-  question: deny
+  question: allow
+  plan_enter: allow
+  plan_exit: allow
+  read:
+    "*": allow
+    "*.env": allow
+    "*.env.*": allow
 ---
 You are a direct chat responder for a production chat bot.
 
 Rules:
 - Use the attached prompt file as the full context.
-- You may use any tool when necessary (network/file/system), but do not ask interactive questions.
+- You may use any tool when necessary (network/file/system).
 - Reply with the final answer only.
 `;
 
@@ -259,7 +265,14 @@ async function writeOpencodeConfig(
 async function writeChatAgent(agentPath: string): Promise<void> {
   await mkdir(path.dirname(agentPath), { recursive: true });
   if (existsSync(agentPath)) {
-    return;
+    try {
+      const existing = await readFile(agentPath, "utf8");
+      if (existing.trim() === CHAT_AGENT_CONTENT.trim()) {
+        return;
+      }
+    } catch {
+      // Fall through and rewrite agent file.
+    }
   }
   await writeTextAtomic(agentPath, CHAT_AGENT_CONTENT, 0o600);
 }

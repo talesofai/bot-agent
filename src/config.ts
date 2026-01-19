@@ -36,7 +36,7 @@ const envSchema = z.object({
   HTTP_PORT: z.coerce.number().int().min(1).default(8080),
   WORKER_HTTP_PORT: z.coerce.number().int().min(0).default(8081),
   API_TOKEN: z.string().optional(),
-  DEFAULT_GROUP_ID: z.string().optional(),
+  FORCE_GROUP_ID: z.string().optional(),
   LLBOT_REGISTRY_PREFIX: z.string().default("llbot:registry"),
   LLBOT_REGISTRY_TTL_SEC: z.coerce.number().int().min(1).default(30),
   LLBOT_REGISTRY_REFRESH_SEC: z.coerce.number().int().min(1).default(10),
@@ -48,11 +48,12 @@ function createConfig(): AppConfig {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const projectRoot = path.resolve(moduleDir, "..");
 
+  const isTestEnv = process.env.NODE_ENV === "test";
   const configPath = process.env.CONFIG_PATH;
   if (configPath) {
     const fullPath = path.resolve(projectRoot, configPath);
     loadEnv({ path: fullPath });
-  } else {
+  } else if (!isTestEnv) {
     const defaultPath = path.resolve(projectRoot, "configs", ".env");
     if (existsSync(defaultPath)) {
       loadEnv({ path: defaultPath });
@@ -61,7 +62,14 @@ function createConfig(): AppConfig {
     }
   }
 
-  return envSchema.parse(process.env);
+  const sanitizedEnv: Record<string, string | undefined> = { ...process.env };
+  for (const [key, value] of Object.entries(sanitizedEnv)) {
+    if (typeof value === "string" && value.trim() === "") {
+      delete sanitizedEnv[key];
+    }
+  }
+
+  return envSchema.parse(sanitizedEnv);
 }
 
 let cachedConfig: AppConfig | null = null;

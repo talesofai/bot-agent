@@ -81,8 +81,8 @@ WORKER_HTTP_PORT=8081
 # 可选：管理端点鉴权 token（未设置则禁用管理接口）
 API_TOKEN=
 
-# 入口默认群 ID（仅群聊生效；私聊固定 groupId=0；未设置时群聊使用消息 channelId 作为 groupId）
-DEFAULT_GROUP_ID=
+# 强制群聊 groupId 覆盖（高级选项：会让多个群共享同一套群配置/会话目录；私聊始终 groupId=0；未设置则使用消息 guildId）
+# FORCE_GROUP_ID=1
 
 # 可选：/health 版本号（默认读取 npm_package_version）
 APP_VERSION=

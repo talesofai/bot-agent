@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: opencode-bot-agent-adapter
-          image: opencode-bot-agent:latest
+          image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
           command:
             - bun
             - run

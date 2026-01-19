@@ -25,7 +25,7 @@ export interface MessageDispatcherOptions {
   bufferStore: SessionBuffer;
   echoTracker: EchoTracker;
   logger: Logger;
-  defaultGroupId?: string;
+  forceGroupId?: string;
 }
 
 export class MessageDispatcher {
@@ -36,7 +36,7 @@ export class MessageDispatcher {
   private bufferStore: SessionBuffer;
   private echoTracker: EchoTracker;
   private logger: Logger;
-  private defaultGroupId?: string;
+  private forceGroupId?: string;
 
   constructor(options: MessageDispatcherOptions) {
     this.adapter = options.adapter;
@@ -46,12 +46,13 @@ export class MessageDispatcher {
     this.bufferStore = options.bufferStore;
     this.echoTracker = options.echoTracker;
     this.logger = options.logger;
-    this.defaultGroupId = options.defaultGroupId;
+    const forceGroupId = options.forceGroupId?.trim();
+    this.forceGroupId = forceGroupId ? forceGroupId : undefined;
   }
 
   async dispatch(message: SessionEvent): Promise<void> {
     try {
-      const groupId = resolveDispatchGroupId(message, this.defaultGroupId);
+      const groupId = resolveDispatchGroupId(message, this.forceGroupId);
       if (!groupId || !isSafePathSegment(groupId)) {
         this.logger.error({ groupId }, "Invalid groupId for message dispatch");
         return;
@@ -189,13 +190,13 @@ export class MessageDispatcher {
 
 export function resolveDispatchGroupId(
   message: SessionEvent,
-  defaultGroupId?: string,
+  forceGroupId?: string,
 ): string | null {
   if (!message.guildId) {
     return "0";
   }
-  if (defaultGroupId) {
-    return defaultGroupId;
+  if (forceGroupId) {
+    return forceGroupId;
   }
   return message.guildId;
 }

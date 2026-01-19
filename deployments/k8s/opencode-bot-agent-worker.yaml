@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: opencode-bot-agent-worker
-          image: opencode-bot-agent:latest
+          image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
           command:
             - bun
             - run
@@ -28,6 +28,12 @@ spec:
                 secretKeyRef:
                   name: llbot-secrets
                   key: DATABASE_URL
+            - name: DISCORD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: DISCORD_TOKEN
+                  optional: true
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:

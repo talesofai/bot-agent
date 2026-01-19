@@ -11,11 +11,16 @@
 
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
+- Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败
+- K8s：`bot-data` 改为 NAS RWX（`alibabacloud-cnfs-nas`），避免 adapter/worker 分布到不同节点时触发 Multi-Attach
+- K8s：worker 注入 `DISCORD_TOKEN`，确保 Discord 消息可由 worker 正常回复
 
 ### Changed
 
 - Opencode：默认强制使用 `opencode/glm-4.7-free`；仅在同时设置 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENCODE_MODELS` 时启用外部模式（litellm），并自动生成 `~/.config/opencode/opencode.json` 与 `~/.local/share/opencode/auth.json`
 - 配置/部署：移除 `configs/secrets/.env`，统一使用单一 `configs/.env`（Compose/脚本/K8s/文档同步）
+- 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）
+- K8s：opencode-bot-agent 默认镜像改为阿里云仓库（`registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest`）
 
 ### Security
 
@@ -276,7 +281,7 @@
 - SessionHistory 读取 tail 为空时直接返回空列表
 - SessionHistory 读取前检查文件存在，避免 tail 误报
 - 仅在 adapter 角色下强制平台配置校验
-- Response 队列使用原始 channelId，避免 DEFAULT_GROUP_ID 误投递
+- Response 队列使用原始 channelId，避免 `FORCE_GROUP_ID`（原 `DEFAULT_GROUP_ID`）误投递
 - Session lock key 追加 groupId，避免跨群冲突
 - GroupStore 加载失败时清理缓存，避免旧配置残留
 - History 追加仅在匹配内容时跳过，避免遗漏当前消息
@@ -462,7 +467,7 @@
 ### Added
 
 - 群级触发逻辑（triggerMode/keywords/cooldown/adminUsers）
-- 入口默认群 ID 支持（DEFAULT_GROUP_ID）
+- 强制群聊 groupId 覆盖支持（`FORCE_GROUP_ID`，原 `DEFAULT_GROUP_ID`）
 
 ## [0.0.12] - 2026-01-13
 

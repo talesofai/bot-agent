@@ -92,7 +92,7 @@ async function main(): Promise<void> {
     bufferStore,
     echoTracker,
     logger,
-    defaultGroupId: config.DEFAULT_GROUP_ID,
+    forceGroupId: config.FORCE_GROUP_ID,
   });
   adapter.onEvent((message) => {
     void dispatcher.dispatch(message);

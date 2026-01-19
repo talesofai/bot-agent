@@ -23,9 +23,9 @@ describe("resolveDispatchGroupId", () => {
     expect(groupId).toBe("guild-1");
   });
 
-  test("falls back to defaultGroupId when provided", () => {
-    const groupId = resolveDispatchGroupId(baseMessage, "default-group");
-    expect(groupId).toBe("default-group");
+  test("returns forceGroupId when provided", () => {
+    const groupId = resolveDispatchGroupId(baseMessage, "forced-group");
+    expect(groupId).toBe("forced-group");
   });
 
   test("returns 0 for direct messages", () => {

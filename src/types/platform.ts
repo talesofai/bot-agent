@@ -45,6 +45,7 @@ export interface PlatformAdapter {
   connect(bot: Bot): Promise<void>;
   disconnect(bot: Bot): Promise<void>;
   onEvent(handler: MessageHandler): void;
+  sendTyping?(session: SessionEvent): Promise<void>;
   sendMessage(
     session: SessionEvent,
     content: string,

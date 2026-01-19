@@ -94,6 +94,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await this.sender.send(session, content, options);
   }
 
+  async sendTyping(session: SessionEvent): Promise<void> {
+    await this.sender.sendTyping(session);
+  }
+
   getBotUserId(): string | null {
     return this.botUserId;
   }

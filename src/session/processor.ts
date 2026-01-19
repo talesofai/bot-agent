@@ -169,53 +169,58 @@ export class SessionProcessor {
           }
 
           const { mergedSession, promptInput } = buildBufferedInput(buffered);
-          const historyKey = resolveHistoryKey(mergedSession);
-          const { history, launchSpec } = await this.buildPromptContext(
-            jobData.groupId,
-            sessionInfo,
-            mergedSession,
-            historyKey,
-            promptInput,
-          );
-
-          const result = await this.runner.run({
-            job: this.mapJob(job),
-            session: sessionInfo,
-            history,
-            launchSpec,
-          });
-          const stillOwnerAfterRun = await this.bufferStore.claimGate(
-            bufferKey,
-            gateToken,
-          );
-          if (!stillOwnerAfterRun) {
-            this.logger.warn(
-              { sessionId: jobData.sessionId, botId: jobData.botId },
-              "Discarding session result due to gate token mismatch after run",
+          const stopTyping = this.startTyping(mergedSession);
+          try {
+            const historyKey = resolveHistoryKey(mergedSession);
+            const { history, launchSpec } = await this.buildPromptContext(
+              jobData.groupId,
+              sessionInfo,
+              mergedSession,
+              historyKey,
+              promptInput,
             );
-            try {
-              await this.bufferStore.requeueFront(bufferKey, buffered);
-            } catch (err) {
-              this.logger.error(
-                { err, sessionId: jobData.sessionId, botId: jobData.botId },
-                "Failed to requeue buffered messages after gate loss",
-              );
-            }
-            shouldSetIdle = false;
-            return;
-          }
-          const output = resolveOutput(result.output);
 
-          await this.sendResponse(mergedSession, output);
-          await this.appendHistoryFromJob(
-            sessionInfo,
-            mergedSession,
-            historyKey,
-            result.historyEntries,
-            result.streamEvents,
-            output,
-          );
-          await this.recordActivity(sessionInfo);
+            const result = await this.runner.run({
+              job: this.mapJob(job),
+              session: sessionInfo,
+              history,
+              launchSpec,
+            });
+            const stillOwnerAfterRun = await this.bufferStore.claimGate(
+              bufferKey,
+              gateToken,
+            );
+            if (!stillOwnerAfterRun) {
+              this.logger.warn(
+                { sessionId: jobData.sessionId, botId: jobData.botId },
+                "Discarding session result due to gate token mismatch after run",
+              );
+              try {
+                await this.bufferStore.requeueFront(bufferKey, buffered);
+              } catch (err) {
+                this.logger.error(
+                  { err, sessionId: jobData.sessionId, botId: jobData.botId },
+                  "Failed to requeue buffered messages after gate loss",
+                );
+              }
+              shouldSetIdle = false;
+              return;
+            }
+            const output = resolveOutput(result.output);
+
+            await this.sendResponse(mergedSession, output);
+            await this.appendHistoryFromJob(
+              sessionInfo,
+              mergedSession,
+              historyKey,
+              result.historyEntries,
+              result.streamEvents,
+              output,
+            );
+            await this.recordActivity(sessionInfo);
+          } finally {
+            stopTyping();
+          }
         } catch (err) {
           this.logger.error(
             { err, sessionId: jobData.sessionId, botId: jobData.botId },
@@ -455,6 +460,29 @@ export class SessionProcessor {
       content,
       elements.length > 0 ? { elements } : undefined,
     );
+  }
+
+  private startTyping(session: SessionEvent): () => void {
+    if (session.platform !== "discord") {
+      return () => {};
+    }
+    const sendTyping = this.adapter.sendTyping;
+    if (!sendTyping) {
+      return () => {};
+    }
+    const trigger = () => {
+      void sendTyping.call(this.adapter, session).catch((err) => {
+        this.logger.debug(
+          { err, sessionId: session.messageId, platform: session.platform },
+          "Failed to send typing indicator",
+        );
+      });
+    };
+    trigger();
+    const timer = setInterval(trigger, 7_000);
+    return () => {
+      clearInterval(timer);
+    };
   }
 }
 

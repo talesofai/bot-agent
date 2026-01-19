@@ -60,6 +60,27 @@ export class MessageSender {
     }
   }
 
+  async sendTyping(session: SessionEvent): Promise<void> {
+    if (!session.channelId) {
+      throw new Error("channelId is required for sending messages.");
+    }
+
+    const channel = await this.resolveChannel(session.channelId);
+    if (!isTypableChannel(channel)) {
+      return;
+    }
+
+    try {
+      await channel.sendTyping();
+      this.logger.debug({ channelId: session.channelId }, "Typing sent");
+    } catch (err) {
+      this.logger.debug(
+        { err, channelId: session.channelId },
+        "Failed to send typing indicator",
+      );
+    }
+  }
+
   private async resolveChannel(
     channelId: string,
   ): Promise<unknown | null | undefined> {
@@ -137,4 +158,17 @@ function isSendableChannel(
   }
   const candidate = channel as { send?: unknown };
   return typeof candidate.send === "function";
+}
+
+function isTypableChannel(
+  channel: unknown,
+): channel is { sendTyping: () => Promise<unknown> } {
+  if (!channel || typeof channel !== "object") {
+    return false;
+  }
+  if (!("sendTyping" in channel)) {
+    return false;
+  }
+  const candidate = channel as { sendTyping?: unknown };
+  return typeof candidate.sendTyping === "function";
 }

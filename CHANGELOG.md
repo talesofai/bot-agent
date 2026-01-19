@@ -13,6 +13,7 @@
 - Opencode：新增全局技能 `url-access-check`（脚本校验 URL/图片可访问性），并在每次运行前同步到会话 workspace 的 `.claude/skills/`，避免输出“不可用链接”
 - 测试：新增 RouterStore 默认配置与 bot 配置落盘用例
 - History：将 opencode 事件流中间态写入 Postgres（`includeInContext=false`），便于追踪但默认不进上下文
+- Discord：AI 处理期间发送 typing indicator（“正在输入”状态）
 
 ### Fixed
 

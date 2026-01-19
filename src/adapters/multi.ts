@@ -84,6 +84,19 @@ export class MultiAdapter implements PlatformAdapter {
     }
   }
 
+  async sendTyping(session: SessionEvent): Promise<void> {
+    const platformKey = session.platform?.toLowerCase();
+    const entry = platformKey ? this.entries.get(platformKey) : null;
+    if (!entry) {
+      this.logger.warn(
+        { platform: session.platform, messageId: session.messageId },
+        "No adapter found for platform",
+      );
+      return;
+    }
+    await entry.adapter.sendTyping?.(session);
+  }
+
   async sendMessage(
     session: SessionEvent,
     content: string,

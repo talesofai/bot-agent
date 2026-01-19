@@ -134,15 +134,7 @@ async function readStreamText(
 }
 
 function injectPromptFile(args: string[], promptFilePath: string): string[] {
-  if (args.length === 0) {
-    return ["--file", promptFilePath];
-  }
-  const next = [...args];
-  const last = next.pop();
-  if (last === undefined) {
-    return [...next, "--file", promptFilePath];
-  }
-  return [...next, "--file", promptFilePath, last];
+  return [...args, "--file", promptFilePath];
 }
 
 export class NoopOpencodeRunner implements OpencodeRunner {

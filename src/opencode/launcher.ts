@@ -76,9 +76,9 @@ type ExternalModeInput = {
   env: Record<string, string | null>;
 };
 
-const CHAT_AGENT_NAME = "chat-final-responder";
+const CHAT_AGENT_NAME = "chat-webfetch-responder";
 const CHAT_AGENT_CONTENT = `---
-description: Tool-free chat agent for opencode-bot.
+description: Chat agent for opencode-bot (webfetch enabled).
 mode: primary
 tools:
   bash: false
@@ -88,16 +88,16 @@ tools:
   list: false
   glob: false
   grep: false
-  webfetch: false
+  webfetch: true
   task: false
   todowrite: false
   todoread: false
 ---
-You are a direct chat responder specialized in providing immediate, tool-free final answers.
+You are a direct chat responder for a production chat bot.
 
 Rules:
-- Never invoke tools or external services.
 - Use the attached prompt file as the full context.
+- You may use webfetch when necessary, but do not use other tools.
 - Reply with the final answer only.
 `;
 

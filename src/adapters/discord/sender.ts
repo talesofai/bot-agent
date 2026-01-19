@@ -5,6 +5,7 @@ import type {
   SessionEvent,
 } from "../../types/platform";
 import { Client, EmbedBuilder, type MessageCreateOptions } from "discord.js";
+import { resolveDiscordImageAttachments } from "./image-attachments";
 
 export class MessageSender {
   private client: Client;
@@ -33,8 +34,20 @@ export class MessageSender {
       return;
     }
 
-    const payload = buildPayload(content, options?.elements ?? []);
-    if (!payload.content && (!payload.embeds || payload.embeds.length === 0)) {
+    const { elements, files } = await resolveDiscordImageAttachments(
+      options?.elements ?? [],
+      { logger: this.logger },
+    );
+
+    const payload = buildPayload(content, elements);
+    if (files.length > 0) {
+      payload.files = files;
+    }
+    if (
+      !payload.content &&
+      (!payload.embeds || payload.embeds.length === 0) &&
+      (!payload.files || payload.files.length === 0)
+    ) {
       return;
     }
 

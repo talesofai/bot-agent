@@ -15,10 +15,11 @@
 
 - Discord：支持“回复 bot 消息”触发（不需要额外 @ mention），避免对话链断掉
 - 输出：识别 Markdown/裸图片链接并按富内容发送（Discord embed / QQ image segment），确保“图片”不是纯链接
+- Discord：对外链图片尝试下载并以附件发送（best-effort），避免部分站点禁用 embed 导致“只有链接没图片”
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 - Opencode：prompt file 以 `--file` 追加到 message 之后，避免被 CLI 误当作文件列表吞掉导致 `opencode run` 直接失败
 - Opencode：支持解析 `--format json` 的事件流输出（text chunks），确保能提取最终回复
-- Opencode：外部模式强制使用 tool-free agent（禁用 webfetch 等工具），避免在无交互环境卡在权限询问/工具执行
+- Opencode：外部模式使用自定义 chat agent，避免在无交互环境卡在权限询问/工具执行
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
 - Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败
 - K8s：`bot-data` 改为 NAS RWX（`alibabacloud-cnfs-nas`），避免 adapter/worker 分布到不同节点时触发 Multi-Attach
@@ -27,6 +28,8 @@
 ### Changed
 
 - Opencode：默认强制使用 `opencode/glm-4.7-free`；仅在同时设置 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENCODE_MODELS` 时启用外部模式（litellm），并自动生成 `~/.config/opencode/opencode.json` 与 `~/.local/share/opencode/auth.json`
+- Opencode：外部模式 chat agent 开启 `webfetch`（其余工具保持关闭），允许联网查询而不暴露本机/容器的读写执行能力
+- 默认 Agent：更新为“奈塔”人设（称呼“捏捏老师”，回复结尾带“捏”，图片用 Markdown `![...](...)`）
 - 配置/部署：移除 `configs/secrets/.env`，统一使用单一 `configs/.env`（Compose/脚本/K8s/文档同步）
 - 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）
 - K8s：opencode-bot-agent 默认镜像改为阿里云仓库（`registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest`）

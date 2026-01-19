@@ -93,5 +93,15 @@ function buildElements(
     elements.unshift({ type: "mention", userId: botId });
   }
 
+  if (
+    botId &&
+    message.mentions.users.has(botId) &&
+    !elements.some(
+      (element) => element.type === "mention" && element.userId === botId,
+    )
+  ) {
+    elements.unshift({ type: "mention", userId: botId });
+  }
+
   return trimTextElements(elements);
 }

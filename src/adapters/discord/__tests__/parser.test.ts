@@ -66,6 +66,21 @@ describe("parseMessage", () => {
     expect(parsed?.content).toBe("你好");
   });
 
+  test("treats mention metadata as a mention trigger", () => {
+    const botId = "123";
+    const message = createDiscordMessage({
+      botId,
+      authorId: "user-1",
+      content: "你好",
+      mentions: [botId],
+    });
+
+    const parsed = parseMessage(message, botId);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.elements).toContainEqual({ type: "mention", userId: botId });
+    expect(parsed?.content).toBe("你好");
+  });
+
   test("does not trigger on reply-to-others", () => {
     const botId = "123";
     const message = createDiscordMessage({

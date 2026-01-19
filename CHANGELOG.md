@@ -15,6 +15,7 @@
 ### Fixed
 
 - Discord：支持“回复 bot 消息”触发（不需要额外 @ mention），避免对话链断掉
+- Discord：即使消息内容被裁剪/缺失，仍可通过 mentions 元数据识别 @bot 触发，避免“@ 了但不入队”
 - 输出：识别 Markdown/裸图片链接并按富内容发送（Discord embed / QQ image segment），确保“图片”不是纯链接
 - Discord：对外链图片尝试下载并以附件发送（best-effort），避免部分站点禁用 embed 导致“只有链接没图片”
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突

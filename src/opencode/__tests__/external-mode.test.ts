@@ -32,7 +32,7 @@ describe("OpencodeLauncher external mode", () => {
       );
 
       expect(spec.args).toContain("--agent");
-      expect(spec.args).toContain("chat-webfetch-responder");
+      expect(spec.args).toContain("chat-yolo-responder");
       expect(spec.args).toContain("-m");
       expect(spec.args).toContain("litellm/gpt-5.1");
       expect(spec.env?.OPENCODE_CONFIG).toBe(
@@ -57,7 +57,7 @@ describe("OpencodeLauncher external mode", () => {
         ".config",
         "opencode",
         "agent",
-        "chat-webfetch-responder.md",
+        "chat-yolo-responder.md",
       );
 
       const configJson = JSON.parse(
@@ -78,7 +78,7 @@ describe("OpencodeLauncher external mode", () => {
       expect(authJson.litellm.key).toBe("sk-test");
 
       const agentFile = readFileSync(agentPath, "utf8");
-      expect(agentFile).toContain("webfetch enabled");
+      expect(agentFile).toContain("all tools enabled");
     } finally {
       restoreEnv(prevEnv);
       resetConfig();

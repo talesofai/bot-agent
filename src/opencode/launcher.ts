@@ -76,28 +76,33 @@ type ExternalModeInput = {
   env: Record<string, string | null>;
 };
 
-const CHAT_AGENT_NAME = "chat-webfetch-responder";
+const CHAT_AGENT_NAME = "chat-yolo-responder";
 const CHAT_AGENT_CONTENT = `---
-description: Chat agent for opencode-bot (webfetch enabled).
+description: Chat agent for opencode-bot (all tools enabled).
 mode: primary
 tools:
-  bash: false
-  read: false
-  write: false
-  edit: false
-  list: false
-  glob: false
-  grep: false
+  bash: true
+  read: true
+  write: true
+  edit: true
+  list: true
+  glob: true
+  grep: true
   webfetch: true
-  task: false
-  todowrite: false
-  todoread: false
+  task: true
+  todowrite: true
+  todoread: true
+permission:
+  "*": allow
+  doom_loop: allow
+  external_directory: allow
+  question: deny
 ---
 You are a direct chat responder for a production chat bot.
 
 Rules:
 - Use the attached prompt file as the full context.
-- You may use webfetch when necessary, but do not use other tools.
+- You may use any tool when necessary (network/file/system), but do not ask interactive questions.
 - Reply with the final answer only.
 `;
 

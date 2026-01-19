@@ -58,8 +58,7 @@ export class GroupFileRepository {
 
     const agentPath = join(groupPath, "agent.md");
     if (!(await this.exists(agentPath))) {
-      const defaultAgent =
-        groupId === "0" ? "" : await this.loadDefaultAgentTemplate();
+      const defaultAgent = await this.loadDefaultAgentTemplate();
       await writeFile(agentPath, defaultAgent);
       this.logger.debug({ groupId }, "Created default agent.md");
     }
@@ -132,7 +131,12 @@ export class GroupFileRepository {
     }
 
     const content = await readFile(agentPath, "utf-8");
-    return this.parseAgentMd(content);
+    const parsed = this.parseAgentMd(content);
+    if (parsed.content.trim() === "" && basename(groupPath) === "0") {
+      const defaultAgent = await this.loadDefaultAgentTemplate();
+      return this.parseAgentMd(defaultAgent);
+    }
+    return parsed;
   }
 
   parseAgentMd(content: string): AgentContent {

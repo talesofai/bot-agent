@@ -11,7 +11,7 @@ import { SessionRepository } from "../../session/repository";
 import { createSession } from "../../session/session-ops";
 import { OpencodeLauncher } from "../launcher";
 import { ShellOpencodeRunner } from "../../worker/runner";
-import { buildSystemPrompt } from "../system-prompt";
+import { buildSystemPrompt } from "../default-system-prompt";
 import { buildOpencodePrompt } from "../prompt";
 
 const opencodeEnabled = process.env.OPENCODE_INTEGRATION === "1";

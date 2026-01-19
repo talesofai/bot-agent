@@ -8,7 +8,7 @@ import { SessionRepository } from "./repository";
 import type { HistoryKey, HistoryStore } from "./history";
 import { createSession } from "./session-ops";
 import { buildBufferedInput, buildOpencodePrompt } from "../opencode/prompt";
-import { buildSystemPrompt } from "../opencode/system-prompt";
+import { buildSystemPrompt } from "../opencode/default-system-prompt";
 import type { OpencodeLaunchSpec } from "../opencode/launcher";
 import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "../worker/runner";

@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 文档：新增 0.0.29 Vision（配置语义收敛与可测试性）
+
 ### Fixed
 
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突

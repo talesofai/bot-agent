@@ -74,8 +74,10 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
+const redisIntegrationEnabled = process.env.REDIS_INTEGRATION === "1";
 const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
-const redisAvailable = await canPingRedis(redisUrl);
+const redisAvailable =
+  redisIntegrationEnabled && (await canPingRedis(redisUrl));
 const integrationTest = redisAvailable ? test : test.skip;
 
 describe("session worker integration", () => {

@@ -151,68 +151,88 @@ export class SessionProcessor {
           continue;
         }
 
-        if (!sessionInfo) {
-          sessionInfo = await this.ensureSession(
-            jobData.botId,
+        try {
+          if (!sessionInfo) {
+            sessionInfo = await this.ensureSession(
+              jobData.botId,
+              jobData.groupId,
+              jobData.userId,
+              jobData.key,
+              jobData.sessionId,
+            );
+            await this.recordActivity(sessionInfo);
+
+            sessionInfo = await this.updateStatus(sessionInfo, "running");
+            statusUpdated = true;
+            await this.recordActivity(sessionInfo);
+          }
+
+          const { mergedSession, promptInput } = buildBufferedInput(buffered);
+          const historyKey = resolveHistoryKey(mergedSession);
+          const { history, launchSpec } = await this.buildPromptContext(
             jobData.groupId,
-            jobData.userId,
-            jobData.key,
-            jobData.sessionId,
+            sessionInfo,
+            mergedSession,
+            historyKey,
+            promptInput,
+          );
+
+          const result = await this.runner.run({
+            job: this.mapJob(job),
+            session: sessionInfo,
+            history,
+            launchSpec,
+          });
+          const stillOwnerAfterRun = await this.bufferStore.claimGate(
+            bufferKey,
+            gateToken,
+          );
+          if (!stillOwnerAfterRun) {
+            this.logger.warn(
+              { sessionId: jobData.sessionId, botId: jobData.botId },
+              "Discarding session result due to gate token mismatch after run",
+            );
+            try {
+              await this.bufferStore.requeueFront(bufferKey, buffered);
+            } catch (err) {
+              this.logger.error(
+                { err, sessionId: jobData.sessionId, botId: jobData.botId },
+                "Failed to requeue buffered messages after gate loss",
+              );
+            }
+            shouldSetIdle = false;
+            return;
+          }
+          const output = resolveOutput(result.output);
+
+          await this.sendResponse(mergedSession, output);
+          await this.appendHistoryFromJob(
+            sessionInfo,
+            mergedSession,
+            historyKey,
+            result.historyEntries,
+            output,
           );
           await this.recordActivity(sessionInfo);
-
-          sessionInfo = await this.updateStatus(sessionInfo, "running");
-          statusUpdated = true;
-          await this.recordActivity(sessionInfo);
-        }
-
-        const { mergedSession, promptInput } = buildBufferedInput(buffered);
-        const historyKey = resolveHistoryKey(mergedSession);
-        const { history, launchSpec } = await this.buildPromptContext(
-          jobData.groupId,
-          sessionInfo,
-          mergedSession,
-          historyKey,
-          promptInput,
-        );
-
-        const result = await this.runner.run({
-          job: this.mapJob(job),
-          session: sessionInfo,
-          history,
-          launchSpec,
-        });
-        const stillOwnerAfterRun = await this.bufferStore.claimGate(
-          bufferKey,
-          gateToken,
-        );
-        if (!stillOwnerAfterRun) {
-          this.logger.warn(
-            { sessionId: jobData.sessionId, botId: jobData.botId },
-            "Discarding session result due to gate token mismatch after run",
+        } catch (err) {
+          this.logger.error(
+            { err, sessionId: jobData.sessionId, botId: jobData.botId },
+            "Failed to process buffered session messages; requeuing",
           );
           try {
             await this.bufferStore.requeueFront(bufferKey, buffered);
-          } catch (err) {
+          } catch (requeueErr) {
             this.logger.error(
-              { err, sessionId: jobData.sessionId, botId: jobData.botId },
-              "Failed to requeue buffered messages after gate loss",
+              {
+                err: requeueErr,
+                sessionId: jobData.sessionId,
+                botId: jobData.botId,
+              },
+              "Failed to requeue buffered messages after error",
             );
           }
-          shouldSetIdle = false;
-          return;
+          throw err;
         }
-        const output = resolveOutput(result.output);
-
-        await this.appendHistoryFromJob(
-          sessionInfo,
-          mergedSession,
-          historyKey,
-          result.historyEntries,
-          output,
-        );
-        await this.recordActivity(sessionInfo);
-        await this.sendResponse(mergedSession, output);
       }
     } catch (err) {
       this.logger.error(
@@ -404,18 +424,11 @@ export class SessionProcessor {
     if (!content && elements.length === 0) {
       return;
     }
-    try {
-      await this.adapter.sendMessage(
-        session,
-        content,
-        elements.length > 0 ? { elements } : undefined,
-      );
-    } catch (err) {
-      this.logger.error(
-        { err, sessionId: session.messageId },
-        "Failed to send response",
-      );
-    }
+    await this.adapter.sendMessage(
+      session,
+      content,
+      elements.length > 0 ? { elements } : undefined,
+    );
   }
 }
 

@@ -24,8 +24,6 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY configs ./configs
 
-# Build
-RUN bun run build
 RUN rm -rf .git
 
 # Runtime stage
@@ -48,7 +46,6 @@ RUN bun install -g opencode-ai@latest --ignore-scripts \
   && bun install -g opencode-linux-x64@latest --ignore-scripts
 
 # Copy app artifacts
-COPY --from=builder /app/dist /app/dist
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/configs /app/configs
 COPY --from=builder /app/package.json /app/package.json

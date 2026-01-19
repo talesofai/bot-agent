@@ -105,7 +105,7 @@ async function main(): Promise<void> {
     void dispatcher.dispatch(message);
   });
 
-  const shutdown = async () => {
+  const shutdown = async (exitCode = 0) => {
     logger.info("Shutting down...");
     try {
       if (httpServer) {
@@ -118,19 +118,23 @@ async function main(): Promise<void> {
     } catch (err) {
       logger.error({ err }, "Error during disconnect");
     } finally {
-      process.exit(0);
+      process.exit(exitCode);
     }
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-
-  adapter.connect(bot).catch((err) => {
-    logger.warn(
-      { err },
-      "Initial connection failed, reconnect will be attempted",
-    );
+  process.on("SIGINT", () => {
+    void shutdown(0);
   });
+  process.on("SIGTERM", () => {
+    void shutdown(0);
+  });
+
+  try {
+    await adapter.connect(bot);
+  } catch (err) {
+    logger.error({ err }, "Adapter connection failed");
+    await shutdown(1);
+  }
 }
 
 await main();

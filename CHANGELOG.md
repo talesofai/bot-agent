@@ -31,6 +31,7 @@
 - K8s：`bot-data` 改为 NAS RWX（`alibabacloud-cnfs-nas`），避免 adapter/worker 分布到不同节点时触发 Multi-Attach
 - K8s：worker 注入 `DISCORD_TOKEN`，确保 Discord 消息可由 worker 正常回复
 - 文档：README 补充历史/记录存放位置并修正 data 目录结构说明（移除 `history.sqlite` 描述，历史仅写入 Postgres）
+- Session：处理缓冲消息失败时回滚并 `requeueFront`；发送失败会让 job 失败以触发 BullMQ 重试，避免消息丢失/静默失败
 
 ### Changed
 
@@ -45,6 +46,7 @@
 ### Security
 
 - 部署：补齐 `pmhq` 需要 `privileged: true` 的原因说明，并明确最小权限目标（`SYS_PTRACE` + `seccomp=unconfined`）
+- Opencode：外部模式使用临时 `HOME` 生成配置并在结束后清理，避免 API Key 落盘到宿主机目录
 
 ## [0.0.28] - 2026-01-16
 

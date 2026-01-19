@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -13,6 +13,7 @@ export interface OpencodeLaunchSpec {
   cwd: string;
   env?: Record<string, string | null>;
   prompt?: string;
+  cleanupPaths?: string[];
 }
 
 export class OpencodeLauncher {
@@ -39,6 +40,7 @@ export class OpencodeLauncher {
 
     const args = ["run", "--format", "json"];
     const env: Record<string, string | null> = {};
+    const cleanupPaths: string[] = [];
     const command = resolveOpencodeCommand(config.OPENCODE_BIN?.trim());
 
     await ensureOpencodeSkills({
@@ -47,8 +49,15 @@ export class OpencodeLauncher {
       botId: sessionInfo.meta.botId,
     });
 
+    let opencodeHomeDir: string | null = null;
+    if (externalModeEnabled) {
+      opencodeHomeDir = await mkdtemp(path.join(os.tmpdir(), "opencode-home-"));
+      cleanupPaths.push(opencodeHomeDir);
+      env.HOME = opencodeHomeDir;
+    }
+
     if (config.OPENCODE_YOLO) {
-      const homeDir = resolveHomeDir();
+      const homeDir = opencodeHomeDir ?? resolveHomeDir();
       const agentPath = path.join(
         homeDir,
         ".config",
@@ -67,6 +76,7 @@ export class OpencodeLauncher {
           modelsCsv: modelsCsv!,
           modelOverride,
           env,
+          homeDir: opencodeHomeDir!,
         })
       : prepareDefaultMode(env);
 
@@ -81,6 +91,7 @@ export class OpencodeLauncher {
       cwd: sessionInfo.workspacePath,
       env: Object.keys(env).length ? env : undefined,
       prompt,
+      cleanupPaths: cleanupPaths.length > 0 ? cleanupPaths : undefined,
     };
   }
 }
@@ -91,6 +102,7 @@ type ExternalModeInput = {
   modelsCsv: string;
   modelOverride?: string;
   env: Record<string, string | null>;
+  homeDir: string;
 };
 
 const CHAT_AGENT_NAME = "chat-yolo-responder";
@@ -140,15 +152,19 @@ async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
     (requested && allowedModels.includes(requested) && requested) ||
     allowedModels[0];
 
-  const homeDir = resolveHomeDir();
   const authPath = path.join(
-    homeDir,
+    input.homeDir,
     ".local",
     "share",
     "opencode",
     "auth.json",
   );
-  const configPath = path.join(homeDir, ".config", "opencode", "opencode.json");
+  const configPath = path.join(
+    input.homeDir,
+    ".config",
+    "opencode",
+    "opencode.json",
+  );
 
   await Promise.all([
     upsertAuthFile(authPath, input.apiKey),

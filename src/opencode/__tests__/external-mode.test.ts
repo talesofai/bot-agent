@@ -16,6 +16,7 @@ describe("OpencodeLauncher external mode", () => {
       "OPENAI_API_KEY",
       "OPENCODE_MODELS",
     ]);
+    let generatedHome: string | undefined;
 
     try {
       process.env.HOME = tempHome;
@@ -35,25 +36,35 @@ describe("OpencodeLauncher external mode", () => {
       expect(spec.args).toContain("chat-yolo-responder");
       expect(spec.args).toContain("-m");
       expect(spec.args).toContain("litellm/gpt-5.1");
+      expect(spec.env?.HOME).toBeTruthy();
+      expect(spec.env?.HOME).not.toBe(tempHome);
+      const resolvedHome = spec.env?.HOME;
+      if (!resolvedHome) {
+        throw new Error(
+          "Expected OpencodeLauncher to set HOME for external mode",
+        );
+      }
+      generatedHome = resolvedHome;
+      expect(spec.cleanupPaths ?? []).toContain(resolvedHome);
       expect(spec.env?.OPENCODE_CONFIG).toBe(
-        path.join(tempHome, ".config", "opencode", "opencode.json"),
+        path.join(resolvedHome, ".config", "opencode", "opencode.json"),
       );
 
       const configPath = path.join(
-        tempHome,
+        resolvedHome,
         ".config",
         "opencode",
         "opencode.json",
       );
       const authPath = path.join(
-        tempHome,
+        resolvedHome,
         ".local",
         "share",
         "opencode",
         "auth.json",
       );
       const agentPath = path.join(
-        tempHome,
+        resolvedHome,
         ".config",
         "opencode",
         "agent",
@@ -82,6 +93,9 @@ describe("OpencodeLauncher external mode", () => {
     } finally {
       restoreEnv(prevEnv);
       resetConfig();
+      if (generatedHome) {
+        rmSync(generatedHome, { recursive: true, force: true });
+      }
       rmSync(tempHome, { recursive: true, force: true });
     }
   });
@@ -94,6 +108,7 @@ describe("OpencodeLauncher external mode", () => {
       "OPENAI_API_KEY",
       "OPENCODE_MODELS",
     ]);
+    let generatedHome: string | undefined;
 
     try {
       process.env.HOME = tempHome;
@@ -110,9 +125,13 @@ describe("OpencodeLauncher external mode", () => {
       );
 
       expect(spec.args).toContain("litellm/gpt-5.2");
+      generatedHome = spec.env?.HOME ?? undefined;
     } finally {
       restoreEnv(prevEnv);
       resetConfig();
+      if (generatedHome) {
+        rmSync(generatedHome, { recursive: true, force: true });
+      }
       rmSync(tempHome, { recursive: true, force: true });
     }
   });

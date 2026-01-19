@@ -26,7 +26,8 @@ export class ShellOpencodeRunner implements OpencodeRunner {
     if (input.signal?.aborted) {
       throw new Error("Opencode run aborted before start");
     }
-    const { command, args, cwd, env, prompt } = input.launchSpec;
+    const { command, args, cwd, env, prompt, cleanupPaths } = input.launchSpec;
+    const cleanupTargets = new Set(cleanupPaths ?? []);
     let promptDir: string | null = null;
     let finalArgs = args;
 
@@ -73,8 +74,13 @@ export class ShellOpencodeRunner implements OpencodeRunner {
       return await this.collectResult(child);
     } finally {
       if (promptDir) {
-        await rm(promptDir, { recursive: true, force: true });
+        cleanupTargets.add(promptDir);
       }
+      await Promise.all(
+        [...cleanupTargets].map((target) =>
+          rm(target, { recursive: true, force: true }),
+        ),
+      );
     }
   }
 

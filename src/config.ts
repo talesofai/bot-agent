@@ -15,6 +15,34 @@ const envSchema = z.object({
   OPENCODE_MODELS: z.string().optional(),
   /** Optional override for the opencode binary path. */
   OPENCODE_BIN: z.string().optional(),
+  /** Enable all tools/permissions by default when running opencode. */
+  OPENCODE_YOLO: z
+    .preprocess((value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      if (typeof value === "boolean") {
+        return value;
+      }
+      if (typeof value === "number") {
+        return value !== 0;
+      }
+      if (typeof value !== "string") {
+        return value;
+      }
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "") {
+        return undefined;
+      }
+      if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+      }
+      return value;
+    }, z.boolean())
+    .default(true),
   // Discord platform configuration
   DISCORD_TOKEN: z.string().optional(),
   DISCORD_APPLICATION_ID: z.string().optional(),

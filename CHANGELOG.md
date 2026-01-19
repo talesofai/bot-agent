@@ -31,7 +31,7 @@
 ### Changed
 
 - Opencode：默认强制使用 `opencode/glm-4.7-free`；仅在同时设置 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENCODE_MODELS` 时启用外部模式（litellm），并自动生成 `~/.config/opencode/opencode.json` 与 `~/.local/share/opencode/auth.json`
-- Opencode：外部模式 chat agent 开启全部工具权限（yolo：允许 bash/read/write/webfetch 等），用于内部测试
+- Opencode：默认使用 yolo chat agent（全工具/全权限 allow）；可通过 `OPENCODE_YOLO=false` 降低权限（将不再显式指定 agent）
 - 默认 Agent：更新为“奈塔”人设（称呼“捏捏老师”，回复结尾带“捏”，图片用 Markdown `![...](...)`）
 - 配置/部署：移除 `configs/secrets/.env`，统一使用单一 `configs/.env`（Compose/脚本/K8s/文档同步）
 - 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）

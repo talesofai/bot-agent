@@ -125,6 +125,7 @@ stringData:
   OPENAI_BASE_URL: ""
   OPENAI_API_KEY: ""
   OPENCODE_MODELS: ""
+  OPENCODE_YOLO: "true" # 可选：默认 true；设为 false 可降低 opencode agent 权限
   POSTGRES_PASSWORD: ""
   DATABASE_URL: ""
   API_TOKEN: "" # Bot Agent HTTP 管理端点鉴权

@@ -55,6 +55,7 @@ POSTGRES_PASSWORD=your-postgres-password
 DATABASE_URL=postgres://postgres:your-postgres-password@postgres:5432/opencode
 API_TOKEN=your-token
 OPENCODE_MODELS=gpt-5.2,gpt-5.1
+OPENCODE_YOLO=true
 DISCORD_TOKEN=your-token
 DISCORD_APPLICATION_ID=your-app-id
 ```

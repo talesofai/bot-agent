@@ -36,6 +36,9 @@ WEBUI_TOKEN=change-me
 OPENAI_BASE_URL=
 OPENAI_API_KEY=
 OPENCODE_MODELS=
+
+# 可选：默认 true（全工具/全权限 allow）；设为 false 可降低 opencode agent 权限
+OPENCODE_YOLO=true
 ```
 
 更多说明见 [Secret 管理指南](secrets.md)。

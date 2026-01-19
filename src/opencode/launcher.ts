@@ -47,6 +47,19 @@ export class OpencodeLauncher {
       botId: sessionInfo.meta.botId,
     });
 
+    if (config.OPENCODE_YOLO) {
+      const homeDir = resolveHomeDir();
+      const agentPath = path.join(
+        homeDir,
+        ".config",
+        "opencode",
+        "agent",
+        `${CHAT_AGENT_NAME}.md`,
+      );
+      await writeChatAgent(agentPath);
+      args.push("--agent", CHAT_AGENT_NAME);
+    }
+
     const model = externalModeEnabled
       ? await prepareExternalMode({
           baseUrl: externalBaseUrl!,
@@ -57,9 +70,6 @@ export class OpencodeLauncher {
         })
       : prepareDefaultMode(env);
 
-    if (externalModeEnabled) {
-      args.push("--agent", CHAT_AGENT_NAME);
-    }
     args.push("-m", model);
     args.push(
       "Use the attached prompt file as the full context and reply with the final answer only.",
@@ -139,18 +149,10 @@ async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
     "auth.json",
   );
   const configPath = path.join(homeDir, ".config", "opencode", "opencode.json");
-  const agentPath = path.join(
-    homeDir,
-    ".config",
-    "opencode",
-    "agent",
-    `${CHAT_AGENT_NAME}.md`,
-  );
 
   await Promise.all([
     upsertAuthFile(authPath, input.apiKey),
     writeOpencodeConfig(configPath, input.baseUrl, allowedModels),
-    writeChatAgent(agentPath),
   ]);
 
   input.env.OPENCODE_CONFIG = configPath;

@@ -96,4 +96,28 @@ describe("parseOpencodeOutput", () => {
     const result = parseOpencodeOutput(raw, createdAt);
     expect(result).toEqual({ output: "final" });
   });
+
+  test("parses opencode json stream text events", () => {
+    const createdAt = "2026-01-13T00:00:00.000Z";
+    const raw = [
+      JSON.stringify({
+        type: "step_start",
+        part: { type: "step-start" },
+      }),
+      JSON.stringify({
+        type: "text",
+        part: { type: "text", text: "pon" },
+      }),
+      JSON.stringify({
+        type: "text",
+        part: { type: "text", text: "g" },
+      }),
+      JSON.stringify({
+        type: "step_finish",
+        part: { type: "step-finish" },
+      }),
+    ].join("\n");
+    const result = parseOpencodeOutput(raw, createdAt);
+    expect(result).toEqual({ output: "pong" });
+  });
 });

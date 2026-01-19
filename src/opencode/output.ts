@@ -13,7 +13,10 @@ export function parseOpencodeOutput(
     return null;
   }
   const candidates = parseJsonCandidates(raw.trim());
-  let best: OpencodeRunResult | null = null;
+  const streamOutput = extractOutputFromEventStream(candidates);
+  let best: OpencodeRunResult | null =
+    streamOutput === null ? null : { output: streamOutput };
+
   for (const candidate of candidates) {
     const result = extractResult(candidate, createdAt);
     if (result) {
@@ -36,6 +39,27 @@ function parseJsonCandidates(raw: string): unknown[] {
     }
   }
   return candidates;
+}
+
+function extractOutputFromEventStream(items: unknown[]): string | null {
+  const chunks: string[] = [];
+  for (const item of items) {
+    if (!isRecord(item) || typeof item.type !== "string") {
+      continue;
+    }
+    if (item.type !== "text") {
+      continue;
+    }
+    const part = isRecord(item.part) ? item.part : null;
+    if (!part || typeof part.text !== "string") {
+      continue;
+    }
+    chunks.push(part.text);
+  }
+  if (chunks.length === 0) {
+    return null;
+  }
+  return chunks.join("");
 }
 
 function tryParseJson(raw: string): unknown | null {

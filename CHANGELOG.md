@@ -10,6 +10,7 @@
 ### Added
 
 - 文档：新增 0.0.29 Vision（配置语义收敛与可测试性）
+- Opencode：新增全局技能 `url-access-check`（脚本校验 URL/图片可访问性），并在每次运行前同步到会话 workspace 的 `.claude/skills/`，避免输出“不可用链接”
 
 ### Fixed
 

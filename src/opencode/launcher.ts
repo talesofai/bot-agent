@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { getConfig } from "../config";
 import type { SessionInfo } from "../types/session";
+import { ensureOpencodeSkills } from "./skills";
 
 export interface OpencodeLaunchSpec {
   command: string;
@@ -39,6 +40,12 @@ export class OpencodeLauncher {
     const args = ["run", "--format", "json"];
     const env: Record<string, string | null> = {};
     const command = resolveOpencodeCommand(config.OPENCODE_BIN?.trim());
+
+    await ensureOpencodeSkills({
+      workspacePath: sessionInfo.workspacePath,
+      groupId: sessionInfo.meta.groupId,
+      botId: sessionInfo.meta.botId,
+    });
 
     const model = externalModeEnabled
       ? await prepareExternalMode({

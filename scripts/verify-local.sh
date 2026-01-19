@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-if [ -z "${WEBUI_TOKEN:-}" ] && [ -f "configs/secrets/.env" ]; then
-  raw_token="$(sed -n 's/^WEBUI_TOKEN=//p' configs/secrets/.env | tail -n 1)"
+if [ -z "${WEBUI_TOKEN:-}" ] && [ -f "configs/.env" ]; then
+  raw_token="$(sed -n 's/^WEBUI_TOKEN=//p' configs/.env | tail -n 1)"
   raw_token="$(printf "%s" "$raw_token" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   case "$raw_token" in
     \"*\") WEBUI_TOKEN="${raw_token#\"}"; WEBUI_TOKEN="${WEBUI_TOKEN%\"}" ;;

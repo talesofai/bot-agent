@@ -1,8 +1,8 @@
 # API 参考
 
-本文档为接口草案。默认仅实现健康检查接口，其余接口仍在规划中；如设置 `API_TOKEN`（建议放入 `configs/secrets/.env`），会额外启用受保护的管理接口（当前仅实现群重载）。
+本文档为接口草案。默认仅实现健康检查接口，其余接口仍在规划中；如设置 `API_TOKEN`（建议放入 `configs/.env` 或运行环境变量），会额外启用受保护的管理接口（当前仅实现群重载）。
 
-> 状态：除健康检查外均为规划，接口与字段可能调整。
+> 状态：除健康检查与群重载外均为规划，接口与字段可能调整。
 
 ## HTTP API
 
@@ -78,7 +78,7 @@ GET /api/v1/groups/{group_id}
     "echoRate": null,
     "adminUsers": ["123456789"],
     "maxSessions": 1,
-    "model": "claude-sonnet-4-20250514"
+    "model": "gpt-5.2"
   },
   "agentPrompt": "# Agent 配置\n...",
   "skills": {
@@ -91,7 +91,7 @@ GET /api/v1/groups/{group_id}
 }
 ```
 
-说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词；`echoRate` 为空时继承上一级复读概率。
+说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词；`echoRate` 为空时继承上一级复读概率；`model` 仅外部模式生效（裸模型名，必须在 `OPENCODE_MODELS` 白名单内）。
 
 #### 更新群配置
 
@@ -290,4 +290,4 @@ API 使用 Bearer Token 认证：
 Authorization: Bearer <token>
 ```
 
-Token 通过环境变量 `API_TOKEN` 配置（放入 `configs/secrets/.env`）。当前认证逻辑仍在规划中。
+Token 通过环境变量 `API_TOKEN` 配置（放入 `configs/.env` 或运行环境变量）。

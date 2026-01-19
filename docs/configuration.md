@@ -6,37 +6,25 @@
 
 主配置当前仅支持 **环境变量 + 默认值**。`configs/config.example.yaml` 仅为结构示例，不会被程序读取。
 
-如需从文件加载环境变量，请设置 `CONFIG_PATH` 指向单一 `.env` 文件（例如 `configs/.env`）。
+默认会尝试加载 `configs/.env`；如需从其他文件加载环境变量，请设置 `CONFIG_PATH` 指向单一 `.env` 文件。
 `CONFIG_PATH` 按项目根目录解析，避免使用绝对路径以便迁移。
 
 ## 环境变量
 
-### AI 模型配置（敏感）
+### Opencode 模型模式
+
+默认模式下，Bot Agent **不需要任何 API Key**，并强制使用 opencode 自带的 `opencode/glm-4.7-free`。
+
+如需接入 LiteLLM / OpenAI-compatible endpoint，仅在 **以下三项都非空** 时启用外部模式：
 
 ```env
-# OpenAI
+OPENAI_BASE_URL=https://litellm.example.com/v1
 OPENAI_API_KEY=sk-xxx
-
-# Anthropic
-ANTHROPIC_API_KEY=sk-ant-xxx
-
-# Google Gemini
-GEMINI_API_KEY=xxx
+OPENCODE_MODELS=gpt-5.2,gpt-5.1
 ```
 
-上述敏感项需在运行进程的环境中可见，可合并到 `CONFIG_PATH` 指向的 `.env` 文件，或在启动前额外导出 `configs/secrets/.env`。
-
-### AI 模型配置（非敏感）
-
-```env
-# 可选，自定义 endpoint
-OPENAI_BASE_URL=https://api.openai.com/v1
-
-# 模型选择
-OPENCODE_MODEL=claude-sonnet-4-20250514
-```
-
-上述非敏感项同样写入 `CONFIG_PATH` 指向的 `.env` 文件中。
+- `OPENCODE_MODELS` 为逗号分隔的“裸模型名”，内部会拼为 `litellm/<name>` 传给 opencode。
+- 群配置里的 `model` 仅在外部模式生效，且必须在 `OPENCODE_MODELS` 白名单内。
 
 ### 连接配置
 
@@ -154,7 +142,7 @@ llbotRegistry:
 
 # Agent 配置
 agent:
-  model: ${OPENCODE_MODEL:-claude-sonnet-4-20250514}
+  model: opencode/glm-4.7-free
 
 # 群配置
 groups:
@@ -253,7 +241,7 @@ keywordRouting: # 关键词路由开关（群级）
   enableBot: true # 是否允许机器人关键词
 echoRate: null # 复读概率（0-100），空为继承上一级
 maxSessions: 1 # 每个用户最大会话数
-model: claude-sonnet-4-20250514 # 覆盖 OPENCODE_MODEL（可选）
+model: gpt-5.2 # 可选：仅外部模式生效，且必须在 OPENCODE_MODELS 白名单内（裸模型名）
 
 # 管理员配置
 adminUsers:

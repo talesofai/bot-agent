@@ -12,6 +12,11 @@
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
 
+### Changed
+
+- Opencode：默认强制使用 `opencode/glm-4.7-free`；仅在同时设置 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENCODE_MODELS` 时启用外部模式（litellm），并自动生成 `~/.config/opencode/opencode.json` 与 `~/.local/share/opencode/auth.json`
+- 配置/部署：移除 `configs/secrets/.env`，统一使用单一 `configs/.env`（Compose/脚本/K8s/文档同步）
+
 ### Security
 
 - 部署：补齐 `pmhq` 需要 `privileged: true` 的原因说明，并明确最小权限目标（`SYS_PTRACE` + `seccomp=unconfined`）

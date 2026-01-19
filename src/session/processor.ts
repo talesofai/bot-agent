@@ -9,6 +9,7 @@ import type { HistoryKey, HistoryStore } from "./history";
 import { createSession } from "./session-ops";
 import { buildBufferedInput, buildOpencodePrompt } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/system-prompt";
+import type { OpencodeLaunchSpec } from "../opencode/launcher";
 import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
@@ -244,7 +245,7 @@ export class SessionProcessor {
     promptInput: string,
   ): Promise<{
     history: HistoryEntry[];
-    launchSpec: ReturnType<OpencodeLauncher["buildLaunchSpec"]>;
+    launchSpec: OpencodeLaunchSpec;
   }> {
     const history = historyKey
       ? await this.historyStore.readHistory(historyKey, {
@@ -261,7 +262,7 @@ export class SessionProcessor {
       history,
       input: resolvedInput,
     });
-    const launchSpec = this.launcher.buildLaunchSpec(
+    const launchSpec = await this.launcher.buildLaunchSpec(
       sessionInfo,
       prompt,
       groupConfig.model,

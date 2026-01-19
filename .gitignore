@@ -22,9 +22,6 @@ tmp
 .idea
 
 /example/
-/configs/secrets/.env
-/configs/secrets/.env.*
-!/configs/secrets/.env.example
 /deployments/k8s/llbot-secret.yaml
 /deployments/k8s/*-ingress.yaml
 /data/

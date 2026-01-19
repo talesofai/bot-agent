@@ -54,7 +54,6 @@ describe("opencode integration", () => {
         groupRepository,
         sessionRepository,
       });
-      const model = process.env.OPENCODE_MODEL ?? "glm-4.7";
       const launcher = new OpencodeLauncher();
       const runner = new ShellOpencodeRunner();
 
@@ -79,7 +78,7 @@ describe("opencode integration", () => {
           history,
           input,
         });
-        const launchSpec = launcher.buildLaunchSpec(session, prompt, model);
+        const launchSpec = await launcher.buildLaunchSpec(session, prompt);
         launchSpec.command = opencodeBin;
         const job: SessionJob = {
           id: "opencode-integration",

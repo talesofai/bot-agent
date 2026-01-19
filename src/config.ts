@@ -1,4 +1,5 @@
 import { config as loadEnv } from "dotenv";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { z } from "zod";
@@ -7,12 +8,18 @@ const envSchema = z.object({
   NODE_ENV: z.string().optional(),
   /** Path to env file */
   CONFIG_PATH: z.string().optional(),
+  // OpenAI compatible configuration (optional; only used when all three are provided)
+  OPENAI_BASE_URL: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  /** Comma-separated bare model names (litellm/<name> will be used internally). */
+  OPENCODE_MODELS: z.string().optional(),
+  /** Optional override for the opencode binary path. */
+  OPENCODE_BIN: z.string().optional(),
   // Discord platform configuration
   DISCORD_TOKEN: z.string().optional(),
   DISCORD_APPLICATION_ID: z.string().optional(),
   GROUPS_DATA_DIR: z.string().default("/data/groups"),
   DATA_DIR: z.string().optional(),
-  OPENCODE_MODEL: z.string().default("claude-sonnet-4-20250514"),
   OPENCODE_PROMPT_MAX_BYTES: z.coerce
     .number()
     .int()
@@ -46,7 +53,12 @@ function createConfig(): AppConfig {
     const fullPath = path.resolve(projectRoot, configPath);
     loadEnv({ path: fullPath });
   } else {
-    loadEnv();
+    const defaultPath = path.resolve(projectRoot, "configs", ".env");
+    if (existsSync(defaultPath)) {
+      loadEnv({ path: defaultPath });
+    } else {
+      loadEnv();
+    }
   }
 
   return envSchema.parse(process.env);

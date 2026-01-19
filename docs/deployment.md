@@ -21,9 +21,7 @@ LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节�
 │   └── docker/
 │       └── docker-compose.yml
 ├── configs/
-│   ├── .env
-│   └── secrets/
-│       └── .env
+│   └── .env
 └── data/
     ├── llbot/          # LuckyLilliaBot (LLBot) 数据
     ├── postgres/       # PostgreSQL 数据（历史与可变状态）
@@ -34,7 +32,7 @@ LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节�
 
 使用 `deployments/docker/docker-compose.yml` 启动完整栈（Redis + PostgreSQL + LuckyLilliaBot + Adapter + Worker）。
 
-- `DATABASE_URL` 必须可用（建议通过 `configs/.env` 或 `configs/secrets/.env` 注入）
+- `DATABASE_URL` 必须可用（建议通过 `configs/.env` 或运行环境变量注入）
 - `REDIS_URL` 必须可用（BullMQ 依赖）
 
 ### PMHQ 的 `privileged: true`（安全说明）
@@ -75,7 +73,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d
 
 ## Secret 管理（推荐）
 
-本仓库为 public，任何 secret 都不应提交。统一使用 `configs/secrets/.env` 与 `deployments/k8s/llbot-secret.yaml`：
+本仓库为 public，任何 secret 都不应提交。统一使用 `configs/.env` 与 `deployments/k8s/llbot-secret.yaml`：
 
 ### Docker / 本地
 
@@ -124,12 +122,12 @@ metadata:
 type: Opaque
 stringData:
   WEBUI_TOKEN: ""
+  OPENAI_BASE_URL: ""
   OPENAI_API_KEY: ""
-  ANTHROPIC_API_KEY: ""
-  GEMINI_API_KEY: ""
+  OPENCODE_MODELS: ""
   POSTGRES_PASSWORD: ""
   DATABASE_URL: ""
-  API_TOKEN: "" # 预留给 Bot Agent API 认证
+  API_TOKEN: "" # Bot Agent HTTP 管理端点鉴权
 ```
 
 ### PersistentVolumeClaim

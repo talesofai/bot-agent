@@ -6,7 +6,7 @@
 
 - Docker 和 Docker Compose
 - QQ 账号（用于机器人登录）
-- OpenAI / Anthropic / Gemini API Key（任选其一）
+- 可选：OpenAI-compatible API Key（仅外部模式需要）
 - opencode CLI（仅在本机运行 Bot Agent 时需要）
 
 ## 步骤 1：克隆项目
@@ -18,28 +18,24 @@ cd opencode-bot-agent
 
 ## 步骤 2：配置环境变量
 
-复制非敏感配置并初始化 Secret：
+复制配置（单一 `.env`）：
 
 ```bash
 cp configs/example.env configs/.env
-./scripts/init-secrets.sh
-export CONFIG_PATH=configs/.env
+# 可选：如需自定义 .env 路径，可设置 CONFIG_PATH
+# export CONFIG_PATH=configs/.env
 ```
 
 编辑 `configs/.env`：
 
 ```env
-# 可选：自定义模型
-# OPENCODE_MODEL=claude-sonnet-4-20250514
-```
+# LuckyLilliaBot WebUI token（不要留空）
+WEBUI_TOKEN=change-me
 
-编辑 `configs/secrets/.env`（只保留敏感项）：
-
-```env
-WEBUI_TOKEN=
-OPENAI_API_KEY=sk-xxx
-# ANTHROPIC_API_KEY=sk-ant-xxx
-# GEMINI_API_KEY=xxx
+# 外部模式（可选；三项都非空才启用）
+OPENAI_BASE_URL=
+OPENAI_API_KEY=
+OPENCODE_MODELS=
 ```
 
 更多说明见 [Secret 管理指南](secrets.md)。
@@ -76,15 +72,9 @@ docker compose -f deployments/docker/docker-compose.llbot-local.yml logs luckyli
 
 ```bash
 # 终端 1
-set -a
-source configs/secrets/.env
-set +a
 CONFIG_PATH=configs/.env bun run start:adapter
 
 # 终端 2
-set -a
-source configs/secrets/.env
-set +a
 CONFIG_PATH=configs/.env bun run start:worker
 ```
 

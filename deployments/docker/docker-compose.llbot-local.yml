@@ -50,7 +50,6 @@ services:
     container_name: luckylillia
     env_file:
       - ../../configs/.env
-      - ../../configs/secrets/.env
     environment:
       - ENABLE_WEBUI=true
       - WEBUI_PORT=3080
@@ -78,7 +77,6 @@ services:
     command: ["bun", "run", "start:adapter"]
     env_file:
       - ../../configs/.env
-      - ../../configs/secrets/.env
     environment:
       - REDIS_URL=redis://redis:6379
       - LLBOT_REGISTRY_PREFIX=llbot:registry
@@ -96,7 +94,6 @@ services:
     command: ["bun", "run", "start:worker"]
     env_file:
       - ../../configs/.env
-      - ../../configs/secrets/.env
     environment:
       - REDIS_URL=redis://redis:6379
     volumes:

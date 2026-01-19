@@ -7,7 +7,7 @@ if [ -z "${WEBUI_TOKEN:-}" ]; then
 fi
 
 write_env() {
-  file="configs/secrets/.env"
+  file="configs/.env"
   mkdir -p "$(dirname "$file")"
   if [ -f "$file" ]; then
     if rg --quiet "^WEBUI_TOKEN=" "$file"; then
@@ -17,7 +17,7 @@ write_env() {
       printf "\nWEBUI_TOKEN=%s\n" "$WEBUI_TOKEN" >> "$file"
     fi
   else
-    cp "configs/secrets/.env.example" "$file"
+    cp "configs/example.env" "$file"
     printf "\nWEBUI_TOKEN=%s\n" "$WEBUI_TOKEN" >> "$file"
   fi
 }
@@ -30,5 +30,5 @@ write_env
 write_k8s_secret
 
 echo "Updated:"
-echo "  configs/secrets/.env"
+echo "  configs/.env"
 echo "  deployments/k8s/llbot-secret.yaml"

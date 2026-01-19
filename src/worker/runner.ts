@@ -38,10 +38,26 @@ export class ShellOpencodeRunner implements OpencodeRunner {
         finalArgs = injectPromptFile(args, promptPath);
       }
 
+      const spawnEnv: Record<string, string> = {};
+      for (const [key, value] of Object.entries(process.env)) {
+        if (typeof value === "string") {
+          spawnEnv[key] = value;
+        }
+      }
+      if (env) {
+        for (const [key, value] of Object.entries(env)) {
+          if (value === null) {
+            delete spawnEnv[key];
+            continue;
+          }
+          spawnEnv[key] = value;
+        }
+      }
+
       // Opencode runs as a Go process; spawn keeps IO controllable and avoids blocking.
       const child = Bun.spawn([command, ...finalArgs], {
         cwd,
-        env: { ...process.env, ...env },
+        env: spawnEnv,
         stdout: "pipe",
         stderr: "pipe",
       });

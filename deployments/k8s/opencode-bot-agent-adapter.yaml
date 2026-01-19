@@ -31,12 +31,6 @@ spec:
                   name: llbot-secrets
                   key: DISCORD_TOKEN
                   optional: true
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: llbot-secrets
-                  key: OPENAI_API_KEY
-                  optional: true
           resources:
             requests:
               cpu: 200m

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-ENV_FILE="${ENV_FILE:-configs/secrets/.env}"
+ENV_FILE="${ENV_FILE:-configs/.env}"
 OUTPUT_FILE="${OUTPUT_FILE:-deployments/k8s/llbot-secret.yaml}"
 SECRET_NAME="${SECRET_NAME:-llbot-secrets}"
 NAMESPACE="${NAMESPACE:-bot}"

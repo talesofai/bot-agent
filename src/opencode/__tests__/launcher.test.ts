@@ -8,20 +8,21 @@ describe("OpencodeLauncher", () => {
   test("does not pass prompt via argv", () => {
     const launcher = new OpencodeLauncher();
     const prompt = "super-secret-prompt";
-    const spec = launcher.buildLaunchSpec(makeSessionInfo(), prompt);
-    expect(spec.args.join(" ")).not.toContain(prompt);
-    expect(spec.prompt).toBe(prompt);
+    return launcher.buildLaunchSpec(makeSessionInfo(), prompt).then((spec) => {
+      expect(spec.args.join(" ")).not.toContain(prompt);
+      expect(spec.prompt).toBe(prompt);
+    });
   });
 
-  test("enforces OPENCODE_PROMPT_MAX_BYTES", () => {
+  test("enforces OPENCODE_PROMPT_MAX_BYTES", async () => {
     const prev = process.env.OPENCODE_PROMPT_MAX_BYTES;
     try {
       process.env.OPENCODE_PROMPT_MAX_BYTES = "8";
       resetConfig();
       const launcher = new OpencodeLauncher();
-      expect(() =>
+      await expect(
         launcher.buildLaunchSpec(makeSessionInfo(), "123456789"),
-      ).toThrow();
+      ).rejects.toThrow();
     } finally {
       if (prev === undefined) {
         delete process.env.OPENCODE_PROMPT_MAX_BYTES;

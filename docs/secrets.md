@@ -10,10 +10,10 @@
 
 ## 文件约定
 
-单一来源的 secret 模板为 `configs/secrets/.env.example`，所有环境从该文件派生：
+单一来源的 `.env` 模板为 `configs/example.env`，所有环境从该文件派生：
 
-- 本地环境：`configs/secrets/.env`（真实值，不提交）
-- 本地模板：`configs/secrets/.env.example`（提交）
+- 本地环境：`configs/.env`（真实值，不提交）
+- 本地模板：`configs/example.env`（提交）
 - K8s Secret：`deployments/k8s/llbot-secret.yaml`（真实值，不提交，由脚本生成）
 
 上述真实文件均已在 `.gitignore` 中忽略。
@@ -26,7 +26,7 @@
 
 会生成：
 
-- `configs/secrets/.env`
+- `configs/.env`
 - `deployments/k8s/llbot-secret.yaml`
 
 如果想覆盖已有文件：
@@ -45,32 +45,24 @@ WEBUI_TOKEN=your-token ./scripts/rotate-secrets.sh
 
 ## 本地 / Docker 使用
 
-编辑 `configs/secrets/.env`，设置真实值，例如：
+编辑 `configs/.env`，设置真实值，例如：
 
 ```env
 WEBUI_TOKEN=your-token
+OPENAI_BASE_URL=https://litellm.example.com/v1
 OPENAI_API_KEY=sk-xxx
-DISCORD_TOKEN=your-token
-DISCORD_APPLICATION_ID=your-app-id
 POSTGRES_PASSWORD=your-postgres-password
 DATABASE_URL=postgres://postgres:your-postgres-password@postgres:5432/opencode
 API_TOKEN=your-token
+OPENCODE_MODELS=gpt-5.2,gpt-5.1
+DISCORD_TOKEN=your-token
+DISCORD_APPLICATION_ID=your-app-id
 ```
 
-`API_TOKEN` 预留给 Bot Agent API 认证（规划中）。
-
-如果你通过 dotenv 加载环境变量，可以将 secrets 合并到 `CONFIG_PATH` 指向的单一文件（推荐 `configs/.env`），或在启动前手动导出 `configs/secrets/.env`：
+如果你通过 dotenv 加载环境变量，请将 `CONFIG_PATH` 指向 `configs/.env`：
 
 ```bash
 export CONFIG_PATH=configs/.env
-```
-
-例如：
-
-```bash
-set -a
-source configs/secrets/.env
-set +a
 ```
 
 运行时注入（Docker Compose 会直接导出环境变量，无需 `CONFIG_PATH`）：

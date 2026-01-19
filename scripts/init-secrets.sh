@@ -18,7 +18,7 @@ copy_if_missing() {
   echo "Wrote: $dst"
 }
 
-copy_if_missing "configs/secrets/.env.example" "configs/secrets/.env"
+copy_if_missing "configs/example.env" "configs/.env"
 ./scripts/generate-k8s-secret.sh
 
-echo "Done. Edit configs/secrets/.env and re-run generate-k8s-secret.sh if needed."
+echo "Done. Edit configs/.env and re-run generate-k8s-secret.sh if needed."

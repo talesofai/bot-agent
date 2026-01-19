@@ -53,20 +53,35 @@ opencode-bot-agent/
 │   ├── docker/           # Docker 相关
 │   └── k8s/              # Kubernetes 相关
 ├── docs/                  # 文档
-└── data/                  # 运行时数据（群目录）
-    └── groups/
-        └── {group_id}/
-            ├── agent.md   # 群 Agent 配置（覆盖默认设计）
-            ├── config.yaml # 群配置
-            ├── skills/    # 群技能（默认技能规划中）
-            ├── sessions/  # 会话记录
-            │   └── {user}-{key}/
-            │       └── history.sqlite
-            └── assets/    # 群资源
-                └── images/
+└── data/                  # 运行时数据（容器内默认挂载到 /data）
+    ├── groups/            # GROUPS_DATA_DIR（默认 /data/groups）
+    │   ├── {group_id}/
+    │   │   ├── agent.md   # 群 Agent 人设（覆盖默认）
+    │   │   ├── config.yaml # 群配置
+    │   │   ├── skills/    # 群技能（skills/*.md）
+    │   │   └── assets/    # 群资源
+    │   │       └── images/
+    │   └── sessions/      # 会话目录（每个用户/会话一个目录）
+    │       └── {botId}/{groupId}/{userId}/{sessionId}/
+    │           ├── meta.json
+    │           ├── history.sqlite
+    │           └── workspace/
+    │               ├── input/
+    │               └── output/
+    ├── router/            # DATA_DIR（默认 /data）
+    │   └── global.yaml
+    └── bots/
+        └── {botId}/
+            └── config.yaml
 ```
 
 默认 Agent 设计来自 `configs/default-agent.md`。通用技能仍在规划中，目前仅加载群内 `skills/`。
+
+## 🗃️ 历史与记录存放位置
+
+- **对话历史（用于上下文）**：写入 Postgres `history_entries` 表（由 `DATABASE_URL` 指定）。
+- **会话运行记录（文件）**：位于 `${GROUPS_DATA_DIR}/sessions/{botId}/{groupId}/{userId}/{sessionId}`，包含 `meta.json`、`history.sqlite` 与 `workspace/` 目录。
+- **运行日志**：默认输出到 stdout/stderr（Docker 用 `docker compose logs -f ...`，K8s 用 `kubectl logs ...` 查看），不写入 `data/`。
 
 ## 🧩 部署目录
 

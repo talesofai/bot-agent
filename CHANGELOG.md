@@ -24,6 +24,7 @@
 - Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败
 - K8s：`bot-data` 改为 NAS RWX（`alibabacloud-cnfs-nas`），避免 adapter/worker 分布到不同节点时触发 Multi-Attach
 - K8s：worker 注入 `DISCORD_TOKEN`，确保 Discord 消息可由 worker 正常回复
+- 文档：README 补充历史/记录存放位置并修正 data 目录结构说明
 
 ### Changed
 

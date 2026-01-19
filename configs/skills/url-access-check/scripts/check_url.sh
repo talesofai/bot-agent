@@ -72,7 +72,7 @@ check_one() {
   fi
 
   local status=""
-  status="$(printf '%s\n' "$headers" | awk 'BEGIN{IGNORECASE=1} $1 ~ /^HTTP\\// {code=$2} END{print code}')"
+  status="$(printf '%s\n' "$headers" | awk 'BEGIN{IGNORECASE=1} $1 ~ /^HTTP\// {code=$2} END{print code}')"
   if [[ -z "$status" ]]; then
     echo "FAIL url=$url reason=no_status"
     return 1
@@ -105,4 +105,3 @@ for url in "$@"; do
 done
 
 exit "$overall"
-

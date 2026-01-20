@@ -115,6 +115,8 @@ export class ShellOpencodeRunner implements OpencodeRunner {
       readStreamText(child.stderr),
       child.exited,
     ]);
+    const rawStdout = stdout.trim() ? stdout : undefined;
+    const rawStderr = stderr.trim() ? stderr : undefined;
     const trimmedOut = stdout.trim();
     const trimmedErr = stderr.trim();
     if (exitCode !== 0) {
@@ -123,7 +125,7 @@ export class ShellOpencodeRunner implements OpencodeRunner {
     }
     const parsed = parseOpencodeOutput(trimmedOut, new Date().toISOString());
     if (parsed) {
-      return parsed;
+      return { ...parsed, rawStdout, rawStderr };
     }
     const detail = trimmedOut || trimmedErr || "empty output";
     throw new Error(`Opencode returned non-JSON output: ${detail}`);

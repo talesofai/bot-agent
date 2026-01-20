@@ -80,6 +80,9 @@ fi
 connect_timeout="${CHECK_URL_CONNECT_TIMEOUT:-10}"
 max_time="${CHECK_URL_MAX_TIME:-15}"
 max_bytes="${CHECK_URL_MAX_BYTES:-1048576}"
+user_agent="${CHECK_URL_USER_AGENT:-Mozilla/5.0 (compatible; opencode-bot-agent/1.0; +https://github.com/opencode-ai/opencode)}"
+accept_header="${CHECK_URL_ACCEPT_HEADER:-image/*,*/*;q=0.8}"
+curl_headers=(-H "user-agent: ${user_agent}" -H "accept: ${accept_header}")
 
 default_min_bytes="${CHECK_IMAGE_MIN_BYTES:-0}"
 default_min_short_side="${CHECK_IMAGE_MIN_SHORT_SIDE:-768}"
@@ -152,9 +155,9 @@ check_one() {
   fi
 
   local headers=""
-  headers="$(curl -fsSIL --location --connect-timeout "$connect_timeout" --max-time "$max_time" "$url" 2>/dev/null || true)"
+  headers="$(curl -fsSIL --compressed --location --connect-timeout "$connect_timeout" --max-time "$max_time" "${curl_headers[@]}" "$url" 2>/dev/null || true)"
   if [[ -z "$headers" ]]; then
-    headers="$(curl -fsSL --location --range 0-0 -D - -o /dev/null --connect-timeout "$connect_timeout" --max-time "$max_time" "$url" 2>/dev/null || true)"
+    headers="$(curl -fsSL --compressed --location --range 0-0 -D - -o /dev/null --connect-timeout "$connect_timeout" --max-time "$max_time" "${curl_headers[@]}" "$url" 2>/dev/null || true)"
   fi
   if [[ -z "$headers" ]]; then
     echo "FAIL url=$url reason=connect"
@@ -204,8 +207,8 @@ check_one() {
     local tmp=""
     tmp="$(mktemp)"
     local cleanup_tmp=1
-    if ! curl -fsSL --location --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" --range "0-$((max_bytes-1))" -o "$tmp" "$url" 2>/dev/null; then
-      if ! curl -fsSL --location --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" -o "$tmp" "$url" 2>/dev/null; then
+    if ! curl -fsSL --compressed --location --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" --range "0-$((max_bytes-1))" -o "$tmp" "${curl_headers[@]}" "$url" 2>/dev/null; then
+      if ! curl -fsSL --compressed --location --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" -o "$tmp" "${curl_headers[@]}" "$url" 2>/dev/null; then
         rm -f "$tmp" || true
         echo "FAIL url=$url status=$status content_type=$content_type reason=download"
         return 1

@@ -216,6 +216,7 @@ export class SessionProcessor {
               result.historyEntries,
               result.streamEvents,
               output,
+              { stdout: result.rawStdout, stderr: result.rawStderr },
             );
             await this.recordActivity(sessionInfo);
           } finally {
@@ -372,6 +373,7 @@ export class SessionProcessor {
     historyEntries?: HistoryEntry[],
     streamEvents?: OpencodeStreamEvent[],
     output?: string,
+    runLogs?: { stdout?: string; stderr?: string },
   ): Promise<void> {
     if (!historyKey) {
       return;
@@ -411,6 +413,44 @@ export class SessionProcessor {
       }
     }
 
+    const logMaxBytes = 20_000;
+    const stdout = runLogs?.stdout?.trim();
+    if (stdout) {
+      const trimmed = truncateTextByBytes(stdout, logMaxBytes);
+      entries.push({
+        role: "system",
+        content: trimmed.content,
+        createdAt: nowIso,
+        groupId: sessionInfo.meta.groupId,
+        sessionId: sessionInfo.meta.sessionId,
+        includeInContext: false,
+        trace: {
+          source: "opencode",
+          type: "raw_stdout",
+          truncated: trimmed.truncated,
+          maxBytes: logMaxBytes,
+        },
+      });
+    }
+    const stderr = runLogs?.stderr?.trim();
+    if (stderr) {
+      const trimmed = truncateTextByBytes(stderr, logMaxBytes);
+      entries.push({
+        role: "system",
+        content: trimmed.content,
+        createdAt: nowIso,
+        groupId: sessionInfo.meta.groupId,
+        sessionId: sessionInfo.meta.sessionId,
+        includeInContext: false,
+        trace: {
+          source: "opencode",
+          type: "raw_stderr",
+          truncated: trimmed.truncated,
+          maxBytes: logMaxBytes,
+        },
+      });
+    }
+
     const nonUserEntries =
       historyEntries?.filter((entry) => entry.role !== "user") ?? [];
     if (nonUserEntries.length > 0) {
@@ -419,6 +459,9 @@ export class SessionProcessor {
           ...entry,
           groupId: sessionInfo.meta.groupId,
           sessionId: sessionInfo.meta.sessionId,
+          includeInContext:
+            entry.includeInContext ??
+            (entry.role === "system" ? false : undefined),
         })),
       );
     }
@@ -521,6 +564,21 @@ function resolveSessionInput(content: string): string {
   }
   // Opencode rejects empty input, but we still need a non-empty placeholder.
   return " ";
+}
+
+function truncateTextByBytes(
+  content: string,
+  maxBytes: number,
+): { content: string; truncated: boolean } {
+  if (maxBytes <= 0) {
+    return { content: "", truncated: content.length > 0 };
+  }
+  const buffer = Buffer.from(content, "utf-8");
+  if (buffer.byteLength <= maxBytes) {
+    return { content, truncated: false };
+  }
+  const truncated = buffer.toString("utf-8", 0, maxBytes);
+  return { content: `${truncated}\n\n[truncated]`, truncated: true };
 }
 
 function resolveOutput(output?: string): string | undefined {

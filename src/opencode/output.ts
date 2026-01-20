@@ -9,6 +9,8 @@ export interface OpencodeRunResult {
   output?: string;
   historyEntries?: HistoryEntry[];
   streamEvents?: OpencodeStreamEvent[];
+  rawStdout?: string;
+  rawStderr?: string;
 }
 
 export function parseOpencodeOutput(

@@ -203,11 +203,17 @@ spec:
               value: "redis://redis:6379"
             - name: LLBOT_REGISTRY_PREFIX
               value: "llbot:registry"
-            - name: OPENAI_API_KEY
+            - name: DISCORD_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: llbot-secrets
-                  key: OPENAI_API_KEY
+                  key: DISCORD_TOKEN
+                  optional: true
+            - name: DISCORD_APPLICATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: DISCORD_APPLICATION_ID
                   optional: true
           volumeMounts:
             - name: data

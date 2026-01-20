@@ -57,7 +57,7 @@ describe("resolveDiscordImageAttachments", () => {
     expect(result.files[0].name).toBe("images.jpg");
   });
 
-  test("drops element when response is not an image", async () => {
+  test("keeps element when response is not an image", async () => {
     const elements: SessionElement[] = [
       { type: "image", url: "https://example.com/not-image.png" },
     ];
@@ -72,7 +72,7 @@ describe("resolveDiscordImageAttachments", () => {
     });
 
     expect(result.files).toHaveLength(0);
-    expect(result.elements).toEqual([]);
+    expect(result.elements).toEqual(elements);
   });
 
   test("keeps element when content-length exceeds maxBytes", async () => {

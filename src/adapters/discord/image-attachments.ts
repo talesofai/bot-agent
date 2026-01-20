@@ -15,8 +15,7 @@ type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
 type FetchImageAttachmentResult =
   | { kind: "attachment"; attachment: AttachmentBuilder }
-  | { kind: "keep" }
-  | { kind: "drop" };
+  | { kind: "keep" };
 
 export async function resolveDiscordImageAttachments(
   elements: ReadonlyArray<SessionElement>,
@@ -76,10 +75,6 @@ export async function resolveDiscordImageAttachments(
       continue;
     }
 
-    if (attachment.kind === "drop") {
-      continue;
-    }
-
     fileIndex += 1;
     files.push(attachment.attachment);
   }
@@ -114,9 +109,14 @@ async function fetchImageAttachment(
     const response = await options.fetchFn(url.toString(), {
       redirect: "follow",
       signal: controller.signal,
+      headers: {
+        accept: "image/*,*/*;q=0.8",
+        "user-agent":
+          "Mozilla/5.0 (compatible; opencode-bot-agent/1.0; +https://github.com/opencode-ai/opencode)",
+      },
     });
     if (!response.ok) {
-      return { kind: "drop" };
+      return { kind: "keep" };
     }
 
     const contentLength = response.headers.get("content-length");
@@ -129,7 +129,7 @@ async function fetchImageAttachment(
 
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType && !contentType.toLowerCase().startsWith("image/")) {
-      return { kind: "drop" };
+      return { kind: "keep" };
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());

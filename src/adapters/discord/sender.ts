@@ -4,7 +4,7 @@ import type {
   SessionElement,
   SessionEvent,
 } from "../../types/platform";
-import { Client, EmbedBuilder, type MessageCreateOptions } from "discord.js";
+import { Client, type MessageCreateOptions } from "discord.js";
 import { resolveDiscordImageAttachments } from "./image-attachments";
 
 export class MessageSender {
@@ -109,7 +109,7 @@ function buildPayload(
   }
 
   const textParts: string[] = [];
-  const embeds: EmbedBuilder[] = [];
+  const imageUrls: string[] = [];
   let hasTextElement = false;
 
   for (const element of elements) {
@@ -123,8 +123,7 @@ function buildPayload(
       continue;
     }
     if (element.type === "image") {
-      const embed = new EmbedBuilder().setImage(element.url);
-      embeds.push(embed);
+      imageUrls.push(element.url);
       continue;
     }
     if (element.type === "quote") {
@@ -134,15 +133,32 @@ function buildPayload(
 
   const normalizedContent = content.trim();
   const baseContent = textParts.join("").trim();
-  const resolvedContent = hasTextElement
-    ? baseContent
-    : [baseContent, normalizedContent].filter(Boolean).join(" ");
+  const resolvedImageUrls = imageUrls.filter((url, index) => {
+    if (imageUrls.indexOf(url) !== index) {
+      return false;
+    }
+    if (baseContent.includes(url)) {
+      return false;
+    }
+    if (normalizedContent.includes(url)) {
+      return false;
+    }
+    return true;
+  });
+  const resolvedContentParts: string[] = [];
+  if (baseContent) {
+    resolvedContentParts.push(baseContent);
+  }
+  if (!hasTextElement && normalizedContent) {
+    resolvedContentParts.push(normalizedContent);
+  }
+  if (resolvedImageUrls.length > 0) {
+    resolvedContentParts.push(resolvedImageUrls.join("\n"));
+  }
+  const resolvedContent = resolvedContentParts.join("\n\n").trim();
   const payload: MessageCreateOptions = {};
   if (resolvedContent) {
     payload.content = resolvedContent;
-  }
-  if (embeds.length > 0) {
-    payload.embeds = embeds;
   }
   return payload;
 }

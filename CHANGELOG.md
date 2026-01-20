@@ -41,9 +41,12 @@
 - 文档：README 补充历史/记录存放位置并修正 data 目录结构说明（移除 `history.sqlite` 描述，历史仅写入 Postgres）
 - 文档：统一 sessions 路径描述并修正 bot-data PVC 说明，避免按旧目录查找导致“没生成会话目录”的误判
 - Session：处理缓冲消息失败时回滚并 `requeueFront`；发送失败会让 job 失败以触发 BullMQ 重试，避免消息丢失/静默失败
-- 图片：`url-access-check` 对图片默认增加最小分辨率校验（短边 ≥ 512px）并拒绝 Google 缩略图域名，避免“小图/糊图”
+- 图片：`url-access-check` 对图片默认增加最小分辨率校验（短边 ≥ 768px）并拒绝 Google 缩略图域名，避免“小图/糊图”
 - Discord：Slash Commands 注册使用 Application ID（`DISCORD_APPLICATION_ID`），避免误用 bot user id 导致注册失败
 - Session：防止通过篡改 `index.json` 复活已封存会话（`meta.active=false` 会触发自动轮转到新会话）
+- Discord：回复中的图片元素不再强制发送 embed；外链可下载则转附件，否则保留链接，避免“空图片框/说有图但没图”
+- Session：收到消息入队时预创建 `sessions/{botId}/{groupId}/{userId}/{sessionId}` 目录与 `meta.json`，避免仅在 worker 执行后才落盘
+- K8s：adapter 注入 `DISCORD_APPLICATION_ID`，避免 Slash Commands 注册被跳过
 
 ### Changed
 

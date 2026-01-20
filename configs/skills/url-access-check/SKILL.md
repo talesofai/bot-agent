@@ -17,7 +17,7 @@ description: 在回复中提供任何 URL（尤其是图片链接）前，用脚
 - 图片链接必须满足：
   - HTTP 2xx/3xx（可跟随重定向）
   - `Content-Type` 为 `image/*`
-  - **默认短边分辨率 ≥ 512px**（避免“缩略图/糊图”）
+  - **默认短边分辨率 ≥ 768px**（避免“缩略图/糊图”）
   - **禁止**使用 Google 缩略图域名（如 `encrypted-tbn0.gstatic.com` / `tbn*.gstatic.com`）
 
 ## 用法

@@ -25,7 +25,7 @@ Environment:
   CHECK_URL_MAX_TIME         total timeout seconds (default: 15)
   CHECK_URL_MAX_BYTES        max bytes to download for image inspection (default: 1048576)
   CHECK_IMAGE_MIN_BYTES      default minimum bytes for --image (default: 0)
-  CHECK_IMAGE_MIN_SHORT_SIDE default minimum short side for --image (default: 512)
+  CHECK_IMAGE_MIN_SHORT_SIDE default minimum short side for --image (default: 768)
 EOF
 }
 
@@ -82,7 +82,7 @@ max_time="${CHECK_URL_MAX_TIME:-15}"
 max_bytes="${CHECK_URL_MAX_BYTES:-1048576}"
 
 default_min_bytes="${CHECK_IMAGE_MIN_BYTES:-0}"
-default_min_short_side="${CHECK_IMAGE_MIN_SHORT_SIDE:-512}"
+default_min_short_side="${CHECK_IMAGE_MIN_SHORT_SIDE:-768}"
 
 is_non_negative_int() {
   [[ "$1" =~ ^[0-9]+$ ]]

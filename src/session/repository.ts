@@ -330,6 +330,8 @@ const sessionMetaSchema = z
     botId: z.string(),
     key: z.number().int(),
     status: z.enum(["idle", "running"]),
+    active: z.boolean().optional(),
+    archivedAt: z.string().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })

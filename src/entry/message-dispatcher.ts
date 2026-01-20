@@ -180,6 +180,13 @@ export class MessageDispatcher {
         message.userId,
         key,
       );
+      await this.ensureSessionFiles({
+        botId,
+        groupId,
+        userId: message.userId,
+        key,
+        sessionId,
+      });
       const bufferKey = { botId, groupId, sessionId };
       const gateToken = randomBytes(12).toString("hex");
       const acquiredToken = await this.bufferStore.appendAndRequestJob(
@@ -412,6 +419,36 @@ export class MessageDispatcher {
     });
 
     return { previousSessionId, sessionId, archivedPrevious };
+  }
+
+  private async ensureSessionFiles(input: {
+    botId: string;
+    groupId: string;
+    userId: string;
+    key: number;
+    sessionId: string;
+  }): Promise<void> {
+    const existing = await this.sessionRepository.loadSession(
+      input.botId,
+      input.groupId,
+      input.userId,
+      input.sessionId,
+    );
+    if (existing) {
+      return;
+    }
+    const now = new Date().toISOString();
+    await this.sessionRepository.createSession({
+      sessionId: input.sessionId,
+      groupId: input.groupId,
+      botId: input.botId,
+      ownerId: input.userId,
+      key: input.key,
+      status: "idle",
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
   private async handleModelCommand(input: {

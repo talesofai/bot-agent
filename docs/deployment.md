@@ -144,8 +144,9 @@ metadata:
   name: bot-data
   namespace: bot
 spec:
+  storageClassName: alibabacloud-cnfs-nas
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   resources:
     requests:
       storage: 100Gi

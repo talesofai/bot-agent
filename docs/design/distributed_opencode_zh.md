@@ -13,35 +13,39 @@
 ## 2. 核心架构决策
 
 1.  **数据隔离 (Isolation)**:
-    - **Group 级**: 物理目录隔离。
-    - **Session 级**: 目录 `sessions/{sid}` 为执行单元。
-      - **命名规范**: `{userId}`。
+    - **Group 级**: 群配置目录隔离（`/data/groups/{groupId}/`）。
+    - **Session 级**: 会话工作目录为执行单元（`/data/groups/sessions/{botId}/{groupId}/{userId}/{sessionId}`）。
+      - **命名规范**: `sessionId = {userId}-{key}`（`key` 为会话槽位，默认 0）。
     - **用户级**: 逻辑强制检查，确保 Session 归属单一用户。
 
 2.  **权限模型 (Permissions)**:
     - **Opencode (运行态)**:
-      - **RW**: 仅限当前 `sessions/{sid}/workspace/`。
+      - **RW**: 仅限当前 `sessions/{botId}/{groupId}/{userId}/{sessionId}/workspace/`。
       - **RO**: `agent.md`, `config.yaml`, `skills/`, `assets/`。
       - **Forbidden**: 其他 Session 目录。
     - **Bot/System**: 管理 Session 生命周期 (创建/销毁)。
     - **Admin/WebUI**: 修改 `agent.md`, `skills/` 等全局配置。
 
 3.  **并发模型**:
-    - **用户锁**: 基于 `sid` (`{userId}`) 加锁。
+    - **会话锁**: 基于 `{botId}:{groupId}:{sessionId}` 加锁。
     - **全局并发**: 只要 Session ID 不同，完全并行。
 
 ## 3. 目录结构规范
 
 ```text
-/data/groups/{group_id}/
-├── agent.md                # [RO] 群人设 (Admin可改)
-├── config.yaml             # [RO] 群配置 (Admin可改)
-├── skills/                 # [RO] 技能/规则库 (Admin可改)
-├── assets/                 # [RO] 静态资源 (Admin可改)
-│   └── images/
-└── sessions/               # [System RW]
-    └── {session_id}/       # [Opencode RW] 用户独占工作区
-        ├── workspace/      # Opencode CWD (工作目录，内部文件按需生成)
+/data/groups/
+├── {group_id}/
+│   ├── agent.md                # [RO] 群人设 (Admin可改)
+│   ├── config.yaml             # [RO] 群配置 (Admin可改)
+│   ├── skills/                 # [RO] 技能/规则库 (Admin可改)
+│   └── assets/                 # [RO] 静态资源 (Admin可改)
+│       └── images/
+└── sessions/                   # [System RW]
+    └── {botId}/{groupId}/{userId}/{sessionId}/
+        ├── meta.json
+        └── workspace/          # [Opencode RW] Opencode CWD (工作目录，内部文件按需生成)
+            ├── input/
+            └── output/
 ```
 
 ## 4. Session 生命周期 (Persistent Data, Transient Runtime)
@@ -54,8 +58,8 @@ Session 数据永久存在，但计算资源按需分配。即 **"Serverless"** 
 
 1.  **Resume (唤醒)**:
     - 用户发送消息。
-    - System 检查 `sessions/{sid}` 是否存在。
-    - 分配 Worker，挂载 `sessions/{sid}/workspace`。
+    - System 检查 `sessions/{botId}/{groupId}/{userId}/{sessionId}` 是否存在。
+    - 分配 Worker，挂载 `sessions/{botId}/{groupId}/{userId}/{sessionId}/workspace`。
     - 启动 Opencode 进程，加载上下文。
 
 2.  **Process (处理)**:
@@ -65,16 +69,16 @@ Session 数据永久存在，但计算资源按需分配。即 **"Serverless"** 
 3.  **Halt (挂起)**:
     - 单次交互完成 (或超时)。
     - Opencode 进程退出 (释放内存/CPU)。
-    - `sessions/{sid}` 数据完全保留，等待下次唤醒。
+    - `sessions/{botId}/{groupId}/{userId}/{sessionId}` 数据完全保留，等待下次唤醒。
 
 4.  **Purge (清理)**:
     - 仅当用户明确重置或极长时间未活跃 (TTL > 30天) 时，才会物理删除 Session 目录。
 
 ### 并发与锁
 
-- **用户级互斥**: 同一用户的 `sid` 在同一时刻只能被一个 Worker `Resume`。
+- **会话级互斥**: 同一 `{botId}:{groupId}:{sessionId}` 在同一时刻只能被一个 Worker `Resume`。
 - 需要分布式锁吗？**需要**。
-  - 锁位置: Redis (`session:lock:{groupId}:{sessionId}`)
+  - 锁位置: Redis (`session:gate:{botId}:{groupId}:{sessionId}`)
   - 作用: 防止两个 Worker 同时 Resume 同一个 Session (例如用户快速连发)。
   - 释放策略: 仅删除自身设置的锁值，避免误释放他人锁。
 

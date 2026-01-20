@@ -135,7 +135,7 @@ opencode -p "用户消息内容" \
 ### Agent 调用流程
 
 ```
-1. Bot Agent 准备用户工作目录（sessions/{userId}/workspace）
+1. Bot Agent 准备会话工作目录（sessions/{botId}/{groupId}/{userId}/{sessionId}/workspace）
 2. 读取群配置与 agent.md 作为 system prompt（私聊 groupId=0 时为空）
 3. 读取 PostgreSQL 中该 userId 的历史
 4. 调用 opencode 非交互模式

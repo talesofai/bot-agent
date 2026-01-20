@@ -1,6 +1,7 @@
 import path from "node:path";
 import { getConfig } from "../config";
 import { createPlatformAdapters, MultiAdapter } from "../adapters";
+import { DiscordAdapter } from "../adapters/discord";
 import { logger } from "../logger";
 import { GroupStore } from "../store";
 import { RouterStore } from "../store/router";
@@ -16,6 +17,11 @@ const config = getConfig();
 
 async function main(): Promise<void> {
   const platformAdapters = createPlatformAdapters(config);
+  for (const adapter of platformAdapters) {
+    if (adapter instanceof DiscordAdapter) {
+      adapter.enableSlashCommands();
+    }
+  }
   logger.info(
     {
       env: config.NODE_ENV ?? "development",

@@ -128,6 +128,20 @@ TELEMETRY_ENABLED=true
 TELEMETRY_SAMPLE_RATE=1
 ```
 
+### 链路追踪（ARMS / OpenTelemetry）
+
+如需在 ARMS Trace 里查看端到端链路（并与 LiteLLM 的 span 串联），需要启用 OTLP traces 导出：
+
+```env
+# OTLP HTTP/Protobuf traces endpoint（建议与 LiteLLM 使用同一个 ARMS workspace）
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tracing-analysis-xxx.aliyuncs.com/<adapt_xxx>/api/otlp/traces
+
+# 服务名（建议区分 adapter/worker 与 region）
+OTEL_SERVICE_NAME=opencode-bot-agent-worker-sg
+```
+
+> 注意：如果 LiteLLM 在上海 workspace，而 bot 上报到新加坡 workspace，你只能两边各搜一次 `traceId`，无法在同一条 trace 视图里合并。
+
 ### MCP 配置
 
 ```env

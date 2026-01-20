@@ -21,6 +21,12 @@
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.210.0",
+    "@opentelemetry/resources": "^2.4.0",
+    "@opentelemetry/sdk-node": "^0.210.0",
+    "@opentelemetry/sdk-trace-base": "^2.4.0",
+    "@opentelemetry/semantic-conventions": "^1.39.0",
     "@saltify/milky-node-sdk": "^1.0.0",
     "bullmq": "^5.66.5",
     "discord.js": "^14.25.1",

@@ -13,10 +13,17 @@ import type { Bot } from "../types/platform";
 import { SessionBufferStore } from "../session/buffer";
 import { SessionRepository } from "../session";
 import { getBotIdAliasMap } from "../utils/bot-id";
+import { shutdownOtel, startOtel } from "../otel";
 
 const config = getConfig();
 
 async function main(): Promise<void> {
+  try {
+    startOtel({ defaultServiceName: "opencode-bot-agent-adapter" });
+  } catch (err) {
+    logger.warn({ err }, "Failed to start OpenTelemetry");
+  }
+
   const platformAdapters = createPlatformAdapters(config);
   for (const adapter of platformAdapters) {
     if (adapter instanceof DiscordAdapter) {
@@ -129,9 +136,13 @@ async function main(): Promise<void> {
       await adapter.disconnect(bot);
     } catch (err) {
       logger.error({ err }, "Error during disconnect");
-    } finally {
-      process.exit(exitCode);
     }
+    try {
+      await shutdownOtel();
+    } catch (err) {
+      logger.warn({ err }, "Failed to shutdown OpenTelemetry");
+    }
+    process.exit(exitCode);
   };
 
   process.on("SIGINT", () => {

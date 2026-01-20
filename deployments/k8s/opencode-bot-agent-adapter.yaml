@@ -25,6 +25,14 @@ spec:
               value: "redis://redis:6379"
             - name: LLBOT_REGISTRY_PREFIX
               value: "llbot:registry"
+            - name: OTEL_SERVICE_NAME
+              value: "opencode-bot-agent-adapter-sg"
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+                  optional: true
             - name: DISCORD_TOKEN
               valueFrom:
                 secretKeyRef:

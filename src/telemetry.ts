@@ -1,6 +1,15 @@
 import { randomBytes } from "node:crypto";
 import type { Logger } from "pino";
+import {
+  context as otelContext,
+  ROOT_CONTEXT,
+  SpanKind,
+  SpanStatusCode,
+  TraceFlags,
+  trace,
+} from "@opentelemetry/api";
 import { getConfig } from "./config";
+import { getOtelTracer, isOtelStarted } from "./otel";
 
 const TRACE_ID_RE = /^[a-f0-9]{32}$/;
 
@@ -127,9 +136,23 @@ export async function withTelemetrySpan<T>(
 
   const startedAt = Date.now();
   const startedHr = process.hrtime.bigint();
+  const otelParentContext = isOtelStarted() ? getOtelParent(input) : null;
+  const otelSpan = otelParentContext
+    ? startOtelSpan(input, startedAt, otelParentContext)
+    : null;
+  const otelSpanContext =
+    otelSpan && otelParentContext
+      ? trace.setSpan(otelParentContext, otelSpan)
+      : null;
   try {
-    const result = await fn();
+    const result = otelSpanContext
+      ? await otelContext.with(otelSpanContext, fn)
+      : await fn();
     const durationMs = Number(process.hrtime.bigint() - startedHr) / 1e6;
+    if (otelSpan) {
+      otelSpan.setStatus({ code: SpanStatusCode.OK });
+      otelSpan.end();
+    }
     logger.info(
       {
         event: "telemetry.span",
@@ -148,6 +171,14 @@ export async function withTelemetrySpan<T>(
   } catch (err) {
     const durationMs = Number(process.hrtime.bigint() - startedHr) / 1e6;
     const error = normalizeError(err);
+    if (otelSpan) {
+      otelSpan.recordException(err as Error);
+      otelSpan.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: error.message,
+      });
+      otelSpan.end();
+    }
     logger.warn(
       {
         event: "telemetry.span",
@@ -166,6 +197,74 @@ export async function withTelemetrySpan<T>(
     );
     throw err;
   }
+}
+
+function getOtelParent(input: TelemetrySpanInput) {
+  const active = trace.getSpan(otelContext.active());
+  const activeTraceId = active?.spanContext().traceId;
+  if (activeTraceId && activeTraceId === input.traceId) {
+    return otelContext.active();
+  }
+
+  return trace.setSpanContext(ROOT_CONTEXT, {
+    traceId: resolveTraceId(input.traceId),
+    spanId: createSpanId(),
+    traceFlags: TraceFlags.SAMPLED,
+    isRemote: true,
+  });
+}
+
+function startOtelSpan(
+  input: TelemetrySpanInput,
+  startedAt: number,
+  parentContext: ReturnType<typeof getOtelParent>,
+) {
+  const tracer = getOtelTracer();
+  const attributes = buildOtelAttributes(input);
+  return tracer.startSpan(
+    `${input.phase}.${input.step}`,
+    {
+      kind: SpanKind.INTERNAL,
+      startTime: startedAt,
+      attributes,
+    },
+    parentContext,
+  );
+}
+
+function buildOtelAttributes(
+  input: TelemetrySpanInput,
+): Record<string, string | number | boolean> {
+  const attrs: Record<string, string | number | boolean> = {
+    "telemetry.phase": input.phase,
+    "telemetry.step": input.step,
+    "telemetry.component": input.component,
+    traceId: input.traceId,
+  };
+  const flattened = flattenTelemetryContext(input);
+  for (const [key, value] of Object.entries(flattened)) {
+    const coerced = coerceOtelAttributeValue(value);
+    if (coerced === undefined) {
+      continue;
+    }
+    attrs[key] = coerced;
+  }
+  return attrs;
+}
+
+function coerceOtelAttributeValue(
+  value: unknown,
+): string | number | boolean | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return undefined;
 }
 
 function flattenTelemetryContext(

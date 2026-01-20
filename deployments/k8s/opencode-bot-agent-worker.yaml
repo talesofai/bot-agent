@@ -28,6 +28,14 @@ spec:
                 secretKeyRef:
                   name: llbot-secrets
                   key: DATABASE_URL
+            - name: OTEL_SERVICE_NAME
+              value: "opencode-bot-agent-worker-sg"
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+                  optional: true
             - name: DISCORD_TOKEN
               valueFrom:
                 secretKeyRef:

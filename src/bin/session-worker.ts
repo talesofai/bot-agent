@@ -5,10 +5,17 @@ import { ShellOpencodeRunner, SessionWorker } from "../worker";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 import { getBotIdAliasMap } from "../utils/bot-id";
+import { shutdownOtel, startOtel } from "../otel";
 
 const config = getConfig();
 
 async function main(): Promise<void> {
+  try {
+    startOtel({ defaultServiceName: "opencode-bot-agent-worker" });
+  } catch (err) {
+    logger.warn({ err }, "Failed to start OpenTelemetry");
+  }
+
   if (!config.DATABASE_URL) {
     logger.error("DATABASE_URL is required for session worker");
     process.exit(1);
@@ -82,9 +89,13 @@ async function main(): Promise<void> {
       await adapter.disconnect(bot);
     } catch (err) {
       logger.error({ err }, "Error during disconnect");
-    } finally {
-      process.exit(exitCode);
     }
+    try {
+      await shutdownOtel();
+    } catch (err) {
+      logger.warn({ err }, "Failed to shutdown OpenTelemetry");
+    }
+    process.exit(exitCode);
   };
 
   process.on("SIGINT", () => {

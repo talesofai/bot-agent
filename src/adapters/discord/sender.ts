@@ -6,6 +6,7 @@ import type {
 } from "../../types/platform";
 import { Client, type MessageCreateOptions } from "discord.js";
 import { resolveDiscordImageAttachments } from "./image-attachments";
+import { getTraceIdFromExtras } from "../../telemetry";
 
 export class MessageSender {
   private client: Client;
@@ -21,22 +22,21 @@ export class MessageSender {
     content: string,
     options?: SendMessageOptions,
   ): Promise<void> {
+    const traceId = getTraceIdFromExtras(session.extras);
+    const log = traceId ? this.logger.child({ traceId }) : this.logger;
     if (!session.channelId) {
       throw new Error("channelId is required for sending messages.");
     }
 
     const channel = await this.resolveChannel(session.channelId);
     if (!isSendableChannel(channel)) {
-      this.logger.warn(
-        { channelId: session.channelId },
-        "Channel is not sendable",
-      );
+      log.warn({ channelId: session.channelId }, "Channel is not sendable");
       return;
     }
 
     const { elements, files } = await resolveDiscordImageAttachments(
       options?.elements ?? [],
-      { logger: this.logger },
+      { logger: log },
     );
 
     const payload = buildPayload(content, elements);
@@ -53,14 +53,16 @@ export class MessageSender {
 
     try {
       await channel.send(payload);
-      this.logger.debug({ channelId: session.channelId }, "Message sent");
+      log.debug({ channelId: session.channelId }, "Message sent");
     } catch (err) {
-      this.logger.error({ err, channelId: session.channelId }, "Send failed");
+      log.error({ err, channelId: session.channelId }, "Send failed");
       throw err;
     }
   }
 
   async sendTyping(session: SessionEvent): Promise<void> {
+    const traceId = getTraceIdFromExtras(session.extras);
+    const log = traceId ? this.logger.child({ traceId }) : this.logger;
     if (!session.channelId) {
       throw new Error("channelId is required for sending messages.");
     }
@@ -72,9 +74,9 @@ export class MessageSender {
 
     try {
       await channel.sendTyping();
-      this.logger.debug({ channelId: session.channelId }, "Typing sent");
+      log.debug({ channelId: session.channelId }, "Typing sent");
     } catch (err) {
-      this.logger.debug(
+      log.debug(
         { err, channelId: session.channelId },
         "Failed to send typing indicator",
       );

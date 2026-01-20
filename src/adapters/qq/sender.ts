@@ -5,6 +5,7 @@ import type {
   SessionEvent,
 } from "../../types/platform";
 import type { MilkyConnection } from "./connection";
+import { getTraceIdFromExtras } from "../../telemetry";
 
 interface MilkyMessageSegment {
   type: string;
@@ -25,6 +26,8 @@ export class MessageSender {
     content: string,
     options?: SendMessageOptions,
   ): Promise<void> {
+    const traceId = getTraceIdFromExtras(session.extras);
+    const log = traceId ? this.logger.child({ traceId }) : this.logger;
     const channelId = session.channelId;
     const isGroup = Boolean(session.guildId);
     const elements = options?.elements ?? [];
@@ -34,7 +37,7 @@ export class MessageSender {
       throw new Error("channelId is required for sending messages.");
     }
     if (message.length === 0) {
-      this.logger.debug({ channelId }, "Skipping empty message send");
+      log.debug({ channelId }, "Skipping empty message send");
       return;
     }
 
@@ -45,12 +48,12 @@ export class MessageSender {
 
     try {
       await this.connection.sendRequest(action, params);
-      this.logger.debug(
+      log.debug(
         { action, channelId, messageLength: message.length },
         "Message sent",
       );
     } catch (err) {
-      this.logger.error({ err, channelId }, "Failed to send message");
+      log.error({ err, channelId }, "Failed to send message");
       throw err;
     }
   }

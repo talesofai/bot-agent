@@ -113,7 +113,10 @@ export class SessionWorker {
       this.logger.error({ err }, "Worker error");
     });
     this.worker.on("failed", (job, err) => {
-      this.logger.error({ err, jobId: job?.id }, "Job failed");
+      this.logger.error(
+        { err, jobId: job?.id, traceId: job?.data?.traceId },
+        "Job failed",
+      );
     });
   }
 

@@ -17,6 +17,12 @@ import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { buildBotAccountId } from "../utils/bot-id";
 import { extractOutputElements } from "./output-elements";
+import {
+  type TelemetrySpanInput,
+  resolveTraceId,
+  setTraceIdOnExtras,
+  withTelemetrySpan,
+} from "../telemetry";
 
 export interface SessionJobContext {
   id?: string | number | null;
@@ -70,6 +76,43 @@ export class SessionProcessor {
     job: SessionJobContext,
     jobData: SessionJobData,
   ): Promise<void> {
+    const traceId = resolveTraceId(jobData.traceId);
+    const jobId = String(job.id ?? `job-${Date.now()}`);
+    const log = this.logger.child({
+      traceId,
+      jobId,
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+      userId: jobData.userId,
+      key: jobData.key,
+    });
+    const spanMessage = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      userId: jobData.userId,
+      key: jobData.key,
+      sessionId: jobData.sessionId,
+    };
+    const span = async <T>(
+      step: string,
+      fn: () => Promise<T>,
+      attrs?: Record<string, unknown>,
+    ): Promise<T> =>
+      withTelemetrySpan(
+        log,
+        {
+          traceId,
+          phase: "worker",
+          step,
+          component: "session-processor",
+          message: spanMessage,
+          job: { id: jobId },
+          attrs,
+        },
+        fn,
+      );
+
     let statusUpdated = false;
     let sessionInfo: SessionInfo | null = null;
     let shouldSetIdle = true;
@@ -83,181 +126,279 @@ export class SessionProcessor {
       }
     };
 
-    try {
-      const bufferKey = toBufferKey(jobData);
-      const gateToken = jobData.gateToken;
-      const gateOk = await this.bufferStore.claimGate(bufferKey, gateToken);
-      if (!gateOk) {
-        this.logger.debug(
-          { sessionId: jobData.sessionId, botId: jobData.botId },
-          "Skipping session job due to gate token mismatch",
-        );
-        return;
-      }
+    const now = Date.now();
+    const queueDelayMs =
+      typeof jobData.enqueuedAt === "number" &&
+      Number.isFinite(jobData.enqueuedAt)
+        ? Math.max(0, now - jobData.enqueuedAt)
+        : undefined;
+    const e2eAgeMs =
+      typeof jobData.traceStartedAt === "number" &&
+      Number.isFinite(jobData.traceStartedAt)
+        ? Math.max(0, now - jobData.traceStartedAt)
+        : undefined;
 
-      const gateHeartbeatMs = Math.max(
-        1000,
-        Math.min(
-          30_000,
-          Math.floor((this.bufferStore.getGateTtlSeconds() * 1000) / 2),
-        ),
-      );
-      gateHeartbeat = setInterval(() => {
-        if (gateRefreshInFlight) {
-          return;
-        }
-        gateRefreshInFlight = true;
-        void this.bufferStore
-          .refreshGate(bufferKey, gateToken)
-          .then((ok) => {
-            if (!ok) {
-              stopGateHeartbeat();
-            }
-          })
-          .catch((err) => {
-            this.logger.warn(
-              { err, sessionId: jobData.sessionId },
-              "Failed to refresh session gate",
-            );
-          })
-          .finally(() => {
-            gateRefreshInFlight = false;
-          });
-      }, gateHeartbeatMs);
-
-      let keepRunning = true;
-      while (keepRunning) {
-        const stillOwner = await this.bufferStore.claimGate(
-          bufferKey,
-          gateToken,
-        );
-        if (!stillOwner) {
-          this.logger.debug(
-            { sessionId: jobData.sessionId, botId: jobData.botId },
-            "Stopping session job due to gate token mismatch",
-          );
-          shouldSetIdle = false;
-          return;
-        }
-        const buffered = await this.bufferStore.drain(bufferKey);
-        if (buffered.length === 0) {
-          const shouldStop = await this.bufferStore.tryReleaseGate(
-            bufferKey,
-            gateToken,
-          );
-          if (shouldStop) {
-            keepRunning = false;
-            continue;
-          }
-          continue;
-        }
-
+    await span(
+      "job_process",
+      async () => {
         try {
-          if (!sessionInfo) {
-            sessionInfo = await this.ensureSession(
-              jobData.botId,
-              jobData.groupId,
-              jobData.userId,
-              jobData.key,
-              jobData.sessionId,
+          const bufferKey = toBufferKey(jobData);
+          const gateToken = jobData.gateToken;
+          const gateOk = await span("gate_claim_initial", async () =>
+            this.bufferStore.claimGate(bufferKey, gateToken),
+          );
+          if (!gateOk) {
+            log.debug(
+              { sessionId: jobData.sessionId, botId: jobData.botId },
+              "Skipping session job due to gate token mismatch",
             );
-            await this.recordActivity(sessionInfo);
-
-            sessionInfo = await this.updateStatus(sessionInfo, "running");
-            statusUpdated = true;
-            await this.recordActivity(sessionInfo);
+            return;
           }
 
-          const { mergedSession, promptInput } = buildBufferedInput(buffered);
-          const stopTyping = this.startTyping(mergedSession);
-          try {
-            const historyKey = resolveHistoryKey(mergedSession);
-            const { history, launchSpec } = await this.buildPromptContext(
-              jobData.groupId,
-              sessionInfo,
-              mergedSession,
-              historyKey,
-              promptInput,
-            );
+          const gateHeartbeatMs = Math.max(
+            1000,
+            Math.min(
+              30_000,
+              Math.floor((this.bufferStore.getGateTtlSeconds() * 1000) / 2),
+            ),
+          );
+          gateHeartbeat = setInterval(() => {
+            if (gateRefreshInFlight) {
+              return;
+            }
+            gateRefreshInFlight = true;
+            void this.bufferStore
+              .refreshGate(bufferKey, gateToken)
+              .then((ok) => {
+                if (!ok) {
+                  stopGateHeartbeat();
+                }
+              })
+              .catch((err) => {
+                log.warn(
+                  { err, sessionId: jobData.sessionId },
+                  "Failed to refresh session gate",
+                );
+              })
+              .finally(() => {
+                gateRefreshInFlight = false;
+              });
+          }, gateHeartbeatMs);
 
-            const result = await this.runner.run({
-              job: this.mapJob(job),
-              session: sessionInfo,
-              history,
-              launchSpec,
-            });
-            const stillOwnerAfterRun = await this.bufferStore.claimGate(
+          let keepRunning = true;
+          while (keepRunning) {
+            const stillOwner = await this.bufferStore.claimGate(
               bufferKey,
               gateToken,
             );
-            if (!stillOwnerAfterRun) {
-              this.logger.warn(
+            if (!stillOwner) {
+              log.debug(
                 { sessionId: jobData.sessionId, botId: jobData.botId },
-                "Discarding session result due to gate token mismatch after run",
+                "Stopping session job due to gate token mismatch",
               );
-              try {
-                await this.bufferStore.requeueFront(bufferKey, buffered);
-              } catch (err) {
-                this.logger.error(
-                  { err, sessionId: jobData.sessionId, botId: jobData.botId },
-                  "Failed to requeue buffered messages after gate loss",
-                );
-              }
               shouldSetIdle = false;
               return;
             }
-            const output = resolveOutput(result.output);
+            const buffered = await this.bufferStore.drain(bufferKey);
+            if (buffered.length === 0) {
+              const shouldStop = await this.bufferStore.tryReleaseGate(
+                bufferKey,
+                gateToken,
+              );
+              if (shouldStop) {
+                keepRunning = false;
+                continue;
+              }
+              continue;
+            }
 
-            await this.sendResponse(mergedSession, output);
-            await this.appendHistoryFromJob(
-              sessionInfo,
-              mergedSession,
-              historyKey,
-              result.historyEntries,
-              result.streamEvents,
-              output,
-              { stdout: result.rawStdout, stderr: result.rawStderr },
-            );
-            await this.recordActivity(sessionInfo);
-          } finally {
-            stopTyping();
+            try {
+              await withTelemetrySpan(
+                log,
+                {
+                  traceId,
+                  phase: "worker",
+                  step: "process_batch",
+                  component: "session-processor",
+                  message: spanMessage,
+                  job: { id: jobId },
+                  attrs: { bufferedCount: buffered.length },
+                },
+                async () => {
+                  if (!sessionInfo) {
+                    sessionInfo = await span("ensure_session", async () =>
+                      this.ensureSession(
+                        jobData.botId,
+                        jobData.groupId,
+                        jobData.userId,
+                        jobData.key,
+                        jobData.sessionId,
+                      ),
+                    );
+                    await span("record_activity", async () =>
+                      this.recordActivity(sessionInfo!, log),
+                    );
+
+                    sessionInfo = await span(
+                      "update_status_running",
+                      async () => this.updateStatus(sessionInfo!, "running"),
+                    );
+                    statusUpdated = true;
+                    await span("record_activity", async () =>
+                      this.recordActivity(sessionInfo!, log),
+                    );
+                  }
+
+                  const { mergedSession, promptInput } =
+                    buildBufferedInput(buffered);
+                  const mergedWithTrace: SessionEvent = {
+                    ...mergedSession,
+                    extras: setTraceIdOnExtras(mergedSession.extras, traceId),
+                  };
+                  const batchMessage = {
+                    ...spanMessage,
+                    platform: mergedWithTrace.platform,
+                    channelId: mergedWithTrace.channelId,
+                    messageId: mergedWithTrace.messageId,
+                  };
+                  const batchSpan = async <T>(
+                    step: string,
+                    fn: () => Promise<T>,
+                    attrs?: Record<string, unknown>,
+                  ): Promise<T> =>
+                    withTelemetrySpan(
+                      log,
+                      {
+                        traceId,
+                        phase: "worker",
+                        step,
+                        component: "session-processor",
+                        message: batchMessage,
+                        job: { id: jobId },
+                        attrs,
+                      },
+                      fn,
+                    );
+
+                  const stopTyping = this.startTyping(mergedWithTrace, log);
+                  try {
+                    const historyKey = resolveHistoryKey(mergedWithTrace);
+                    const { history, launchSpec } =
+                      await this.buildPromptContext(
+                        jobData.groupId,
+                        sessionInfo!,
+                        mergedWithTrace,
+                        historyKey,
+                        promptInput,
+                        { traceId, jobId, logger: log, message: batchMessage },
+                      );
+
+                    const result = await batchSpan(
+                      "opencode_run",
+                      async () =>
+                        this.runner.run({
+                          job: this.mapJob(job),
+                          session: sessionInfo!,
+                          history,
+                          launchSpec,
+                        }),
+                      { historyEntries: history.length },
+                    );
+                    const stillOwnerAfterRun = await this.bufferStore.claimGate(
+                      bufferKey,
+                      gateToken,
+                    );
+                    if (!stillOwnerAfterRun) {
+                      log.warn(
+                        { sessionId: jobData.sessionId, botId: jobData.botId },
+                        "Discarding session result due to gate token mismatch after run",
+                      );
+                      try {
+                        await this.bufferStore.requeueFront(
+                          bufferKey,
+                          buffered,
+                        );
+                      } catch (err) {
+                        log.error(
+                          {
+                            err,
+                            sessionId: jobData.sessionId,
+                            botId: jobData.botId,
+                          },
+                          "Failed to requeue buffered messages after gate loss",
+                        );
+                      }
+                      shouldSetIdle = false;
+                      return;
+                    }
+                    const output = resolveOutput(result.output);
+
+                    await batchSpan("send_response", async () =>
+                      this.sendResponse(mergedWithTrace, output),
+                    );
+                    await batchSpan("append_history", async () =>
+                      this.appendHistoryFromJob(
+                        sessionInfo!,
+                        mergedWithTrace,
+                        historyKey,
+                        result.historyEntries,
+                        result.streamEvents,
+                        output,
+                        { stdout: result.rawStdout, stderr: result.rawStderr },
+                      ),
+                    );
+                    await batchSpan("record_activity", async () =>
+                      this.recordActivity(sessionInfo!, log),
+                    );
+                  } finally {
+                    stopTyping();
+                  }
+                },
+              );
+            } catch (err) {
+              log.error(
+                { err, sessionId: jobData.sessionId, botId: jobData.botId },
+                "Failed to process buffered session messages; requeuing",
+              );
+              try {
+                await this.bufferStore.requeueFront(bufferKey, buffered);
+              } catch (requeueErr) {
+                log.error(
+                  {
+                    err: requeueErr,
+                    sessionId: jobData.sessionId,
+                    botId: jobData.botId,
+                  },
+                  "Failed to requeue buffered messages after error",
+                );
+              }
+              throw err;
+            }
           }
         } catch (err) {
-          this.logger.error(
-            { err, sessionId: jobData.sessionId, botId: jobData.botId },
-            "Failed to process buffered session messages; requeuing",
+          log.error(
+            { err, sessionId: jobData.sessionId },
+            "Error processing session job",
           );
-          try {
-            await this.bufferStore.requeueFront(bufferKey, buffered);
-          } catch (requeueErr) {
-            this.logger.error(
-              {
-                err: requeueErr,
-                sessionId: jobData.sessionId,
-                botId: jobData.botId,
-              },
-              "Failed to requeue buffered messages after error",
-            );
-          }
           throw err;
+        } finally {
+          stopGateHeartbeat();
+          if (statusUpdated && sessionInfo && shouldSetIdle) {
+            try {
+              await this.updateStatus(sessionInfo, "idle");
+            } catch (err) {
+              log.warn({ err }, "Failed to update session status to idle");
+            }
+          }
         }
-      }
-    } catch (err) {
-      this.logger.error(
-        { err, sessionId: jobData.sessionId },
-        "Error processing session job",
-      );
-      throw err;
-    } finally {
-      stopGateHeartbeat();
-      if (statusUpdated && sessionInfo && shouldSetIdle) {
-        try {
-          await this.updateStatus(sessionInfo, "idle");
-        } catch (err) {
-          this.logger.warn({ err }, "Failed to update session status to idle");
-        }
-      }
-    }
+      },
+      {
+        traceStartedAt: jobData.traceStartedAt,
+        enqueuedAt: jobData.enqueuedAt,
+        queueDelayMs,
+        e2eAgeMs,
+      },
+    );
   }
 
   async close(): Promise<void> {
@@ -272,15 +413,52 @@ export class SessionProcessor {
     sessionInput: SessionEvent,
     historyKey: HistoryKey | null,
     promptInput: string,
+    telemetry?: {
+      traceId: string;
+      jobId: string;
+      logger: Logger;
+      message: TelemetrySpanInput["message"];
+    },
   ): Promise<{
     history: HistoryEntry[];
     launchSpec: OpencodeLaunchSpec;
   }> {
+    const span = async <T>(
+      step: string,
+      fn: () => Promise<T>,
+      attrs?: Record<string, unknown>,
+    ): Promise<T> => {
+      if (!telemetry) {
+        return fn();
+      }
+      return withTelemetrySpan(
+        telemetry.logger,
+        {
+          traceId: telemetry.traceId,
+          phase: "worker",
+          step,
+          component: "session-processor",
+          message: telemetry.message,
+          job: { id: telemetry.jobId },
+          attrs,
+        },
+        fn,
+      );
+    };
+
     const history = historyKey
-      ? await this.historyStore.readHistory(historyKey, {
-          maxEntries: this.historyMaxEntries,
-          maxBytes: this.historyMaxBytes,
-        })
+      ? await span(
+          "history_read",
+          async () =>
+            this.historyStore.readHistory(historyKey, {
+              maxEntries: this.historyMaxEntries,
+              maxBytes: this.historyMaxBytes,
+            }),
+          {
+            maxEntries: this.historyMaxEntries,
+            maxBytes: this.historyMaxBytes,
+          },
+        )
       : [];
     const visibleHistory = history.filter((entry) => {
       if (entry.includeInContext === false) {
@@ -294,8 +472,12 @@ export class SessionProcessor {
       }
       return true;
     });
-    const groupConfig = await this.getGroupConfig(groupId);
-    const agentPrompt = await this.getAgentPrompt(groupId);
+    const groupConfig = await span("load_group_config", async () =>
+      this.getGroupConfig(groupId),
+    );
+    const agentPrompt = await span("load_agent_prompt", async () =>
+      this.getAgentPrompt(groupId),
+    );
     const systemPrompt = buildSystemPrompt(agentPrompt);
     const resolvedInput = resolveSessionInput(promptInput);
     const prompt = buildOpencodePrompt({
@@ -303,10 +485,16 @@ export class SessionProcessor {
       history: visibleHistory,
       input: resolvedInput,
     });
-    const launchSpec = await this.launcher.buildLaunchSpec(
-      sessionInfo,
-      prompt,
-      groupConfig.model,
+    const promptBytes = Buffer.byteLength(prompt, "utf8");
+    const launchSpec = await span(
+      "build_launch_spec",
+      async () =>
+        this.launcher.buildLaunchSpec(sessionInfo, prompt, groupConfig.model),
+      {
+        promptBytes,
+        historyEntries: visibleHistory.length,
+        modelOverride: groupConfig.model,
+      },
     );
     return { history: visibleHistory, launchSpec };
   }
@@ -484,7 +672,10 @@ export class SessionProcessor {
     }
   }
 
-  private async recordActivity(sessionInfo: SessionInfo): Promise<void> {
+  private async recordActivity(
+    sessionInfo: SessionInfo,
+    log: Logger,
+  ): Promise<void> {
     try {
       await this.activityIndex.recordActivity({
         botId: sessionInfo.meta.botId,
@@ -492,7 +683,7 @@ export class SessionProcessor {
         sessionId: sessionInfo.meta.sessionId,
       });
     } catch (err) {
-      this.logger.warn({ err }, "Failed to record session activity");
+      log.warn({ err }, "Failed to record session activity");
     }
   }
 
@@ -519,7 +710,7 @@ export class SessionProcessor {
     );
   }
 
-  private startTyping(session: SessionEvent): () => void {
+  private startTyping(session: SessionEvent, log: Logger): () => void {
     if (session.platform !== "discord") {
       return () => {};
     }
@@ -529,7 +720,7 @@ export class SessionProcessor {
     }
     const trigger = () => {
       void sendTyping.call(this.adapter, session).catch((err) => {
-        this.logger.debug(
+        log.debug(
           { err, sessionId: session.messageId, platform: session.platform },
           "Failed to send typing indicator",
         );

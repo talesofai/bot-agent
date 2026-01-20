@@ -43,6 +43,34 @@ const envSchema = z.object({
       return value;
     }, z.boolean())
     .default(true),
+  TELEMETRY_ENABLED: z
+    .preprocess((value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      if (typeof value === "boolean") {
+        return value;
+      }
+      if (typeof value === "number") {
+        return value !== 0;
+      }
+      if (typeof value !== "string") {
+        return value;
+      }
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "") {
+        return undefined;
+      }
+      if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+      }
+      return value;
+    }, z.boolean())
+    .default(true),
+  TELEMETRY_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
   // Discord platform configuration
   DISCORD_TOKEN: z.string().optional(),
   DISCORD_APPLICATION_ID: z.string().optional(),

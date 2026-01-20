@@ -10,6 +10,9 @@ export interface SessionJobData {
   userId: string;
   key: number;
   gateToken: string;
+  traceId?: string;
+  traceStartedAt?: number;
+  enqueuedAt?: number;
 }
 
 export interface SessionJob {

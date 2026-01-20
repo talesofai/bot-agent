@@ -11,6 +11,7 @@ import type {
   PlatformAdapter,
 } from "../../types/platform";
 import type { BullmqSessionQueue } from "../../queue";
+import type { SessionJobData } from "../../queue";
 import type { SessionBuffer, SessionBufferKey } from "../../session/buffer";
 import { GroupStore } from "../../store";
 import { SessionRepository } from "../../session";
@@ -108,6 +109,64 @@ class NoopSessionBuffer implements SessionBuffer {
 
   async releaseGate(): Promise<boolean> {
     return true;
+  }
+
+  async close(): Promise<void> {}
+}
+
+class CapturingSessionBuffer implements SessionBuffer {
+  lastKey: SessionBufferKey | null = null;
+  lastMessage: SessionEvent | null = null;
+
+  getGateTtlSeconds(): number {
+    return 60;
+  }
+
+  async append(_key: SessionBufferKey, _message: SessionEvent): Promise<void> {}
+
+  async requeueFront(): Promise<void> {}
+
+  async appendAndRequestJob(
+    key: SessionBufferKey,
+    message: SessionEvent,
+    token: string,
+  ): Promise<string | null> {
+    this.lastKey = key;
+    this.lastMessage = message;
+    return token;
+  }
+
+  async drain(): Promise<SessionEvent[]> {
+    return [];
+  }
+
+  async claimGate(): Promise<boolean> {
+    return true;
+  }
+
+  async refreshGate(): Promise<boolean> {
+    return true;
+  }
+
+  async tryReleaseGate(): Promise<boolean> {
+    return true;
+  }
+
+  async releaseGate(): Promise<boolean> {
+    return true;
+  }
+
+  async close(): Promise<void> {}
+}
+
+class CapturingSessionQueue {
+  jobs: SessionJobData[] = [];
+
+  async enqueue(
+    jobData: SessionJobData,
+  ): Promise<{ id: string; data: SessionJobData }> {
+    this.jobs.push(jobData);
+    return { id: "job-1", data: jobData };
   }
 
   async close(): Promise<void> {}
@@ -219,6 +278,70 @@ describe("MessageDispatcher management commands", () => {
       });
 
       expect(adapter.messages).toEqual(["无权限：仅管理员可重置全群会话。"]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("MessageDispatcher telemetry propagation", () => {
+  test("enqueues jobs with traceId and timestamps", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const adapter = new MemoryAdapter();
+    const groupStore = new GroupStore({ dataDir: tempDir, logger });
+    await groupStore.init();
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const bufferStore = new CapturingSessionBuffer();
+    const sessionQueue = new CapturingSessionQueue();
+
+    const dispatcher = new MessageDispatcher({
+      adapter,
+      groupStore,
+      routerStore: null,
+      sessionRepository,
+      sessionQueue: sessionQueue as unknown as BullmqSessionQueue,
+      bufferStore,
+      echoTracker: new EchoTracker({ store: new MemoryEchoStore() }),
+      logger,
+    });
+
+    try {
+      const before = Date.now();
+      await dispatcher.dispatch({
+        type: "message",
+        platform: "discord",
+        selfId: "123",
+        userId: "999",
+        guildId: "guild1",
+        channelId: "channel1",
+        messageId: "msg1",
+        content: "hello",
+        elements: [
+          { type: "mention", userId: "123" },
+          { type: "text", text: "hello" },
+        ],
+        timestamp: before,
+        extras: {},
+      });
+      const after = Date.now();
+
+      expect(sessionQueue.jobs).toHaveLength(1);
+      const jobData = sessionQueue.jobs[0];
+      expect(jobData.traceId).toMatch(/^[a-f0-9]{32}$/);
+      expect(jobData.traceStartedAt).toBeGreaterThanOrEqual(before);
+      expect(jobData.traceStartedAt).toBeLessThanOrEqual(after);
+      expect(jobData.enqueuedAt).toBeGreaterThanOrEqual(before);
+      expect(jobData.enqueuedAt).toBeLessThanOrEqual(after);
+
+      expect(bufferStore.lastMessage).toBeTruthy();
+      const extras = (bufferStore.lastMessage as SessionEvent).extras as {
+        traceId?: string;
+      };
+      expect(extras.traceId).toBe(jobData.traceId);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

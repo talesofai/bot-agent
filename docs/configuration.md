@@ -116,6 +116,13 @@ LOG_LEVEL=info
 
 # 日志格式: json, pretty
 LOG_FORMAT=json
+
+# Telemetry：结构化 span 日志（用于阿里云日志/SLS 侧做链路耗时分析）
+# 开启后会输出 event=telemetry.span，并包含 traceId/phase/step/startedAt/durationMs 等字段
+TELEMETRY_ENABLED=true
+
+# 采样率（0~1），按 traceId 稳定采样；1 表示全量
+TELEMETRY_SAMPLE_RATE=1
 ```
 
 ### MCP 配置

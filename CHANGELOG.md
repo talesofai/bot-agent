@@ -16,6 +16,7 @@
 - 测试：新增 RouterStore 默认配置与 bot 配置落盘用例
 - History：将 opencode 事件流中间态写入 Postgres（`includeInContext=false`），便于追踪但默认不进上下文
 - Telemetry：新增全链路 `traceId`/`span` 结构化埋点（`event=telemetry.span`），可在阿里云日志/SLS 侧按 `traceId` 查看每一步触发时间与耗时
+- K8s：新增 `AliyunLogConfig` 采集 bot 命名空间内 adapter/worker 容器 stdout/stderr 到 SLS（默认 Project：`k8s-log-<clusterId>`，Logstore：`opencode-bot-agent-stdout-<clusterId>`）
 - Discord：AI 处理期间发送 typing indicator（“正在输入”状态）
 - Discord：注册并支持 Slash Commands（`/ask`、`/ping`、`/help`）
 - Session：新增会话映射 `sessions/{botId}/{groupId}/{userId}/index.json`（`key -> sessionId`），支持创建新会话并封存旧会话

@@ -1,0 +1,29 @@
+apiVersion: log.alibabacloud.com/v1alpha1
+kind: AliyunLogConfig
+metadata:
+  name: opencode-bot-agent-stdout
+  namespace: bot
+spec:
+  # Logstore will be created in the default project configured by ACK Logtail
+  # (see kube-system/alibaba-log-configuration: log-project).
+  logstore: opencode-bot-agent-stdout-caa060be5499f4bffad899f33eef254e9
+  logtailConfig:
+    configName: opencode-bot-agent-stdout
+    inputType: plugin
+    inputDetail:
+      plugin:
+        inputs:
+          - type: service_docker_stdout
+            detail:
+              Stdout: true
+              Stderr: true
+              IncludeLabel:
+                io.kubernetes.namespace: bot
+                io.kubernetes.container.name: opencode-bot-agent-adapter
+          - type: service_docker_stdout
+            detail:
+              Stdout: true
+              Stderr: true
+              IncludeLabel:
+                io.kubernetes.namespace: bot
+                io.kubernetes.container.name: opencode-bot-agent-worker

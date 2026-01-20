@@ -158,7 +158,11 @@ function resolveFilename(input: {
 }): string {
   const basename = input.url.pathname.split("/").filter(Boolean).pop();
   if (basename && basename.length <= 64 && /^[a-zA-Z0-9._-]+$/.test(basename)) {
-    return basename;
+    if (basename.includes(".")) {
+      return basename;
+    }
+    const extension = extensionFromContentType(input.contentType);
+    return extension ? `${basename}${extension}` : basename;
   }
 
   const extension = extensionFromContentType(input.contentType);

@@ -23,6 +23,7 @@
 - 输出：识别 Markdown/裸图片链接并按富内容发送（Discord embed / QQ image segment），确保“图片”不是纯链接
 - Discord：对外链图片尝试下载并以附件发送（best-effort），避免部分站点禁用 embed 导致“只有链接没图片”
 - Discord：外链图片不可下载/非图片响应时丢弃该图片元素，避免出现“空图片框”
+- 输出：支持无扩展名的 Markdown 图片 URL；Discord 下载外链图片时自动补齐附件扩展名，避免“有图片但不显示”
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 - Opencode：prompt file 以 `--file` 追加到 message 之后，避免被 CLI 误当作文件列表吞掉导致 `opencode run` 直接失败
 - Opencode：支持解析 `--format json` 的事件流输出（text chunks），确保能提取最终回复

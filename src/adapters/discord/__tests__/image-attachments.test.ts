@@ -37,6 +37,26 @@ describe("resolveDiscordImageAttachments", () => {
     expect(result.files[0].name).toBe("naita.png");
   });
 
+  test("adds extension when url has no filename extension", async () => {
+    const elements: SessionElement[] = [
+      { type: "image", url: "https://example.com/images?q=1" },
+    ];
+    const result = await resolveDiscordImageAttachments(elements, {
+      fetchFn: async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: {
+            "content-type": "image/jpeg",
+            "content-length": "3",
+          },
+        }),
+    });
+
+    expect(result.elements).toEqual([]);
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].name).toBe("images.jpg");
+  });
+
   test("drops element when response is not an image", async () => {
     const elements: SessionElement[] = [
       { type: "image", url: "https://example.com/not-image.png" },

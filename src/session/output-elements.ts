@@ -50,16 +50,15 @@ function stripMarkdownImages(
   return content.replace(
     MARKDOWN_IMAGE_PATTERN,
     (_match: string, url: string) => {
-      if (imageUrls.length >= maxImages) {
+      const candidate = normalizeUrlCandidate(url);
+      if (!candidate) {
+        return _match;
+      }
+      if (imageUrls.includes(candidate)) {
         return "";
       }
-      const candidate = normalizeUrlCandidate(url);
-      if (
-        !candidate ||
-        !isImageUrl(candidate) ||
-        imageUrls.includes(candidate)
-      ) {
-        return "";
+      if (imageUrls.length >= maxImages) {
+        return candidate;
       }
       imageUrls.push(candidate);
       return "";

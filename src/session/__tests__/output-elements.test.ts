@@ -32,6 +32,20 @@ describe("extractOutputElements", () => {
     expect(result.content).toBe("https://example.com/a.png");
   });
 
+  test("extracts markdown images without file extensions", () => {
+    const output =
+      "![x](https://encrypted-tbn0.gstatic.com/images?q=tbn:abc) done";
+    const result = extractOutputElements(output);
+
+    expect(result.elements).toEqual([
+      {
+        type: "image",
+        url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:abc",
+      },
+    ]);
+    expect(result.content).toBe("done");
+  });
+
   test("respects maxImages limit", () => {
     const output = [
       "![1](https://example.com/1.png)",

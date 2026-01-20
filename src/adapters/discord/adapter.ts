@@ -182,6 +182,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     const commandName = interaction.commandName;
+    const isGuildOwner = Boolean(
+      interaction.guildId &&
+      interaction.guild &&
+      interaction.guild.ownerId === interaction.user.id,
+    );
+    const isGuildAdmin = Boolean(
+      interaction.guildId &&
+      (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)),
+    );
     if (commandName === "ping") {
       await safeReply(interaction, "pong", { ephemeral: true });
       return;
@@ -243,6 +253,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           channelId,
           guildId: interaction.guildId ?? undefined,
           userId: interaction.user.id,
+          isGuildOwner: interaction.guildId ? isGuildOwner : undefined,
+          isGuildAdmin: interaction.guildId ? isGuildAdmin : undefined,
         },
       };
       await this.emitEvent(event);
@@ -297,6 +309,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           channelId,
           guildId: interaction.guildId ?? undefined,
           userId: interaction.user.id,
+          isGuildOwner: interaction.guildId ? isGuildOwner : undefined,
+          isGuildAdmin: interaction.guildId ? isGuildAdmin : undefined,
         },
       };
       await this.emitEvent(event);
@@ -349,6 +363,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           channelId,
           guildId: interaction.guildId ?? undefined,
           userId: interaction.user.id,
+          isGuildOwner: interaction.guildId ? isGuildOwner : undefined,
+          isGuildAdmin: interaction.guildId ? isGuildAdmin : undefined,
         },
       };
       await this.emitEvent(event);
@@ -376,17 +392,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       return;
     }
-
-    const isGuildOwner = Boolean(
-      interaction.guildId &&
-      interaction.guild &&
-      interaction.guild.ownerId === interaction.user.id,
-    );
-    const isGuildAdmin = Boolean(
-      interaction.guildId &&
-      (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
-        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)),
-    );
 
     const text = interaction.options.getString("text", true).trim();
     if (!text) {

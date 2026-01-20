@@ -15,7 +15,7 @@
 1.  **数据隔离 (Isolation)**:
     - **Group 级**: 群配置目录隔离（`/data/groups/{groupId}/`）。
     - **Session 级**: 会话工作目录为执行单元（`/data/groups/sessions/{botId}/{groupId}/{userId}/{sessionId}`）。
-      - **命名规范**: `sessionId = {userId}-{key}`（`key` 为会话槽位，默认 0）。
+      - **命名规范**: `sessionId` 由系统生成（安全 path segment）；同一用户的会话槽位 `key` -> 当前 `sessionId` 映射保存在 `{userId}/index.json`（`/reset` 会创建新 `sessionId` 并归档旧会话）。
     - **用户级**: 逻辑强制检查，确保 Session 归属单一用户。
 
 2.  **权限模型 (Permissions)**:
@@ -41,11 +41,13 @@
 │   └── assets/                 # [RO] 静态资源 (Admin可改)
 │       └── images/
 └── sessions/                   # [System RW]
-    └── {botId}/{groupId}/{userId}/{sessionId}/
-        ├── meta.json
-        └── workspace/          # [Opencode RW] Opencode CWD (工作目录，内部文件按需生成)
-            ├── input/
-            └── output/
+    └── {botId}/{groupId}/{userId}/
+        ├── index.json          # 会话槽位 key -> 当前 sessionId
+        └── {sessionId}/
+            ├── meta.json
+            └── workspace/      # [Opencode RW] Opencode CWD (工作目录，内部文件按需生成)
+                ├── input/
+                └── output/
 ```
 
 ## 4. Session 生命周期 (Persistent Data, Transient Runtime)

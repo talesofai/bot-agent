@@ -7,6 +7,8 @@ export interface SessionMeta {
   ownerId: string;
   key: number;
   status: SessionStatus;
+  active?: boolean;
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -16,6 +18,8 @@ export interface HistoryEntry {
   content: string;
   createdAt: string;
   groupId?: string;
+  sessionId?: string;
+  includeInContext?: boolean;
   [key: string]: unknown;
 }
 

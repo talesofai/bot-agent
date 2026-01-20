@@ -33,6 +33,7 @@ describe("createSession", () => {
         groupId: "group-1",
         botId: "bot-1",
         userId: "user-1",
+        sessionId: "session-1",
         key: 2,
         maxSessions: 2,
         groupRepository,
@@ -57,6 +58,7 @@ describe("createSession", () => {
       groupId: "group-1",
       botId: "bot-1",
       userId: "user-1",
+      sessionId: "session-1",
       key: 1,
       maxSessions: 2,
       groupRepository,
@@ -67,6 +69,7 @@ describe("createSession", () => {
         groupId: "group-1",
         botId: "bot-1",
         userId: "user-1",
+        sessionId: "session-1",
         key: 1,
         maxSessions: 1,
         groupRepository,
@@ -91,6 +94,7 @@ describe("createSession", () => {
       groupId: "group-1",
       botId: "bot-1",
       userId: "user-1",
+      sessionId: "session-0",
       key: 0,
       maxSessions: 1,
       groupRepository,
@@ -100,6 +104,7 @@ describe("createSession", () => {
       groupId: "group-2",
       botId: "bot-1",
       userId: "user-1",
+      sessionId: "session-0",
       key: 0,
       maxSessions: 1,
       groupRepository,
@@ -112,12 +117,26 @@ describe("createSession", () => {
     expect(first.workspacePath).not.toBe(second.workspacePath);
     expect(
       first.workspacePath.endsWith(
-        join("sessions", "bot-1", "group-1", "user-1", "user-1-0", "workspace"),
+        join(
+          "sessions",
+          "bot-1",
+          "group-1",
+          "user-1",
+          "session-0",
+          "workspace",
+        ),
       ),
     ).toBe(true);
     expect(
       second.workspacePath.endsWith(
-        join("sessions", "bot-1", "group-2", "user-1", "user-1-0", "workspace"),
+        join(
+          "sessions",
+          "bot-1",
+          "group-2",
+          "user-1",
+          "session-0",
+          "workspace",
+        ),
       ),
     ).toBe(true);
 
@@ -140,6 +159,7 @@ describe("createSession", () => {
         groupId: "group-1",
         botId: "bot-1",
         userId: "user-1",
+        sessionId: "session-1",
         key: -1,
         maxSessions: 2,
         groupRepository,
@@ -165,6 +185,7 @@ describe("createSession", () => {
         groupId: "../escape",
         botId: "bot-1",
         userId: "user-1",
+        sessionId: "session-0",
         key: 0,
         maxSessions: 1,
         groupRepository,
@@ -190,6 +211,7 @@ describe("createSession", () => {
         groupId: "group-1",
         botId: "bot-1",
         userId: "user/1",
+        sessionId: "session-0",
         key: 0,
         maxSessions: 1,
         groupRepository,
@@ -215,6 +237,7 @@ describe("createSession", () => {
       groupId: "group-1",
       botId: "bot-1",
       userId: "user-1",
+      sessionId: "session-0",
       key: 0,
       maxSessions: 1,
       groupRepository,

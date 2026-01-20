@@ -1,7 +1,7 @@
 import { mkdir, readdir } from "node:fs/promises";
 import { LRUCache } from "lru-cache";
 import type { Logger } from "pino";
-import type { GroupData } from "../types/group";
+import type { GroupConfig, GroupData } from "../types/group";
 import { getConfig } from "../config";
 import { logger as defaultLogger } from "../logger";
 import { GroupFileRepository } from "./repository";
@@ -88,6 +88,18 @@ export class GroupStore {
     const groupPath = await this.repository.ensureGroupDir(groupId);
     this.logger.info({ groupId }, "Ensured group directory");
     return groupPath;
+  }
+
+  async updateGroupConfig(
+    groupId: string,
+    update: (config: GroupConfig) => GroupConfig,
+  ): Promise<GroupConfig> {
+    const groupPath = await this.repository.ensureGroupDir(groupId);
+    const current = await this.repository.loadConfig(groupPath);
+    const next = update(current);
+    await this.repository.saveConfig(groupPath, next);
+    const reloaded = await this.reloadGroup(groupId);
+    return reloaded?.config ?? next;
   }
 
   /**

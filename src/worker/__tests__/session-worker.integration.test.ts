@@ -9,7 +9,6 @@ import { BullmqSessionQueue } from "../../queue";
 import { SessionBufferStore } from "../../session/buffer";
 import { InMemoryHistoryStore } from "../../session/history";
 import { SessionRepository } from "../../session/repository";
-import { buildSessionId } from "../../session/utils";
 import type {
   Bot,
   MessageHandler,
@@ -113,7 +112,7 @@ describe("session worker integration", () => {
       const groupId = "group-1";
       const userId = "user-1";
       const key = 0;
-      const sessionId = buildSessionId(userId, key);
+      const sessionId = "session-0";
       const session = {
         type: "message",
         platform: "test",
@@ -200,7 +199,7 @@ describe("session worker integration", () => {
       const groupId = "group-1";
       const userId = "user-1";
       const key = 0;
-      const sessionId = buildSessionId(userId, key);
+      const sessionId = "session-0";
       const session = {
         type: "message",
         platform: "test",

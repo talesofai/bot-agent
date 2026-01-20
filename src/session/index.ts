@@ -8,4 +8,4 @@ export type { HistoryKey, HistoryReadOptions, HistoryStore } from "./history";
 export { SessionBusyError } from "./errors";
 export { SessionTtlCleaner } from "./ttl-cleaner";
 export type { SessionTtlCleanerOptions } from "./ttl-cleaner";
-export { buildSessionId } from "./utils";
+export { generateSessionId } from "./utils";

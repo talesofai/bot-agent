@@ -50,6 +50,7 @@ describe("opencode integration", () => {
         groupId,
         botId: "bot-1",
         userId,
+        sessionId: "session-0",
         key,
         groupRepository,
         sessionRepository,

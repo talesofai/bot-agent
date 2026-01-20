@@ -62,11 +62,13 @@
 	    │   │   └── assets/    # 群资源
 	    │   │       └── images/
 	    │   └── sessions/      # 会话目录（每个用户/会话一个目录）
-	    │       └── {botId}/{groupId}/{userId}/{sessionId}/
-	    │           ├── meta.json
-	    │           └── workspace/
-	    │               ├── input/
-	    │               └── output/
+	    │       └── {botId}/{groupId}/{userId}/
+	    │           ├── index.json  # 会话槽位 -> 当前 sessionId 映射
+	    │           └── {sessionId}/
+	    │               ├── meta.json
+	    │               └── workspace/
+	    │                   ├── input/
+	    │                   └── output/
 	    ├── router/            # DATA_DIR（默认 /data）
 	    │   └── global.yaml
 	    ├── bots/

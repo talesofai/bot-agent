@@ -11,6 +11,7 @@ import { MessageDispatcher } from "../entry/message-dispatcher";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 import { SessionBufferStore } from "../session/buffer";
+import { SessionRepository } from "../session";
 import { getBotIdAliasMap } from "../utils/bot-id";
 
 const config = getConfig();
@@ -79,6 +80,10 @@ async function main(): Promise<void> {
   });
 
   const bufferStore = new SessionBufferStore({ redisUrl: config.REDIS_URL });
+  const sessionRepository = new SessionRepository({
+    dataDir: config.GROUPS_DATA_DIR,
+    logger,
+  });
 
   let httpServer: HttpServer | null = null;
   startHttpServer({
@@ -101,6 +106,7 @@ async function main(): Promise<void> {
     adapter,
     groupStore,
     routerStore,
+    sessionRepository,
     sessionQueue,
     bufferStore,
     echoTracker,

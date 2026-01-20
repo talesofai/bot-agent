@@ -25,6 +25,7 @@ import { MessageSender } from "./sender";
 
 export interface DiscordAdapterOptions {
   token?: string;
+  applicationId?: string;
   logger?: Logger;
 }
 
@@ -40,6 +41,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   readonly platform = "discord";
 
   private token: string;
+  private applicationId: string | null;
   private logger: Logger;
   private client: Client;
   private sender: MessageSender;
@@ -54,6 +56,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
     super();
     this.token = token;
+    const applicationId = options.applicationId?.trim();
+    this.applicationId = applicationId ? applicationId : null;
     this.logger = options.logger ?? defaultLogger.child({ adapter: "discord" });
     this.client = new Client({
       intents: [
@@ -182,9 +186,169 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (commandName === "help") {
       await safeReply(
         interaction,
-        "可用指令：\n- /ask text:<内容> [key:<会话槽位>]\n- /ping\n- /help",
+        "可用指令：\n- /ask text:<内容> [key:<会话槽位>]\n- /reset [key:<会话槽位>] [user:<用户>]\n- /resetall [key:<会话槽位>]（管理员）\n- /model name:<模型名>\n- /ping\n- /help",
         { ephemeral: true },
       );
+      return;
+    }
+    if (commandName === "reset") {
+      const channelId = interaction.channelId;
+      if (!channelId) {
+        await safeReply(interaction, "缺少 channelId，无法处理该指令。", {
+          ephemeral: true,
+        });
+        return;
+      }
+      const botId = this.botUserId ?? this.client.user?.id ?? "";
+      if (!botId) {
+        await safeReply(interaction, "Bot 尚未就绪，请稍后重试。", {
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const key = interaction.options.getInteger("key");
+      const targetUser = interaction.options.getUser("user");
+      const content = key !== null ? `#${key} /reset` : "/reset";
+
+      await safeReply(interaction, "收到，正在重置对话…", { ephemeral: true });
+
+      if (this.listenerCount("event") === 0) {
+        return;
+      }
+
+      const elements: SessionElement[] = [{ type: "mention", userId: botId }];
+      if (targetUser) {
+        elements.push({ type: "mention", userId: targetUser.id });
+      }
+      elements.push({ type: "text", text: content });
+
+      const event: SessionEvent<DiscordInteractionExtras> = {
+        type: "message",
+        platform: "discord",
+        selfId: botId,
+        userId: interaction.user.id,
+        guildId: interaction.guildId ?? undefined,
+        channelId,
+        messageId: interaction.id,
+        content,
+        elements,
+        timestamp: Date.now(),
+        extras: {
+          interactionId: interaction.id,
+          commandName,
+          channelId,
+          guildId: interaction.guildId ?? undefined,
+          userId: interaction.user.id,
+        },
+      };
+      await this.emitEvent(event);
+      return;
+    }
+    if (commandName === "resetall") {
+      const channelId = interaction.channelId;
+      if (!channelId) {
+        await safeReply(interaction, "缺少 channelId，无法处理该指令。", {
+          ephemeral: true,
+        });
+        return;
+      }
+      const botId = this.botUserId ?? this.client.user?.id ?? "";
+      if (!botId) {
+        await safeReply(interaction, "Bot 尚未就绪，请稍后重试。", {
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const key = interaction.options.getInteger("key");
+      const content = key !== null ? `#${key} /reset all` : "/reset all";
+
+      await safeReply(interaction, "收到，正在重置全群对话…", {
+        ephemeral: true,
+      });
+
+      if (this.listenerCount("event") === 0) {
+        return;
+      }
+
+      const elements: SessionElement[] = [
+        { type: "mention", userId: botId },
+        { type: "text", text: content },
+      ];
+
+      const event: SessionEvent<DiscordInteractionExtras> = {
+        type: "message",
+        platform: "discord",
+        selfId: botId,
+        userId: interaction.user.id,
+        guildId: interaction.guildId ?? undefined,
+        channelId,
+        messageId: interaction.id,
+        content,
+        elements,
+        timestamp: Date.now(),
+        extras: {
+          interactionId: interaction.id,
+          commandName,
+          channelId,
+          guildId: interaction.guildId ?? undefined,
+          userId: interaction.user.id,
+        },
+      };
+      await this.emitEvent(event);
+      return;
+    }
+    if (commandName === "model") {
+      const channelId = interaction.channelId;
+      if (!channelId) {
+        await safeReply(interaction, "缺少 channelId，无法处理该指令。", {
+          ephemeral: true,
+        });
+        return;
+      }
+      const botId = this.botUserId ?? this.client.user?.id ?? "";
+      if (!botId) {
+        await safeReply(interaction, "Bot 尚未就绪，请稍后重试。", {
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const name = interaction.options.getString("name", true).trim();
+      const content = `/model ${name}`;
+
+      await safeReply(interaction, "收到，正在切换模型…", { ephemeral: true });
+
+      if (this.listenerCount("event") === 0) {
+        return;
+      }
+
+      const elements: SessionElement[] = [
+        { type: "mention", userId: botId },
+        { type: "text", text: content },
+      ];
+
+      const event: SessionEvent<DiscordInteractionExtras> = {
+        type: "message",
+        platform: "discord",
+        selfId: botId,
+        userId: interaction.user.id,
+        guildId: interaction.guildId ?? undefined,
+        channelId,
+        messageId: interaction.id,
+        content,
+        elements,
+        timestamp: Date.now(),
+        extras: {
+          interactionId: interaction.id,
+          commandName,
+          channelId,
+          guildId: interaction.guildId ?? undefined,
+          userId: interaction.user.id,
+        },
+      };
+      await this.emitEvent(event);
       return;
     }
     if (commandName !== "ask") {
@@ -253,8 +417,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   }
 
   private async registerSlashCommands(): Promise<void> {
-    const botId = this.client.user?.id;
-    if (!botId) {
+    const applicationId =
+      this.applicationId ?? this.client.application?.id ?? null;
+    if (!applicationId) {
+      this.logger.warn("Missing Discord application id; skip slash commands");
       return;
     }
 
@@ -264,12 +430,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const guildIds = this.client.guilds.cache.map((guild) => guild.id);
     if (guildIds.length === 0) {
       try {
-        await rest.put(Routes.applicationCommands(botId), {
+        await rest.put(Routes.applicationCommands(applicationId), {
           body: commands,
         });
-        this.logger.info({ botId }, "Registered global slash commands");
+        this.logger.info({ applicationId }, "Registered global slash commands");
       } catch (err) {
-        this.logger.warn({ err, botId }, "Failed to register global commands");
+        this.logger.warn(
+          { err, applicationId },
+          "Failed to register global commands",
+        );
       }
       return;
     }
@@ -277,16 +446,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await Promise.allSettled(
       guildIds.map(async (guildId) => {
         try {
-          await rest.put(Routes.applicationGuildCommands(botId, guildId), {
-            body: commands,
-          });
+          await rest.put(
+            Routes.applicationGuildCommands(applicationId, guildId),
+            {
+              body: commands,
+            },
+          );
           this.logger.info(
-            { botId, guildId },
+            { applicationId, guildId },
             "Registered guild slash commands",
           );
         } catch (err) {
           this.logger.warn(
-            { err, botId, guildId },
+            { err, applicationId, guildId },
             "Failed to register guild commands",
           );
         }
@@ -309,6 +481,52 @@ function buildSlashCommands() {
           .setDescription("会话槽位（默认 0）")
           .setMinValue(0)
           .setRequired(false),
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("reset")
+      .setDescription("重置对话（创建新的 session）")
+      .addIntegerOption((option) =>
+        option
+          .setName("key")
+          .setDescription("会话槽位（默认 0）")
+          .setMinValue(0)
+          .setRequired(false),
+      )
+      .addUserOption((option) =>
+        option
+          .setName("user")
+          .setDescription("要重置的用户（默认自己；仅管理员可指定他人）")
+          .setRequired(false),
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("resetall")
+      .setDescription("重置全群对话（仅管理员）")
+      .addIntegerOption((option) =>
+        option
+          .setName("key")
+          .setDescription("会话槽位（默认 0）")
+          .setMinValue(0)
+          .setRequired(false),
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("model")
+      .setDescription("切换群模型（仅管理员）")
+      .addStringOption((option) =>
+        option
+          .setName("name")
+          .setDescription(
+            "模型名（OPENCODE_MODELS 白名单内的裸模型名，default 清除覆盖）",
+          )
+          .setRequired(true)
+          .addChoices(
+            { name: "default", value: "default" },
+            { name: "gemini-3-flash-preview", value: "gemini-3-flash-preview" },
+            { name: "doubao-1.8", value: "doubao-1.8" },
+            { name: "glm-4.7", value: "glm-4.7" },
+          ),
       )
       .toJSON(),
     new SlashCommandBuilder()

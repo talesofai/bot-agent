@@ -3,7 +3,7 @@ export { GroupStore } from "./store";
 export { RouterStore } from "./store/router";
 export { MessageDispatcher } from "./entry/message-dispatcher";
 export { EchoTracker } from "./entry/echo";
-export { createSession, buildSessionId } from "./session";
+export { createSession, generateSessionId } from "./session";
 export { SessionWorker, ShellOpencodeRunner } from "./worker";
 export { startHttpServer } from "./http/server";
 export type { HttpServer } from "./http/server";

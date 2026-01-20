@@ -3,7 +3,7 @@ import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import matter from "gray-matter";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { Logger } from "pino";
 
 import {
@@ -121,6 +121,13 @@ export class GroupFileRepository {
     const content = await readFile(configPath, "utf-8");
     const parsed = parseYaml(content);
     return GroupConfigSchema.parse(parsed);
+  }
+
+  async saveConfig(groupPath: string, config: GroupConfig): Promise<void> {
+    const configPath = join(groupPath, "config.yaml");
+    const validated = GroupConfigSchema.parse(config);
+    const payload = stringifyYaml(validated).trimEnd();
+    await writeFile(configPath, `${payload}\n`);
   }
 
   async loadAgentPrompt(groupPath: string): Promise<AgentContent> {

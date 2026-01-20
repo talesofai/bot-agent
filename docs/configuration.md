@@ -104,6 +104,7 @@ BOT_ID_ALIASES=
 
 `GROUPS_DATA_DIR` 必须指向持久化路径，避免容器重启后丢失群配置。
 会话数据默认存放在 `${GROUPS_DATA_DIR}/sessions/{botId}/{groupId}/{userId}/{sessionId}`，其中 `botId` 为 `{platform}-{canonicalBotId}`（canonical 部分由 `BOT_ID_ALIASES` 解析）。
+每个 `{userId}` 目录下会维护 `index.json`（会话槽位 `key` -> 当前 `sessionId` 映射），用于支持 `/reset` 创建新会话并与旧会话隔离上下文。
 
 ### 日志配置
 
@@ -242,7 +243,7 @@ keywordRouting: # 关键词路由开关（群级）
   enableBot: true # 是否允许机器人关键词
 echoRate: null # 复读概率（0-100），空为继承上一级
 maxSessions: 1 # 每个用户最大会话数
-model: gpt-5.2 # 可选：仅外部模式生效，且必须在 OPENCODE_MODELS 白名单内（裸模型名）
+model: glm-4.7 # 可选：仅外部模式生效，且必须在 OPENCODE_MODELS 白名单内（裸模型名）；也可用 /model 管理指令切换
 
 # 管理员配置
 adminUsers:

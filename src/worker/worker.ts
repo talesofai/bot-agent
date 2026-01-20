@@ -11,7 +11,7 @@ import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "./runner";
 import type { PlatformAdapter } from "../types/platform";
 import { SessionActivityStore } from "../session/activity-store";
-import { assertValidSessionKey, buildSessionId } from "../session/utils";
+import { assertValidSessionKey } from "../session/utils";
 import { assertSafePathSegment } from "../utils/path";
 import { SessionBufferStore } from "../session/buffer";
 import { SessionProcessor } from "../session/processor";
@@ -141,10 +141,6 @@ export class SessionWorker {
     assertSafePathSegment(jobData.sessionId, "sessionId");
     assertSafePathSegment(jobData.gateToken, "gateToken");
     assertValidSessionKey(jobData.key);
-    const derivedSessionId = buildSessionId(jobData.userId, jobData.key);
-    if (jobData.sessionId !== derivedSessionId) {
-      throw new Error("Session id mismatch for user/key");
-    }
     return jobData;
   }
 }

@@ -281,9 +281,18 @@ export class SessionProcessor {
           maxBytes: this.historyMaxBytes,
         })
       : [];
-    const visibleHistory = history.filter(
-      (entry) => entry.includeInContext !== false,
-    );
+    const visibleHistory = history.filter((entry) => {
+      if (entry.includeInContext === false) {
+        return false;
+      }
+      if (entry.groupId !== sessionInfo.meta.groupId) {
+        return false;
+      }
+      if (entry.sessionId !== sessionInfo.meta.sessionId) {
+        return false;
+      }
+      return true;
+    });
     const groupConfig = await this.getGroupConfig(groupId);
     const agentPrompt = await this.getAgentPrompt(groupId);
     const systemPrompt = buildSystemPrompt(agentPrompt);
@@ -324,6 +333,7 @@ export class SessionProcessor {
       groupId,
       userId,
       botId,
+      sessionId,
       key,
       groupRepository: this.groupRepository,
       sessionRepository: this.sessionRepository,
@@ -377,6 +387,7 @@ export class SessionProcessor {
       content: userContent,
       createdAt: userCreatedAt,
       groupId: sessionInfo.meta.groupId,
+      sessionId: sessionInfo.meta.sessionId,
     });
 
     if (streamEvents && streamEvents.length > 0) {
@@ -389,6 +400,7 @@ export class SessionProcessor {
           content: event.text,
           createdAt: nowIso,
           groupId: sessionInfo.meta.groupId,
+          sessionId: sessionInfo.meta.sessionId,
           includeInContext: false,
           trace: {
             source: "opencode",
@@ -406,6 +418,7 @@ export class SessionProcessor {
         ...nonUserEntries.map((entry) => ({
           ...entry,
           groupId: sessionInfo.meta.groupId,
+          sessionId: sessionInfo.meta.sessionId,
         })),
       );
     }
@@ -419,6 +432,7 @@ export class SessionProcessor {
         content: output,
         createdAt: nowIso,
         groupId: sessionInfo.meta.groupId,
+        sessionId: sessionInfo.meta.sessionId,
       });
     }
 

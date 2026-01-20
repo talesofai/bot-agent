@@ -8,6 +8,7 @@ export interface CreateSessionInput {
   groupId: string;
   botId: string;
   userId: string;
+  sessionId: string;
   key?: number;
   maxSessions?: number;
   groupRepository: GroupFileRepository;
@@ -21,11 +22,12 @@ export async function createSession(
   assertSafePathSegment(groupId, "groupId");
   assertSafePathSegment(botId, "botId");
   assertSafePathSegment(userId, "userId");
+  assertSafePathSegment(input.sessionId, "sessionId");
 
   const key = input.key ?? 0;
   assertValidSessionKey(key);
 
-  const sessionId = sessionRepository.getSessionId(userId, key);
+  const sessionId = input.sessionId;
   const existing = await sessionRepository.loadSession(
     input.botId,
     groupId,
@@ -57,6 +59,7 @@ export async function createSession(
     ownerId: userId,
     key,
     status: "idle",
+    active: true,
     createdAt: now,
     updatedAt: now,
   };

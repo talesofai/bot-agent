@@ -228,12 +228,14 @@ describe("SessionProcessor", () => {
       content: "visible",
       createdAt: now,
       groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
     });
     await historyStore.appendHistory(historyKey, {
       role: "system",
       content: "hidden",
       createdAt: now,
       groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
       includeInContext: false,
     });
 

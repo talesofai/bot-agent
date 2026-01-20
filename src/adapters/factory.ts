@@ -16,6 +16,7 @@ export function createPlatformAdapters(config: AppConfig): PlatformAdapter[] {
     adapters.push(
       new DiscordAdapter({
         token: discordToken,
+        applicationId: config.DISCORD_APPLICATION_ID,
       }),
     );
   }

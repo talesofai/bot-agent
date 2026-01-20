@@ -1,12 +1,19 @@
 import { constants } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import {
+  access,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
 
 import type { SessionInfo, SessionMeta } from "../types/session";
-import { buildSessionId } from "./utils";
-import { assertSafePathSegment } from "../utils/path";
+import { assertValidSessionKey, generateSessionId } from "./utils";
+import { assertSafePathSegment, isSafePathSegment } from "../utils/path";
 
 export interface SessionRepositoryOptions {
   dataDir: string;
@@ -33,8 +40,92 @@ export class SessionRepository {
     return join(this.dataDir, groupId);
   }
 
-  getSessionId(userId: string, key: number): string {
-    return buildSessionId(userId, key);
+  async listUserIds(botId: string, groupId: string): Promise<string[]> {
+    assertSafePathSegment(botId, "botId");
+    assertSafePathSegment(groupId, "groupId");
+
+    const groupSessionsPath = join(this.dataDir, "sessions", botId, groupId);
+    let entries;
+    try {
+      entries = await readdir(groupSessionsPath, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+
+    return entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => entry.name)
+      .filter((userId) => isSafePathSegment(userId));
+  }
+
+  async resolveActiveSessionId(
+    botId: string,
+    groupId: string,
+    userId: string,
+    key: number,
+  ): Promise<string> {
+    assertSafePathSegment(botId, "botId");
+    assertSafePathSegment(groupId, "groupId");
+    assertSafePathSegment(userId, "userId");
+    assertValidSessionKey(key);
+
+    const paths = this.buildUserPaths(botId, groupId, userId);
+    await mkdir(paths.userPath, { recursive: true });
+
+    const index = await this.readSessionIndex(paths.indexPath);
+    const keyStr = String(key);
+    const existing = index.active[keyStr];
+    if (existing && isSafePathSegment(existing)) {
+      const existingPaths = this.buildSessionPaths(
+        botId,
+        groupId,
+        userId,
+        existing,
+      );
+      const meta = await this.readMeta(existingPaths.metaPath);
+      if (!meta || meta.active !== false) {
+        return existing;
+      }
+    }
+
+    const sessionId = generateSessionId();
+    index.active[keyStr] = sessionId;
+    index.updatedAt = new Date().toISOString();
+    await this.writeSessionIndex(paths.indexPath, index);
+    return sessionId;
+  }
+
+  async resetActiveSessionId(
+    botId: string,
+    groupId: string,
+    userId: string,
+    key: number,
+  ): Promise<{ previousSessionId: string | null; sessionId: string }> {
+    assertSafePathSegment(botId, "botId");
+    assertSafePathSegment(groupId, "groupId");
+    assertSafePathSegment(userId, "userId");
+    assertValidSessionKey(key);
+
+    const paths = this.buildUserPaths(botId, groupId, userId);
+    await mkdir(paths.userPath, { recursive: true });
+
+    const index = await this.readSessionIndex(paths.indexPath);
+    const keyStr = String(key);
+    const previousSessionId = index.active[keyStr];
+
+    const sessionId = generateSessionId();
+    index.active[keyStr] = sessionId;
+    index.updatedAt = new Date().toISOString();
+    await this.writeSessionIndex(paths.indexPath, index);
+
+    return {
+      previousSessionId:
+        typeof previousSessionId === "string" &&
+        isSafePathSegment(previousSessionId)
+          ? previousSessionId
+          : null,
+      sessionId,
+    };
   }
 
   async loadSession(
@@ -105,6 +196,44 @@ export class SessionRepository {
       metaPath: join(sessionPath, "meta.json"),
       workspacePath: join(sessionPath, "workspace"),
     };
+  }
+
+  private buildUserPaths(
+    botId: string,
+    groupId: string,
+    userId: string,
+  ): { userPath: string; indexPath: string } {
+    assertSafePathSegment(botId, "botId");
+    assertSafePathSegment(groupId, "groupId");
+    assertSafePathSegment(userId, "userId");
+    const userPath = join(this.dataDir, "sessions", botId, groupId, userId);
+    return { userPath, indexPath: join(userPath, "index.json") };
+  }
+
+  private async readSessionIndex(indexPath: string): Promise<SessionIndexFile> {
+    const parsed = await readJsonFile(indexPath, sessionIndexSchema);
+    if (!parsed) {
+      return { version: 1, active: {} };
+    }
+    return {
+      version: 1,
+      active: parsed.active ?? {},
+      updatedAt: parsed.updatedAt,
+    };
+  }
+
+  private async writeSessionIndex(
+    indexPath: string,
+    index: SessionIndexFile,
+  ): Promise<void> {
+    const dir = dirname(indexPath);
+    const tmpPath = join(
+      dir,
+      `.${basename(indexPath)}.${process.pid}.${Date.now()}.tmp`,
+    );
+    const content = `${JSON.stringify(index, null, 2)}\n`;
+    await writeFile(tmpPath, content, "utf-8");
+    await rename(tmpPath, indexPath);
   }
 
   private async ensureSessionDir(paths: SessionPaths): Promise<void> {
@@ -179,6 +308,20 @@ export class SessionRepository {
   }
 }
 
+type SessionIndexFile = {
+  version: 1;
+  active: Record<string, string>;
+  updatedAt?: string;
+};
+
+const sessionIndexSchema = z
+  .object({
+    version: z.literal(1).default(1),
+    active: z.record(z.string(), z.string()).default({}),
+    updatedAt: z.string().optional(),
+  })
+  .passthrough();
+
 const sessionMetaSchema = z
   .object({
     sessionId: z.string(),
@@ -194,4 +337,18 @@ const sessionMetaSchema = z
 
 function isSessionMeta(value: unknown): value is SessionMeta {
   return sessionMetaSchema.safeParse(value).success;
+}
+
+async function readJsonFile<T>(
+  path: string,
+  schema: z.ZodType<T>,
+): Promise<T | null> {
+  try {
+    const raw = await readFile(path, "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
+    const validated = schema.safeParse(parsed);
+    return validated.success ? validated.data : null;
+  } catch {
+    return null;
+  }
 }

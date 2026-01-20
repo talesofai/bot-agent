@@ -1,7 +1,7 @@
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis from "ioredis";
 import { assertSafePathSegment } from "../utils/path";
-import { assertValidSessionKey, buildSessionId } from "../session/utils";
+import { assertValidSessionKey } from "../session/utils";
 
 export interface SessionJobData {
   botId: string;
@@ -55,12 +55,8 @@ export class BullmqSessionQueue {
     assertSafePathSegment(jobData.groupId, "groupId");
     assertSafePathSegment(jobData.userId, "userId");
     assertValidSessionKey(jobData.key);
+    assertSafePathSegment(jobData.sessionId, "sessionId");
     assertSafePathSegment(jobData.gateToken, "gateToken");
-    const derivedSessionId = buildSessionId(jobData.userId, jobData.key);
-    assertSafePathSegment(derivedSessionId, "sessionId");
-    if (jobData.sessionId !== derivedSessionId) {
-      throw new Error("Session id mismatch for user/key");
-    }
     const job = await this.queue.add("session-job", jobData, opts);
 
     return {

@@ -15,6 +15,10 @@
 - History：将 opencode 事件流中间态写入 Postgres（`includeInContext=false`），便于追踪但默认不进上下文
 - Discord：AI 处理期间发送 typing indicator（“正在输入”状态）
 - Discord：注册并支持 Slash Commands（`/ask`、`/ping`、`/help`）
+- Session：新增会话映射 `sessions/{botId}/{groupId}/{userId}/index.json`（`key -> sessionId`），支持创建新会话并封存旧会话
+- Session：新增管理指令 `/reset`（自己/指定用户/全群）用于创建新会话；旧会话仅允许通过 API 复用
+- GroupConfig：新增管理员指令 `/model` 切换群模型（仅外部模式生效且受 `OPENCODE_MODELS` 白名单约束）；支持 `/model default` 清除覆盖
+- Discord：Slash Commands 新增 `/reset`（可选 `user` 参数）与 `/resetall`
 
 ### Fixed
 
@@ -38,6 +42,8 @@
 - 文档：统一 sessions 路径描述并修正 bot-data PVC 说明，避免按旧目录查找导致“没生成会话目录”的误判
 - Session：处理缓冲消息失败时回滚并 `requeueFront`；发送失败会让 job 失败以触发 BullMQ 重试，避免消息丢失/静默失败
 - 图片：`url-access-check` 对图片默认增加最小分辨率校验（短边 ≥ 512px）并拒绝 Google 缩略图域名，避免“小图/糊图”
+- Discord：Slash Commands 注册使用 Application ID（`DISCORD_APPLICATION_ID`），避免误用 bot user id 导致注册失败
+- Session：防止通过篡改 `index.json` 复活已封存会话（`meta.active=false` 会触发自动轮转到新会话）
 
 ### Changed
 
@@ -48,6 +54,7 @@
 - 配置/部署：移除 `configs/secrets/.env`，统一使用单一 `configs/.env`（Compose/脚本/K8s/文档同步）
 - 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）
 - K8s：opencode-bot-agent 默认镜像改为阿里云仓库（`registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest`）
+- Session：`sessionId` 改为系统生成（不再使用 `{userId}-{key}`），并将 History 上下文过滤收敛到同一 `groupId + sessionId`
 
 ### Security
 

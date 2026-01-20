@@ -1,4 +1,4 @@
-import type { Message } from "discord.js";
+import { PermissionFlagsBits, type Message } from "discord.js";
 import type { SessionElement, SessionEvent } from "../../types/platform";
 import {
   appendTextElement,
@@ -11,6 +11,8 @@ export interface DiscordMessageExtras {
   channelId: string;
   guildId?: string;
   authorId: string;
+  isGuildOwner?: boolean;
+  isGuildAdmin?: boolean;
 }
 
 export function parseMessage(
@@ -29,6 +31,14 @@ export function parseMessage(
   const elements = buildElements(rawContent, message, botId);
   const content = extractTextFromElements(elements);
 
+  const isGuildOwner = Boolean(
+    message.guild && message.guild.ownerId === message.author.id,
+  );
+  const isGuildAdmin = Boolean(
+    message.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
+    message.member?.permissions?.has(PermissionFlagsBits.ManageGuild),
+  );
+
   return {
     type: "message",
     platform: "discord",
@@ -45,6 +55,8 @@ export function parseMessage(
       channelId: message.channelId,
       guildId: message.guildId ?? undefined,
       authorId: message.author.id,
+      isGuildOwner: message.guildId ? isGuildOwner : undefined,
+      isGuildAdmin: message.guildId ? isGuildAdmin : undefined,
     },
   };
 }

@@ -259,7 +259,7 @@ export class MessageDispatcher {
     const { message, groupId, botId, key, groupConfig, scope } = input;
 
     if (scope === "all") {
-      if (!groupConfig.adminUsers.includes(message.userId)) {
+      if (!isGroupAdminUser(message, groupConfig)) {
         await this.adapter.sendMessage(
           message,
           "无权限：仅管理员可重置全群会话。",
@@ -331,7 +331,7 @@ export class MessageDispatcher {
       await this.adapter.sendMessage(message, "目标用户不合法，无法重置。");
       return;
     }
-    const canResetOthers = groupConfig.adminUsers.includes(message.userId);
+    const canResetOthers = isGroupAdminUser(message, groupConfig);
     if (targetUserId !== message.userId && !canResetOthers) {
       await this.adapter.sendMessage(message, "无权限：你只能重置自己的会话。");
       return;
@@ -459,7 +459,7 @@ export class MessageDispatcher {
   }): Promise<void> {
     const { message, groupId, groupConfig, model } = input;
 
-    if (!groupConfig.adminUsers.includes(message.userId)) {
+    if (!isGroupAdminUser(message, groupConfig)) {
       await this.adapter.sendMessage(message, "无权限：仅管理员可切换模型。");
       return;
     }
@@ -668,4 +668,26 @@ function resolveResetTargetUserId(message: SessionEvent): {
     targetUserId: message.userId,
     error: "一次只能指定一个用户。",
   };
+}
+
+function isGroupAdminUser(
+  message: SessionEvent,
+  groupConfig: GroupConfig,
+): boolean {
+  if (groupConfig.adminUsers.includes(message.userId)) {
+    return true;
+  }
+  if (message.platform !== "discord" || !message.guildId) {
+    return false;
+  }
+  if (!isRecord(message.extras)) {
+    return false;
+  }
+  return (
+    message.extras.isGuildOwner === true || message.extras.isGuildAdmin === true
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

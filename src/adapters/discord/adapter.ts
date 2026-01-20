@@ -4,6 +4,7 @@ import {
   Client,
   GatewayIntentBits,
   Partials,
+  PermissionFlagsBits,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -35,6 +36,8 @@ export interface DiscordInteractionExtras {
   channelId: string;
   guildId?: string;
   userId: string;
+  isGuildOwner?: boolean;
+  isGuildAdmin?: boolean;
 }
 
 export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
@@ -374,6 +377,17 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
 
+    const isGuildOwner = Boolean(
+      interaction.guildId &&
+      interaction.guild &&
+      interaction.guild.ownerId === interaction.user.id,
+    );
+    const isGuildAdmin = Boolean(
+      interaction.guildId &&
+      (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)),
+    );
+
     const text = interaction.options.getString("text", true).trim();
     if (!text) {
       await safeReply(interaction, "请输入 text 参数。", { ephemeral: true });
@@ -410,6 +424,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         channelId,
         guildId: interaction.guildId ?? undefined,
         userId: interaction.user.id,
+        isGuildOwner: interaction.guildId ? isGuildOwner : undefined,
+        isGuildAdmin: interaction.guildId ? isGuildAdmin : undefined,
       },
     };
 

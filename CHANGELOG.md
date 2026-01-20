@@ -53,6 +53,7 @@
 - K8s：adapter 注入 `DISCORD_APPLICATION_ID`，避免 Slash Commands 注册被跳过
 - K8s：adapter 注入 `OPENCODE_MODELS`，确保 `/model` 白名单校验与 worker 行为一致
 - History：补齐 opencode 原始 stdout/stderr 中间态落库（`includeInContext=false`），便于排查“403/工具失败但日志缺失”
+- Discord：将服务器 owner/管理员权限视为群管理员，允许执行 `/resetall` 与 `/model`（无需额外配置 `adminUsers`）
 
 ### Changed
 

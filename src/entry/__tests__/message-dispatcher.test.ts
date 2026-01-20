@@ -1,6 +1,21 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import pino from "pino";
 
 import type { SessionEvent } from "../../types/platform";
+import type {
+  Bot,
+  MessageHandler,
+  PlatformAdapter,
+} from "../../types/platform";
+import type { BullmqSessionQueue } from "../../queue";
+import type { SessionBuffer, SessionBufferKey } from "../../session/buffer";
+import { GroupStore } from "../../store";
+import { SessionRepository } from "../../session";
+import { EchoTracker } from "../echo";
+import { MessageDispatcher } from "../message-dispatcher";
 import { resolveDispatchGroupId } from "../message-dispatcher";
 
 const baseMessage: SessionEvent = {
@@ -36,5 +51,176 @@ describe("resolveDispatchGroupId", () => {
     };
     const groupId = resolveDispatchGroupId(message);
     expect(groupId).toBe("0");
+  });
+});
+
+function makeTempDir(): string {
+  return mkdtempSync(join(tmpdir(), "message-dispatcher-test-"));
+}
+
+class MemoryAdapter implements PlatformAdapter {
+  platform = "test";
+  messages: string[] = [];
+
+  async connect(_bot: Bot): Promise<void> {}
+
+  async disconnect(_bot: Bot): Promise<void> {}
+
+  onEvent(_handler: MessageHandler): void {}
+
+  async sendMessage(_session: SessionEvent, content: string): Promise<void> {
+    this.messages.push(content);
+  }
+
+  getBotUserId(): string | null {
+    return null;
+  }
+}
+
+class NoopSessionBuffer implements SessionBuffer {
+  getGateTtlSeconds(): number {
+    return 60;
+  }
+
+  async append(_key: SessionBufferKey, _message: SessionEvent): Promise<void> {}
+
+  async requeueFront(): Promise<void> {}
+
+  async appendAndRequestJob(): Promise<string | null> {
+    return null;
+  }
+
+  async drain(): Promise<SessionEvent[]> {
+    return [];
+  }
+
+  async claimGate(): Promise<boolean> {
+    return true;
+  }
+
+  async refreshGate(): Promise<boolean> {
+    return true;
+  }
+
+  async tryReleaseGate(): Promise<boolean> {
+    return true;
+  }
+
+  async releaseGate(): Promise<boolean> {
+    return true;
+  }
+
+  async close(): Promise<void> {}
+}
+
+class MemoryEchoStore {
+  private data = new Map<string, string>();
+
+  async get(key: string): Promise<string | null> {
+    return this.data.get(key) ?? null;
+  }
+
+  async set(key: string, value: string): Promise<void> {
+    this.data.set(key, value);
+  }
+
+  async del(key: string): Promise<void> {
+    this.data.delete(key);
+  }
+
+  async close(): Promise<void> {}
+}
+
+describe("MessageDispatcher management commands", () => {
+  test("allows Discord guild owner to reset all even when adminUsers is empty", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const adapter = new MemoryAdapter();
+    const groupStore = new GroupStore({ dataDir: tempDir, logger });
+    await groupStore.init();
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+
+    const dispatcher = new MessageDispatcher({
+      adapter,
+      groupStore,
+      routerStore: null,
+      sessionRepository,
+      sessionQueue: {} as unknown as BullmqSessionQueue,
+      bufferStore: new NoopSessionBuffer(),
+      echoTracker: new EchoTracker({ store: new MemoryEchoStore() }),
+      logger,
+    });
+
+    try {
+      await dispatcher.dispatch({
+        type: "message",
+        platform: "discord",
+        selfId: "123",
+        userId: "999",
+        guildId: "guild1",
+        channelId: "channel1",
+        messageId: "msg1",
+        content: "/reset all",
+        elements: [
+          { type: "mention", userId: "123" },
+          { type: "text", text: "/reset all" },
+        ],
+        timestamp: Date.now(),
+        extras: { isGuildOwner: true },
+      });
+
+      expect(adapter.messages).toEqual(["当前没有可重置的用户会话。"]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects reset all when caller is not an admin", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const adapter = new MemoryAdapter();
+    const groupStore = new GroupStore({ dataDir: tempDir, logger });
+    await groupStore.init();
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+
+    const dispatcher = new MessageDispatcher({
+      adapter,
+      groupStore,
+      routerStore: null,
+      sessionRepository,
+      sessionQueue: {} as unknown as BullmqSessionQueue,
+      bufferStore: new NoopSessionBuffer(),
+      echoTracker: new EchoTracker({ store: new MemoryEchoStore() }),
+      logger,
+    });
+
+    try {
+      await dispatcher.dispatch({
+        type: "message",
+        platform: "discord",
+        selfId: "123",
+        userId: "999",
+        guildId: "guild1",
+        channelId: "channel1",
+        messageId: "msg1",
+        content: "/reset all",
+        elements: [
+          { type: "mention", userId: "123" },
+          { type: "text", text: "/reset all" },
+        ],
+        timestamp: Date.now(),
+        extras: {},
+      });
+
+      expect(adapter.messages).toEqual(["无权限：仅管理员可重置全群会话。"]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

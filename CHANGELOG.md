@@ -12,6 +12,7 @@
 - 文档：新增 0.0.29 Vision（配置语义收敛与可测试性）
 - Opencode：新增全局技能 `url-access-check`（脚本校验 URL/图片可访问性），并在每次运行前同步到会话 workspace 的 `.claude/skills/`，避免输出“不可用链接”
 - Opencode：新增全局技能 `wikimedia-image-search`（从 Wikimedia Commons 搜索并返回可访问的原图直链），用于稳定“找图/给图”链路
+- Opencode：新增全局技能 `bing-image-search`（从 Bing 图片结果提取原图直链并校验），用于在 Wikimedia 被 429 限流等场景下继续可用
 - 测试：新增 RouterStore 默认配置与 bot 配置落盘用例
 - History：将 opencode 事件流中间态写入 Postgres（`includeInContext=false`），便于追踪但默认不进上下文
 - Discord：AI 处理期间发送 typing indicator（“正在输入”状态）
@@ -44,6 +45,7 @@
 - Session：处理缓冲消息失败时回滚并 `requeueFront`；发送失败会让 job 失败以触发 BullMQ 重试，避免消息丢失/静默失败
 - 图片：`url-access-check` 对图片默认增加最小分辨率校验（短边 ≥ 768px）并拒绝 Google 缩略图域名，避免“小图/糊图”
 - 图片：`url-access-check` 的 curl 请求补齐浏览器 UA/Accept/压缩支持，减少站点对默认 curl UA 的 403 拦截
+- Skills：`*.sh` 脚本补齐可执行权限，避免 opencode 直接调用时出现 `Permission denied`
 - Discord：Slash Commands 注册使用 Application ID（`DISCORD_APPLICATION_ID`），避免误用 bot user id 导致注册失败
 - Session：防止通过篡改 `index.json` 复活已封存会话（`meta.active=false` 会触发自动轮转到新会话）
 - Discord：回复中的图片元素不再强制发送 embed；外链可下载则转附件，否则保留链接，避免“空图片框/说有图但没图”
@@ -58,6 +60,7 @@
 - Opencode：默认使用 yolo chat agent（全工具/全权限 allow）；可通过 `OPENCODE_YOLO=false` 降低权限（将不再显式指定 agent）
 - Opencode：system prompt 兜底改为更通用的默认提示词；私聊（groupId=0）默认也使用 `configs/default-agent.md`（如果存在）
 - Opencode：system prompt 硬性规则前置，并强制“找图/给图”只输出已验证的图片直链（禁止搜索页/集合页链接）
+- Opencode：找图默认优先使用 `bing-image-search`，避免 Wikimedia 图片域名被 429 限流导致无图
 - 默认 Agent：将 `configs/default-agent.md` 同步为 `data/奈塔system_prompt.md` 的系统级提示词内容
 - 配置/部署：移除 `configs/secrets/.env`，统一使用单一 `configs/.env`（Compose/脚本/K8s/文档同步）
 - 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）

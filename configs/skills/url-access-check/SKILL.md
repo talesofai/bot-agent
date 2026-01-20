@@ -14,7 +14,11 @@ description: 在回复中提供任何 URL（尤其是图片链接）前，用脚
 
 - **没跑过验证脚本，就别说“已验证/可用/能打开”。**
 - 验证失败：明确说明“在当前环境无法访问”，并要求用户提供可访问来源或让用户直接上传图片。
-- 图片链接必须满足：HTTP 2xx/3xx（可跟随重定向）且 `Content-Type` 为 `image/*`。
+- 图片链接必须满足：
+  - HTTP 2xx/3xx（可跟随重定向）
+  - `Content-Type` 为 `image/*`
+  - **默认短边分辨率 ≥ 512px**（避免“缩略图/糊图”）
+  - **禁止**使用 Google 缩略图域名（如 `encrypted-tbn0.gstatic.com` / `tbn*.gstatic.com`）
 
 ## 用法
 
@@ -22,5 +26,6 @@ description: 在回复中提供任何 URL（尤其是图片链接）前，用脚
   - `bash .claude/skills/url-access-check/scripts/check_url.sh <url>`
 - 图片 URL：
   - `bash .claude/skills/url-access-check/scripts/check_url.sh --image <url>`
+  - 可选：`bash .claude/skills/url-access-check/scripts/check_url.sh --image --min-short-side 768 <url>`
 
 脚本输出以 `OK` 开头才算通过。

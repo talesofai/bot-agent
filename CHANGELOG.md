@@ -36,6 +36,7 @@
 - 文档：README 补充历史/记录存放位置并修正 data 目录结构说明（移除 `history.sqlite` 描述，历史仅写入 Postgres）
 - 文档：统一 sessions 路径描述并修正 bot-data PVC 说明，避免按旧目录查找导致“没生成会话目录”的误判
 - Session：处理缓冲消息失败时回滚并 `requeueFront`；发送失败会让 job 失败以触发 BullMQ 重试，避免消息丢失/静默失败
+- 图片：`url-access-check` 对图片默认增加最小分辨率校验（短边 ≥ 512px）并拒绝 Google 缩略图域名，避免“小图/糊图”
 
 ### Changed
 

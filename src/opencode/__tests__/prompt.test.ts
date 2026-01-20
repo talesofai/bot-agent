@@ -15,6 +15,7 @@ describe("buildSystemPrompt", () => {
     expect(system).toContain("你是一个可靠的中文助理。");
     expect(system).toContain("硬性规则：");
     expect(system).toContain("url-access-check");
+    expect(system).toContain("--min-short-side");
   });
 });
 

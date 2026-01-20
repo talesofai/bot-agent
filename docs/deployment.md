@@ -215,6 +215,12 @@ spec:
                   name: llbot-secrets
                   key: DISCORD_APPLICATION_ID
                   optional: true
+            - name: OPENCODE_MODELS
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OPENCODE_MODELS
+                  optional: true
           volumeMounts:
             - name: data
               mountPath: /data

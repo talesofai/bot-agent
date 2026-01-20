@@ -56,6 +56,7 @@ DISCORD_APPLICATION_ID=
 
 > Adapter 进程默认连接 QQ 注册表；提供 `DISCORD_TOKEN` 时会同时连接 Discord。
 > Discord Slash Commands（`/ask`、`/reset` 等）需要额外配置 `DISCORD_APPLICATION_ID`（Discord 应用 ID），否则会跳过注册。
+> 管理指令 `/model` 会读取 `OPENCODE_MODELS` 白名单，请确保 Adapter 进程也注入了该环境变量。
 
 ### 队列配置
 

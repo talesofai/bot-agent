@@ -47,6 +47,7 @@
 - Discord：回复中的图片元素不再强制发送 embed；外链可下载则转附件，否则保留链接，避免“空图片框/说有图但没图”
 - Session：收到消息入队时预创建 `sessions/{botId}/{groupId}/{userId}/{sessionId}` 目录与 `meta.json`，避免仅在 worker 执行后才落盘
 - K8s：adapter 注入 `DISCORD_APPLICATION_ID`，避免 Slash Commands 注册被跳过
+- K8s：adapter 注入 `OPENCODE_MODELS`，确保 `/model` 白名单校验与 worker 行为一致
 
 ### Changed
 

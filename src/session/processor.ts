@@ -489,7 +489,9 @@ export class SessionProcessor {
     const launchSpec = await span(
       "build_launch_spec",
       async () =>
-        this.launcher.buildLaunchSpec(sessionInfo, prompt, groupConfig.model),
+        this.launcher.buildLaunchSpec(sessionInfo, prompt, groupConfig.model, {
+          traceId: telemetry?.traceId,
+        }),
       {
         promptBytes,
         historyEntries: visibleHistory.length,

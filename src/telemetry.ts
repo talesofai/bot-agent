@@ -6,6 +6,8 @@ const TRACE_ID_RE = /^[a-f0-9]{32}$/;
 
 export type TelemetryPhase = "adapter" | "worker";
 
+const SPAN_ID_RE = /^[a-f0-9]{16}$/;
+
 export interface TelemetrySpanInput {
   traceId: string;
   phase: TelemetryPhase;
@@ -31,6 +33,10 @@ export function createTraceId(): string {
   return randomBytes(16).toString("hex");
 }
 
+export function createSpanId(): string {
+  return randomBytes(8).toString("hex");
+}
+
 export function normalizeTraceId(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -44,6 +50,21 @@ export function normalizeTraceId(value: unknown): string | null {
 
 export function resolveTraceId(value: unknown): string {
   return normalizeTraceId(value) ?? createTraceId();
+}
+
+export function normalizeSpanId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!SPAN_ID_RE.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+export function resolveSpanId(value: unknown): string {
+  return normalizeSpanId(value) ?? createSpanId();
 }
 
 export function getTraceIdFromExtras(extras: unknown): string | null {
@@ -82,6 +103,17 @@ export function shouldEmitTelemetry(traceId: string): boolean {
   }
   const bucket = Number.parseInt(normalized.slice(-2), 16) / 255;
   return bucket < sampleRate;
+}
+
+export function createTraceparent(input: {
+  traceId: string;
+  spanId?: string;
+  sampled?: boolean;
+}): string {
+  const traceId = resolveTraceId(input.traceId);
+  const spanId = resolveSpanId(input.spanId);
+  const traceFlags = input.sampled === false ? "00" : "01";
+  return `00-${traceId}-${spanId}-${traceFlags}`;
 }
 
 export async function withTelemetrySpan<T>(

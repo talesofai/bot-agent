@@ -100,6 +100,68 @@ describe("OpencodeLauncher external mode", () => {
     }
   });
 
+  test("attaches trace headers to litellm requests when traceId is provided", async () => {
+    const tempHome = mkdtempSync(path.join(tmpdir(), "opencode-home-"));
+    const prevEnv = pickEnv([
+      "HOME",
+      "OPENAI_BASE_URL",
+      "OPENAI_API_KEY",
+      "OPENCODE_MODELS",
+    ]);
+    let generatedHome: string | undefined;
+
+    try {
+      process.env.HOME = tempHome;
+      process.env.OPENAI_BASE_URL = "http://127.0.0.1:8124/v1";
+      process.env.OPENAI_API_KEY = "sk-test";
+      process.env.OPENCODE_MODELS = "gpt-5.2,gpt-5.1";
+
+      resetConfig();
+      const launcher = new OpencodeLauncher();
+      const traceId = "040f7b70e5933b5ebb0155c02319d6a4";
+      const spec = await launcher.buildLaunchSpec(
+        makeSessionInfo(),
+        "hello",
+        "gpt-5.1",
+        { traceId },
+      );
+
+      const resolvedHome = spec.env?.HOME;
+      if (!resolvedHome) {
+        throw new Error(
+          "Expected OpencodeLauncher to set HOME for external mode",
+        );
+      }
+      generatedHome = resolvedHome;
+
+      const configPath = path.join(
+        resolvedHome,
+        ".config",
+        "opencode",
+        "opencode.json",
+      );
+
+      const configJson = JSON.parse(
+        readFileSync(configPath, "utf8"),
+      ) as OpencodeConfig;
+
+      for (const model of ["gpt-5.2", "gpt-5.1"]) {
+        const entry = configJson.provider.litellm.models[model];
+        expect(entry.headers?.["x-opencode-trace-id"]).toBe(traceId);
+        expect(entry.headers?.traceparent).toMatch(
+          /^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/,
+        );
+      }
+    } finally {
+      restoreEnv(prevEnv);
+      resetConfig();
+      if (generatedHome) {
+        rmSync(generatedHome, { recursive: true, force: true });
+      }
+      rmSync(tempHome, { recursive: true, force: true });
+    }
+  });
+
   test("falls back to the first allowed model when override is invalid", async () => {
     const tempHome = mkdtempSync(path.join(tmpdir(), "opencode-home-"));
     const prevEnv = pickEnv([
@@ -161,7 +223,10 @@ type OpencodeConfig = {
       options: {
         baseURL: string;
       };
-      models: Record<string, { name: string }>;
+      models: Record<
+        string,
+        { name: string; headers?: Record<string, string> | undefined }
+      >;
     };
   };
 };

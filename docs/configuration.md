@@ -26,6 +26,9 @@ OPENCODE_MODELS=gpt-5.2,gpt-5.1
 - `OPENCODE_MODELS` 为逗号分隔的“裸模型名”，内部会拼为 `litellm/<name>` 传给 opencode。
 - 群配置里的 `model` 仅在外部模式生效，且必须在 `OPENCODE_MODELS` 白名单内。
 - `OPENCODE_YOLO` 默认开启（true）：使用内置 `chat-yolo-responder` agent（全工具/全权限 allow）。如需降低权限，可设置为 `false/0`（将不再显式指定 agent）。
+- 外部模式下会自动给 LiteLLM 请求附带追踪头，便于和网关/上游日志串联：
+  - `traceparent`（W3C Trace Context）
+  - `x-opencode-trace-id`（与 `telemetry.span` 的 `traceId` 相同）
 
 ### 连接配置
 

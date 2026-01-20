@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { getConfig } from "../config";
 import type { SessionInfo } from "../types/session";
+import { createTraceparent, shouldEmitTelemetry } from "../telemetry";
 import { ensureOpencodeSkills } from "./skills";
 
 export interface OpencodeLaunchSpec {
@@ -21,6 +22,9 @@ export class OpencodeLauncher {
     sessionInfo: SessionInfo,
     prompt: string,
     modelOverride?: string,
+    telemetry?: {
+      traceId?: string;
+    },
   ): Promise<OpencodeLaunchSpec> {
     const config = getConfig();
     const maxPromptBytes = config.OPENCODE_PROMPT_MAX_BYTES;
@@ -48,6 +52,12 @@ export class OpencodeLauncher {
       groupId: sessionInfo.meta.groupId,
       botId: sessionInfo.meta.botId,
     });
+
+    const traceId = telemetry?.traceId?.trim();
+    const traceHeaders =
+      traceId && traceId.length > 0
+        ? buildLitellmTraceHeaders(traceId)
+        : undefined;
 
     let opencodeHomeDir: string | null = null;
     if (externalModeEnabled) {
@@ -77,6 +87,7 @@ export class OpencodeLauncher {
           modelOverride,
           env,
           homeDir: opencodeHomeDir!,
+          traceHeaders,
         })
       : prepareDefaultMode(env);
 
@@ -103,6 +114,7 @@ type ExternalModeInput = {
   modelOverride?: string;
   env: Record<string, string | null>;
   homeDir: string;
+  traceHeaders?: Record<string, string>;
 };
 
 const CHAT_AGENT_NAME = "chat-yolo-responder";
@@ -168,7 +180,9 @@ async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
 
   await Promise.all([
     upsertAuthFile(authPath, input.apiKey),
-    writeOpencodeConfig(configPath, input.baseUrl, allowedModels),
+    writeOpencodeConfig(configPath, input.baseUrl, allowedModels, {
+      headers: input.traceHeaders,
+    }),
   ]);
 
   input.env.OPENCODE_CONFIG = configPath;
@@ -268,10 +282,26 @@ async function writeOpencodeConfig(
   configPath: string,
   baseUrl: string,
   models: string[],
+  options?: {
+    headers?: Record<string, string>;
+  },
 ): Promise<void> {
   await mkdir(path.dirname(configPath), { recursive: true });
 
-  const modelEntries = models.map((model) => [model, { name: model }] as const);
+  const modelHeaders =
+    options?.headers && Object.keys(options.headers).length > 0
+      ? options.headers
+      : undefined;
+  const modelEntries = models.map(
+    (model) =>
+      [
+        model,
+        {
+          name: model,
+          ...(modelHeaders ? { headers: modelHeaders } : {}),
+        },
+      ] as const,
+  );
   const config = {
     $schema: "https://opencode.ai/config.json",
     provider: {
@@ -285,6 +315,17 @@ async function writeOpencodeConfig(
     },
   };
   await writeJsonAtomic(configPath, config, 0o600);
+}
+
+function buildLitellmTraceHeaders(traceId: string): Record<string, string> {
+  const normalized = traceId.trim().toLowerCase();
+  return {
+    traceparent: createTraceparent({
+      traceId: normalized,
+      sampled: shouldEmitTelemetry(normalized),
+    }),
+    "x-opencode-trace-id": normalized,
+  };
 }
 
 async function writeChatAgent(agentPath: string): Promise<void> {

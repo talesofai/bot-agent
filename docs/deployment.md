@@ -185,6 +185,7 @@ Adapter 与 Worker 分离部署，入口命令分别为 `start:adapter` / `start
 - 建议独立 Deployment + Service（例如 `opencode-server:4096`）
 - **必须挂载同一份 RWX `/data`**，并设置 `HOME=/data/opencode-home` 让 opencode 的 `~/.local/share/opencode` 会话存储在共享卷上
 - 可选：设置 `OPENCODE_SERVER_PASSWORD` 启用 Basic Auth，并同步配置 Worker 的 `OPENCODE_SERVER_USERNAME/OPENCODE_SERVER_PASSWORD`
+- 若需要 Web UI 查看 sessions：确保 server 启动参数允许 `https://app.opencode.ai` 的 CORS（本仓库示例已加），然后通过 Ingress 或 `kubectl port-forward svc/opencode-server 4096:4096` 暴露端口
 
 ```yaml
 # deployments/k8s/opencode-bot-agent-adapter.yaml（示例）

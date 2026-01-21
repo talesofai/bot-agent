@@ -201,7 +201,9 @@ services:
           /usr/local/bun/install/global/node_modules/opencode-linux-x64/bin/opencode \
           /usr/local/bun/install/global/node_modules/opencode-linux-x64-musl/bin/opencode; do
           if [ -x "$c" ]; then
-            exec "$c" serve --hostname 0.0.0.0 --port 4096
+            exec "$c" serve --hostname 0.0.0.0 --port 4096 \
+              --cors https://app.opencode.ai \
+              --cors https://opencode.ai
           fi
         done
 

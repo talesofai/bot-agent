@@ -45,6 +45,14 @@ OPENCODE_SERVER_TIMEOUT_MS=600000
 - opencode server 需要共享 `~/.local/share/opencode`（XDG data）与 `~/.config/opencode`（XDG config）；推荐把 `HOME` 指到 RWX 共享卷（例如 `/data/opencode-home`）
 - Worker 传入的 `x-opencode-directory` 必须在 opencode server 容器内可访问（因此 server 也要挂载同一份 `/data`）
 
+查看 sessions（Web UI）：
+
+- opencode 官方提供 Web 客户端 `https://app.opencode.ai`，可 attach 到你部署的 opencode server 查看 sessions。
+- server 需要允许该域名的 CORS；本仓库的 Compose/K8s 示例已在 `opencode serve` 启动参数中加入：
+  - `--cors https://app.opencode.ai`
+  - `--cors https://opencode.ai`
+- 若你自行启动 server，请确保也带上以上 `--cors` 参数（以及生产环境务必设置 `OPENCODE_SERVER_PASSWORD`）。
+
 ### Opencode 模型模式
 
 默认模式下，Bot Agent **不需要任何 API Key**，并强制使用 opencode 自带的 `opencode/glm-4.7-free`。

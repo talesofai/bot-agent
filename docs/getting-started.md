@@ -85,7 +85,9 @@ psql "$DATABASE_URL" -f deployments/docker/postgres-init/001-history-entries.sql
 ```bash
 # 终端 0：启动 opencode server（默认端口 4096）
 OPENCODE_SERVER_PASSWORD=... \\
-opencode serve --hostname 127.0.0.1 --port 4096
+opencode serve --hostname 127.0.0.1 --port 4096 \\
+  --cors https://app.opencode.ai \\
+  --cors https://opencode.ai
 
 # 终端 1
 CONFIG_PATH=configs/.env bun run start:adapter
@@ -95,6 +97,11 @@ CONFIG_PATH=configs/.env bun run start:worker
 ```
 
 本地运行需要 `opencode` 已安装（用于启动 `opencode serve`）。
+
+如果你需要在浏览器里查看 opencode sessions：
+
+- 先确保 server 启动时允许 CORS（上面的 `--cors https://app.opencode.ai` 已包含）
+- 然后打开 `https://app.opencode.ai`，按页面提示 attach 到 `http://localhost:4096`
 
 可选：验证本地连通性（WebUI + Milky）：
 

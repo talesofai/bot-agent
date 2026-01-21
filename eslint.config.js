@@ -5,10 +5,13 @@ export default [
   {
     ignores: [
       ".bun/**",
+      ".tmp/**",
       "data/**",
       "dist/**",
       "node_modules/**",
       "example/**",
+      "test-results/**",
+      "tests/**",
       "commitlint.config.js",
     ],
   },

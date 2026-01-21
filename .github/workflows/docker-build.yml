@@ -45,6 +45,9 @@ jobs:
         with:
           context: .
           file: ./deployments/docker/Dockerfile
+          build-args: |
+            OPENCODE_AI_VERSION=latest
+            OPENCODE_INSTALL_CACHE_BUST=${{ github.sha }}
           cache-from: type=gha,scope=build
           cache-to: type=gha,mode=min,scope=build
           push: true

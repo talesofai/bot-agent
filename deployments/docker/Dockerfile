@@ -41,9 +41,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Install opencode CLI from npm to pick the correct platform binary
-RUN bun install -g opencode-ai@latest --ignore-scripts \
-  && bun install -g opencode-linux-x64@latest --ignore-scripts
+# Install opencode CLI from npm to pick the correct platform binary.
+# NOTE: CI enables cache, so we pass a changing build-arg to ensure `@latest` isn't stuck on an old layer.
+ARG OPENCODE_AI_VERSION=latest
+ARG OPENCODE_INSTALL_CACHE_BUST=0
+RUN echo "opencode install cache bust: ${OPENCODE_INSTALL_CACHE_BUST}" \
+  && bun install -g "opencode-ai@${OPENCODE_AI_VERSION}" --ignore-scripts \
+  && bun install -g "opencode-linux-x64@${OPENCODE_AI_VERSION}" --ignore-scripts
 
 # Copy app artifacts
 COPY --from=builder /app/src /app/src

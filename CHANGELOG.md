@@ -140,6 +140,7 @@
 - SessionProcessor：上下文改为“群窗口（当前群最近 N 条）+ 跨群记忆（其他群/私聊最近 N 条）”，避免别的群记录挤占当前对话窗口
 - Docker：补齐 `.dockerignore` 并收敛 Dockerfile 复制范围，避免把本地 `data/` 与 `.env` 等打进镜像
 - Docker：`opencode-linux-x64` 改为 `@latest`，避免与 `opencode-ai@latest` 混用导致版本漂移
+- Docker/CI：opencode 安装步骤引入 cache bust，避免 Docker build 缓存把 `opencode-ai@latest` 卡在旧版本，修复 opencode Web UI 不显示历史 sessions/模型列表
 - Typecheck：关闭 `skipLibCheck` 并补齐 `node:util`/`node:tls` 类型兼容层，确保 `tsc --noEmit` 全量检查通过
 - TypeScript：移除 `tsconfig.json` 中无关的 `jsx`/`allowJs` 选项，减少配置噪音
 - Docker Compose：移除无效的 `PLATFORM=qq` 配置，避免误导（代码不读取该 env）

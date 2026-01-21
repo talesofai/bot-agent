@@ -471,13 +471,7 @@ function buildSlashCommands() {
           .setDescription(
             "模型名（OPENCODE_MODELS 白名单内的裸模型名，default 清除覆盖）",
           )
-          .setRequired(true)
-          .addChoices(
-            { name: "default", value: "default" },
-            { name: "gemini-3-flash-preview", value: "gemini-3-flash-preview" },
-            { name: "doubao-1.8", value: "doubao-1.8" },
-            { name: "glm-4.7", value: "glm-4.7" },
-          ),
+          .setRequired(true),
       )
       .toJSON(),
     new SlashCommandBuilder()

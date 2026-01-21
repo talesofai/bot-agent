@@ -21,6 +21,15 @@ spec:
                 name: opencode-server
                 port:
                   number: 4096
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: opencode-server
+                port:
+                  number: 4096
   tls:
     - hosts:
         - bot-opencode-web.talesofai.cn

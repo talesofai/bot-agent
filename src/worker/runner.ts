@@ -39,21 +39,7 @@ export class ShellOpencodeRunner implements OpencodeRunner {
         finalArgs = injectPromptFile(args, promptPath);
       }
 
-      const spawnEnv: Record<string, string> = {};
-      for (const [key, value] of Object.entries(process.env)) {
-        if (typeof value === "string") {
-          spawnEnv[key] = value;
-        }
-      }
-      if (env) {
-        for (const [key, value] of Object.entries(env)) {
-          if (value === null) {
-            delete spawnEnv[key];
-            continue;
-          }
-          spawnEnv[key] = value;
-        }
-      }
+      const spawnEnv = buildOpencodeSpawnEnv(env);
 
       // Opencode runs as a Go process; spawn keeps IO controllable and avoids blocking.
       const child = Bun.spawn([command, ...finalArgs], {
@@ -149,4 +135,52 @@ export class NoopOpencodeRunner implements OpencodeRunner {
   async run(): Promise<OpencodeRunResult> {
     return {};
   }
+}
+
+const OPENCODE_SPAWN_ENV_ALLOWLIST = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LANGUAGE",
+  "TZ",
+  "TERM",
+  "COLORTERM",
+  "NODE_ENV",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "NODE_EXTRA_CA_CERTS",
+]);
+
+function buildOpencodeSpawnEnv(
+  overrides: Record<string, string | null> | undefined,
+): Record<string, string> {
+  const spawnEnv: Record<string, string> = {};
+  for (const key of OPENCODE_SPAWN_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.trim()) {
+      spawnEnv[key] = value;
+    }
+  }
+
+  if (overrides) {
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value === null) {
+        delete spawnEnv[key];
+        continue;
+      }
+      if (typeof value === "string") {
+        spawnEnv[key] = value;
+      }
+    }
+  }
+
+  return spawnEnv;
 }

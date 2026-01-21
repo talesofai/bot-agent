@@ -7,6 +7,7 @@
 - 只提交模板文件，不提交真实 secret。
 - 本地与集群的真实 secret 由开发者自行创建。
 - 避免把 `WEBUI_TOKEN`、API Key 等写进源码或公开配置。
+- Worker 启动 opencode 子进程时仅白名单透传环境变量；除显式注入项（如 `OPENCODE_CONFIG`、`NIETA_TOKEN`）外，其它环境变量不会自动传给模型进程。
 
 ## 文件约定
 

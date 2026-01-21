@@ -151,6 +151,7 @@ MCP_TALESOFAI_URL=https://mcp.talesofai.cn/mcp
 # talesofai MCP 鉴权 token（请求头 x-token）
 # - 可直接在环境变量里配置（推荐）
 # - 或使用 /login 写入“当前会话”并在会话内覆盖
+# 注意：Worker 启动 opencode 子进程时仅白名单透传环境变量；未在白名单内的 env 不会传给 opencode。
 NIETA_TOKEN=
 
 ```

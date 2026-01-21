@@ -1,5 +1,6 @@
 import type { HistoryEntry } from "../types/session";
 import type { SessionEvent } from "../types/platform";
+import { appendInputAuditIfSuspicious } from "./input-audit";
 
 export interface OpencodePromptInput {
   systemPrompt: string;
@@ -35,7 +36,7 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
 
   const userInput = input.input.trim();
   if (userInput) {
-    sections.push(`User:\n${userInput}`);
+    sections.push(`User:\n${appendInputAuditIfSuspicious(userInput)}`);
   }
 
   return sections.join("\n\n");

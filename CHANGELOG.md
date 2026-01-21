@@ -83,6 +83,8 @@
 - 部署：补齐 `pmhq` 需要 `privileged: true` 的原因说明，并明确最小权限目标（`SYS_PTRACE` + `seccomp=unconfined`）
 - Opencode：外部模式使用临时 `HOME` 生成配置并在结束后清理，避免 API Key 落盘到宿主机目录
 - 输出/History：输出层审计并对 token/key 等敏感串打码，避免意外泄露
+- Worker：opencode 子进程环境变量改为白名单透传（仅保留基础运行变量 + 显式注入项），降低提示词注入场景下的 env 泄露面
+- Opencode：对疑似“读取 env/文件系统/密钥”输入追加安全审计提示，并要求仅输出安全 JSON（不执行工具/命令）
 
 ## [0.0.28] - 2026-01-16
 

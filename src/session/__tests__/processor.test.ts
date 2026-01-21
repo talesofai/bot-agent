@@ -17,16 +17,65 @@ import type {
   Bot,
   MessageHandler,
 } from "../../types/platform";
-import { OpencodeLauncher } from "../../opencode/launcher";
 import { InMemoryHistoryStore } from "../history";
 import { SessionRepository } from "../repository";
 import { SessionProcessor } from "../processor";
 import type { SessionActivityIndex } from "../activity-store";
 import type { SessionBuffer, SessionBufferKey } from "../buffer";
 import { buildBotAccountId } from "../../utils/bot-id";
+import type { OpencodeClient } from "../../opencode/server-client";
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "session-processor-test-"));
+}
+
+class FakeOpencodeClient implements OpencodeClient {
+  private sessions = new Set<string>();
+  private counter = 0;
+
+  async createSession(input: {
+    directory: string;
+    title?: string;
+    parentID?: string;
+    signal?: AbortSignal;
+  }): Promise<{ id: string }> {
+    void input.directory;
+    void input.title;
+    void input.parentID;
+    void input.signal;
+    this.counter += 1;
+    const id = `ses_test_${this.counter}`;
+    this.sessions.add(id);
+    return { id };
+  }
+
+  async getSession(input: {
+    directory: string;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<{ id: string } | null> {
+    void input.directory;
+    void input.signal;
+    return this.sessions.has(input.sessionId) ? { id: input.sessionId } : null;
+  }
+
+  async prompt(input: {
+    directory: string;
+    sessionId: string;
+    body: unknown;
+    signal?: AbortSignal;
+  }): Promise<{
+    info: { id: string; sessionID: string; role: "assistant" };
+    parts: Array<{ type: string; text?: string }>;
+  }> {
+    void input.directory;
+    void input.body;
+    void input.signal;
+    return {
+      info: { id: "msg_test", sessionID: input.sessionId, role: "assistant" },
+      parts: [{ type: "text", text: "ok" }],
+    };
+  }
 }
 
 class MemoryAdapter implements PlatformAdapter {
@@ -202,7 +251,7 @@ describe("SessionProcessor", () => {
     const adapter = new MemoryAdapter();
     const activityIndex = new MemoryActivityIndex();
     const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
-    const launcher = new OpencodeLauncher();
+    const opencodeClient = new FakeOpencodeClient();
 
     const jobData: SessionJobData = {
       botId: "qq-123",
@@ -264,7 +313,7 @@ describe("SessionProcessor", () => {
       groupRepository,
       sessionRepository,
       historyStore,
-      launcher,
+      opencodeClient,
       runner,
       activityIndex,
       bufferStore,
@@ -346,7 +395,7 @@ describe("SessionProcessor", () => {
     const adapter = new MemoryAdapter();
     const activityIndex = new MemoryActivityIndex();
     const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
-    const launcher = new OpencodeLauncher();
+    const opencodeClient = new FakeOpencodeClient();
 
     const jobData: SessionJobData = {
       botId: "qq-123",
@@ -415,7 +464,7 @@ describe("SessionProcessor", () => {
       groupRepository,
       sessionRepository,
       historyStore,
-      launcher,
+      opencodeClient,
       runner,
       activityIndex,
       bufferStore,
@@ -486,7 +535,7 @@ describe("SessionProcessor", () => {
     const adapter = new MemoryAdapter();
     const activityIndex = new MemoryActivityIndex();
     const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
-    const launcher = new OpencodeLauncher();
+    const opencodeClient = new FakeOpencodeClient();
 
     const jobData: SessionJobData = {
       botId: "qq-123",
@@ -540,7 +589,7 @@ describe("SessionProcessor", () => {
       groupRepository,
       sessionRepository,
       historyStore,
-      launcher,
+      opencodeClient,
       runner,
       activityIndex,
       bufferStore,
@@ -574,7 +623,7 @@ describe("SessionProcessor", () => {
     const adapter = new MemoryAdapter();
     const activityIndex = new MemoryActivityIndex();
     const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
-    const launcher = new OpencodeLauncher();
+    const opencodeClient = new FakeOpencodeClient();
 
     const jobData: SessionJobData = {
       botId: "qq-123",
@@ -628,7 +677,7 @@ describe("SessionProcessor", () => {
       groupRepository,
       sessionRepository,
       historyStore,
-      launcher,
+      opencodeClient,
       runner,
       activityIndex,
       bufferStore,
@@ -663,7 +712,7 @@ describe("SessionProcessor", () => {
     const adapter = new MemoryAdapter();
     const activityIndex = new MemoryActivityIndex();
     const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
-    const launcher = new OpencodeLauncher();
+    const opencodeClient = new FakeOpencodeClient();
 
     const jobData: SessionJobData = {
       botId: "qq-123",
@@ -721,7 +770,7 @@ describe("SessionProcessor", () => {
       groupRepository,
       sessionRepository,
       historyStore,
-      launcher,
+      opencodeClient,
       runner,
       activityIndex,
       bufferStore,

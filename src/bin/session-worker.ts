@@ -1,7 +1,8 @@
 import { getConfig } from "../config";
 import { logger } from "../logger";
 import { createPlatformAdapters, MultiAdapter } from "../adapters";
-import { ShellOpencodeRunner, SessionWorker } from "../worker";
+import { OpencodeServerRunner, SessionWorker } from "../worker";
+import { OpencodeServerClient } from "../opencode/server-client";
 import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 import { getBotIdAliasMap } from "../utils/bot-id";
@@ -51,6 +52,13 @@ async function main(): Promise<void> {
     logger,
   });
 
+  const opencodeClient = new OpencodeServerClient({
+    baseUrl: config.OPENCODE_SERVER_URL,
+    username: config.OPENCODE_SERVER_USERNAME,
+    password: config.OPENCODE_SERVER_PASSWORD,
+    timeoutMs: config.OPENCODE_SERVER_TIMEOUT_MS,
+  });
+
   const bot: Bot = {
     platform: adapter.platform,
     selfId: "",
@@ -68,6 +76,7 @@ async function main(): Promise<void> {
     dataDir: config.GROUPS_DATA_DIR,
     adapter,
     databaseUrl: config.DATABASE_URL,
+    opencodeClient,
     redis: {
       url: config.REDIS_URL,
     },
@@ -79,7 +88,7 @@ async function main(): Promise<void> {
       userMemoryEntries: config.HISTORY_USER_MEMORY_MAX_ENTRIES,
       historyBytes: config.HISTORY_MAX_BYTES,
     },
-    runner: new ShellOpencodeRunner(),
+    runner: new OpencodeServerRunner(opencodeClient),
     logger,
   });
 

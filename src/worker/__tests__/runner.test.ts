@@ -1,39 +1,54 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
-import type { SessionJob } from "../../queue";
-import type { SessionInfo } from "../../types/session";
-import { ShellOpencodeRunner } from "../runner";
+import type { OpencodeClient } from "../../opencode/server-client";
+import { OpencodeServerRunner } from "../runner";
 
-describe("ShellOpencodeRunner", () => {
-  test("injects prompt file after positional message", async () => {
-    const tempDir = await mkdtemp(path.join(tmpdir(), "runner-test-"));
-    const scriptPath = path.join(tempDir, "fake-opencode.ts");
+function createFakeClient(responseText: string | null): {
+  client: OpencodeClient;
+  calls: Array<{ directory: string; sessionId: string; body: unknown }>;
+} {
+  const calls: Array<{ directory: string; sessionId: string; body: unknown }> =
+    [];
 
-    try {
-      await writeFile(
-        scriptPath,
-        [
-          'import { existsSync } from "node:fs";',
-          "",
-          "const args = process.argv.slice(2);",
-          'const fileIndex = args.indexOf("--file");',
-          "const filePath = fileIndex >= 0 ? args[fileIndex + 1] : null;",
-          "const payload = {",
-          "  args,",
-          "  filePathExists: filePath ? existsSync(filePath) : false,",
-          "};",
-          "console.log(JSON.stringify({ output: JSON.stringify(payload) }));",
-          "",
-        ].join("\n"),
-        { encoding: "utf8" },
-      );
+  const client: OpencodeClient = {
+    async createSession() {
+      return { id: "ses_test" };
+    },
+    async getSession() {
+      return { id: "ses_test" };
+    },
+    async prompt(input) {
+      calls.push({
+        directory: input.directory,
+        sessionId: input.sessionId,
+        body: input.body,
+      });
+      return {
+        info: {
+          id: "msg_test",
+          sessionID: input.sessionId,
+          role: "assistant",
+        },
+        parts:
+          responseText === null
+            ? []
+            : [
+                { type: "text", text: responseText },
+                { type: "meta", ignored: true },
+              ],
+      };
+    },
+  };
 
-      const runner = new ShellOpencodeRunner();
-      const message = "this-is-the-message";
-      const job: SessionJob = {
+  return { client, calls };
+}
+
+describe("OpencodeServerRunner", () => {
+  test("extracts assistant text and emits history entry", async () => {
+    const { client, calls } = createFakeClient("hello");
+    const runner = new OpencodeServerRunner(client);
+    const result = await runner.run({
+      job: {
         id: "job",
         data: {
           botId: "bot",
@@ -43,8 +58,8 @@ describe("ShellOpencodeRunner", () => {
           key: 0,
           gateToken: "gate",
         },
-      };
-      const session: SessionInfo = {
+      },
+      session: {
         meta: {
           sessionId: "session",
           groupId: "group",
@@ -55,62 +70,35 @@ describe("ShellOpencodeRunner", () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
-        groupPath: tempDir,
-        workspacePath: tempDir,
-      };
-      const result = await runner.run({
-        job,
-        session,
-        history: [],
-        launchSpec: {
-          command: process.execPath,
-          args: [scriptPath, "run", message],
-          cwd: tempDir,
-          prompt: "hello from prompt",
+        groupPath: "/tmp",
+        workspacePath: "/tmp",
+      },
+      history: [],
+      request: {
+        directory: "/tmp/workspace",
+        sessionId: "ses_test",
+        body: {
+          system: "sys",
+          parts: [{ type: "text", text: "user" }],
         },
-      });
+      },
+    });
 
-      expect(result.output).toBeTruthy();
-      const payload = JSON.parse(result.output as string) as {
-        args: string[];
-        filePathExists: boolean;
-      };
-
-      const messageIndex = payload.args.indexOf(message);
-      const fileIndex = payload.args.indexOf("--file");
-      expect(messageIndex).toBeGreaterThanOrEqual(0);
-      expect(fileIndex).toBeGreaterThanOrEqual(0);
-      expect(messageIndex).toBeLessThan(fileIndex);
-      expect(payload.filePathExists).toBe(true);
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(result.output).toBe("hello");
+    expect(result.historyEntries?.[0]?.role).toBe("assistant");
+    expect(result.historyEntries?.[0]?.content).toBe("hello");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      directory: "/tmp/workspace",
+      sessionId: "ses_test",
+    });
   });
 
-  test("only passes allowlisted env plus explicit overrides", async () => {
-    const prevSecret = process.env.RUNNER_TEST_SECRET;
-    process.env.RUNNER_TEST_SECRET = "should-not-leak";
-
-    const tempDir = await mkdtemp(path.join(tmpdir(), "runner-env-test-"));
-    const scriptPath = path.join(tempDir, "fake-opencode-env.ts");
-
-    try {
-      await writeFile(
-        scriptPath,
-        [
-          "const payload = {",
-          "  secret: process.env.RUNNER_TEST_SECRET ?? null,",
-          "  nietaToken: process.env.NIETA_TOKEN ?? null,",
-          "  hasPath: Boolean(process.env.PATH),",
-          "};",
-          "console.log(JSON.stringify({ output: JSON.stringify(payload) }));",
-          "",
-        ].join("\n"),
-        { encoding: "utf8" },
-      );
-
-      const runner = new ShellOpencodeRunner();
-      const job: SessionJob = {
+  test("returns empty result when assistant message has no text", async () => {
+    const { client } = createFakeClient(null);
+    const runner = new OpencodeServerRunner(client);
+    const result = await runner.run({
+      job: {
         id: "job",
         data: {
           botId: "bot",
@@ -120,8 +108,8 @@ describe("ShellOpencodeRunner", () => {
           key: 0,
           gateToken: "gate",
         },
-      };
-      const session: SessionInfo = {
+      },
+      session: {
         meta: {
           sessionId: "session",
           groupId: "group",
@@ -132,40 +120,66 @@ describe("ShellOpencodeRunner", () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
-        groupPath: tempDir,
-        workspacePath: tempDir,
-      };
+        groupPath: "/tmp",
+        workspacePath: "/tmp",
+      },
+      history: [],
+      request: {
+        directory: "/tmp/workspace",
+        sessionId: "ses_test",
+        body: {
+          parts: [{ type: "text", text: "user" }],
+        },
+      },
+    });
 
-      const result = await runner.run({
-        job,
-        session,
-        history: [],
-        launchSpec: {
-          command: process.execPath,
-          args: [scriptPath],
-          cwd: tempDir,
-          env: {
-            NIETA_TOKEN: "test-token",
+    expect(result.output).toBeUndefined();
+    expect(result.historyEntries).toBeUndefined();
+  });
+
+  test("throws when aborted before start", async () => {
+    const { client } = createFakeClient("hello");
+    const runner = new OpencodeServerRunner(client);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      runner.run({
+        job: {
+          id: "job",
+          data: {
+            botId: "bot",
+            groupId: "group",
+            sessionId: "session",
+            userId: "user",
+            key: 0,
+            gateToken: "gate",
           },
         },
-      });
-
-      expect(result.output).toBeTruthy();
-      const payload = JSON.parse(result.output as string) as {
-        secret: string | null;
-        nietaToken: string | null;
-        hasPath: boolean;
-      };
-      expect(payload.secret).toBeNull();
-      expect(payload.nietaToken).toBe("test-token");
-      expect(payload.hasPath).toBe(true);
-    } finally {
-      if (prevSecret === undefined) {
-        delete process.env.RUNNER_TEST_SECRET;
-      } else {
-        process.env.RUNNER_TEST_SECRET = prevSecret;
-      }
-      await rm(tempDir, { recursive: true, force: true });
-    }
+        session: {
+          meta: {
+            sessionId: "session",
+            groupId: "group",
+            botId: "bot",
+            ownerId: "user",
+            key: 0,
+            status: "running",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          groupPath: "/tmp",
+          workspacePath: "/tmp",
+        },
+        history: [],
+        request: {
+          directory: "/tmp/workspace",
+          sessionId: "ses_test",
+          body: {
+            parts: [{ type: "text", text: "user" }],
+          },
+        },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("Opencode run aborted before start");
   });
 });

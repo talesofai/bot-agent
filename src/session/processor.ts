@@ -7,17 +7,22 @@ import { GroupFileRepository } from "../store/repository";
 import { SessionRepository } from "./repository";
 import type { HistoryKey, HistoryStore } from "./history";
 import { createSession } from "./session-ops";
-import { buildBufferedInput, buildOpencodePrompt } from "../opencode/prompt";
+import {
+  buildBufferedInput,
+  buildOpencodeSystemContext,
+} from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/default-system-prompt";
-import type { OpencodeLaunchSpec } from "../opencode/launcher";
-import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeStreamEvent } from "../opencode/output";
-import type { OpencodeRunner } from "../worker/runner";
+import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { buildBotAccountId } from "../utils/bot-id";
 import { extractOutputElements } from "./output-elements";
 import { redactSensitiveText } from "../utils/redact";
+import type { OpencodeClient } from "../opencode/server-client";
+import { appendInputAuditIfSuspicious } from "../opencode/input-audit";
+import { ensureOpencodeSkills } from "../opencode/skills";
+import { getConfig } from "../config";
 import {
   type TelemetrySpanInput,
   resolveTraceId,
@@ -36,7 +41,7 @@ export interface SessionProcessorOptions {
   groupRepository: GroupFileRepository;
   sessionRepository: SessionRepository;
   historyStore: HistoryStore;
-  launcher: OpencodeLauncher;
+  opencodeClient: OpencodeClient;
   runner: OpencodeRunner;
   activityIndex: SessionActivityIndex;
   bufferStore: SessionBuffer;
@@ -55,7 +60,7 @@ export class SessionProcessor {
   private groupRepository: GroupFileRepository;
   private sessionRepository: SessionRepository;
   private historyStore: HistoryStore;
-  private launcher: OpencodeLauncher;
+  private opencodeClient: OpencodeClient;
   private runner: OpencodeRunner;
   private activityIndex: SessionActivityIndex;
   private bufferStore: SessionBuffer;
@@ -69,7 +74,7 @@ export class SessionProcessor {
     this.groupRepository = options.groupRepository;
     this.sessionRepository = options.sessionRepository;
     this.historyStore = options.historyStore;
-    this.launcher = options.launcher;
+    this.opencodeClient = options.opencodeClient;
     this.runner = options.runner;
     this.activityIndex = options.activityIndex;
     this.bufferStore = options.bufferStore;
@@ -292,15 +297,14 @@ export class SessionProcessor {
                   const stopTyping = this.startTyping(mergedWithTrace, log);
                   try {
                     const historyKey = resolveHistoryKey(mergedWithTrace);
-                    const { history, launchSpec } =
-                      await this.buildPromptContext(
-                        jobData.groupId,
-                        sessionInfo!,
-                        mergedWithTrace,
-                        historyKey,
-                        promptInput,
-                        { traceId, jobId, logger: log, message: batchMessage },
-                      );
+                    const { history, request } = await this.buildPromptContext(
+                      jobData.groupId,
+                      sessionInfo!,
+                      mergedWithTrace,
+                      historyKey,
+                      promptInput,
+                      { traceId, jobId, logger: log, message: batchMessage },
+                    );
 
                     const result = await batchSpan(
                       "opencode_run",
@@ -309,7 +313,7 @@ export class SessionProcessor {
                           job: this.mapJob(job),
                           session: sessionInfo!,
                           history,
-                          launchSpec,
+                          request,
                         }),
                       { historyEntries: history.length },
                     );
@@ -433,7 +437,7 @@ export class SessionProcessor {
     },
   ): Promise<{
     history: HistoryEntry[];
-    launchSpec: OpencodeLaunchSpec;
+    request: OpencodeRequestSpec;
   }> {
     const span = async <T>(
       step: string,
@@ -511,27 +515,108 @@ export class SessionProcessor {
     const agentPrompt = await span("load_agent_prompt", async () =>
       this.getAgentPrompt(groupId),
     );
+
+    await span("ensure_opencode_skills", async () =>
+      ensureOpencodeSkills({
+        workspacePath: sessionInfo.workspacePath,
+        groupId: sessionInfo.meta.groupId,
+        botId: sessionInfo.meta.botId,
+      }),
+    );
+
     const systemPrompt = buildSystemPrompt(agentPrompt);
-    const resolvedInput = resolveSessionInput(promptInput);
-    const prompt = buildOpencodePrompt({
+    const system = buildOpencodeSystemContext({
       systemPrompt,
       history: mergedHistory,
-      input: resolvedInput,
     });
-    const promptBytes = Buffer.byteLength(prompt, "utf8");
-    const launchSpec = await span(
-      "build_launch_spec",
+    const resolvedInput = resolveSessionInput(promptInput);
+    const rawUserText = resolvedInput.trim();
+    const userText = rawUserText
+      ? appendInputAuditIfSuspicious(rawUserText)
+      : " ";
+
+    const config = getConfig();
+    const promptBytes =
+      Buffer.byteLength(system, "utf8") + Buffer.byteLength(userText, "utf8");
+    if (promptBytes > config.OPENCODE_PROMPT_MAX_BYTES) {
+      throw new Error(
+        `Prompt size ${promptBytes} exceeds OPENCODE_PROMPT_MAX_BYTES=${config.OPENCODE_PROMPT_MAX_BYTES}`,
+      );
+    }
+
+    const sessionTitle = buildOpencodeSessionTitle(sessionInfo);
+    const opencodeSessionId = await span(
+      "ensure_opencode_session",
       async () =>
-        this.launcher.buildLaunchSpec(sessionInfo, prompt, groupConfig.model, {
-          traceId: telemetry?.traceId,
-        }),
+        this.ensureOpencodeSessionId(sessionInfo, sessionTitle, telemetry),
       {
-        promptBytes,
-        historyEntries: mergedHistory.length,
-        modelOverride: groupConfig.model,
+        hasSessionId: Boolean(sessionInfo.meta.opencodeSessionId),
       },
     );
-    return { history: mergedHistory, launchSpec };
+
+    const request: OpencodeRequestSpec = {
+      directory: sessionInfo.workspacePath,
+      sessionId: opencodeSessionId,
+      body: {
+        system,
+        model: resolveModelRef({
+          groupOverride: groupConfig.model,
+          openaiBaseUrl: config.OPENAI_BASE_URL,
+          openaiApiKey: config.OPENAI_API_KEY,
+          modelsCsv: config.OPENCODE_MODELS,
+        }),
+        tools: config.OPENCODE_YOLO ? YOLO_TOOLS : undefined,
+        parts: [{ type: "text", text: userText }],
+      },
+    };
+
+    return { history: mergedHistory, request };
+  }
+
+  private async ensureOpencodeSessionId(
+    sessionInfo: SessionInfo,
+    title: string,
+    telemetry?: {
+      logger: Logger;
+      traceId: string;
+      jobId: string;
+      message: TelemetrySpanInput["message"];
+    },
+  ): Promise<string> {
+    const directory = sessionInfo.workspacePath;
+    const existing = sessionInfo.meta.opencodeSessionId?.trim();
+
+    const log = telemetry?.logger ?? this.logger;
+    if (existing && isLikelyOpencodeSessionId(existing)) {
+      const found = await this.opencodeClient.getSession({
+        directory,
+        sessionId: existing,
+      });
+      if (found) {
+        return existing;
+      }
+      log.warn(
+        { sessionId: sessionInfo.meta.sessionId, opencodeSessionId: existing },
+        "Opencode session not found; creating a new one",
+      );
+    }
+
+    const created = await this.opencodeClient.createSession({
+      directory,
+      title,
+    });
+    const createdId = created.id?.trim();
+    if (!createdId || !isLikelyOpencodeSessionId(createdId)) {
+      throw new Error("Opencode returned an invalid session id");
+    }
+
+    const now = new Date().toISOString();
+    await this.sessionRepository.updateMeta({
+      ...sessionInfo.meta,
+      opencodeSessionId: createdId,
+      updatedAt: now,
+    });
+    return createdId;
   }
 
   private async ensureSession(
@@ -837,4 +922,85 @@ function toBufferKey(jobData: SessionJobData): SessionBufferKey {
     groupId: jobData.groupId,
     sessionId: jobData.sessionId,
   };
+}
+
+const YOLO_TOOLS: Record<string, boolean> = {
+  bash: true,
+  read: true,
+  write: true,
+  edit: true,
+  list: true,
+  glob: true,
+  grep: true,
+  webfetch: true,
+  task: true,
+  todowrite: true,
+  todoread: true,
+};
+
+function resolveModelRef(
+  input: Readonly<{
+    groupOverride: string | undefined;
+    openaiBaseUrl: string | undefined;
+    openaiApiKey: string | undefined;
+    modelsCsv: string | undefined;
+  }>,
+): { providerID: string; modelID: string } {
+  const externalBaseUrl = input.openaiBaseUrl?.trim();
+  const externalApiKey = input.openaiApiKey?.trim();
+  const modelsCsv = input.modelsCsv?.trim();
+  const externalModeEnabled = Boolean(
+    externalBaseUrl && externalApiKey && modelsCsv,
+  );
+  if (!externalModeEnabled) {
+    return { providerID: "opencode", modelID: "glm-4.7-free" };
+  }
+
+  const allowed = parseModelsCsv(modelsCsv!);
+  if (allowed.length === 0) {
+    throw new Error("OPENCODE_MODELS must include at least one model name");
+  }
+  const requested = sanitizeModelOverride(input.groupOverride);
+  const selected =
+    (requested && allowed.includes(requested) && requested) || allowed[0];
+  return { providerID: "litellm", modelID: selected };
+}
+
+function parseModelsCsv(value: string): string[] {
+  const models = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (models.some((model) => model.includes("/"))) {
+    throw new Error(
+      "OPENCODE_MODELS must be comma-separated bare model names (no provider prefix)",
+    );
+  }
+  return Array.from(new Set(models));
+}
+
+function sanitizeModelOverride(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.includes("/")) {
+    return null;
+  }
+  return trimmed;
+}
+
+function buildOpencodeSessionTitle(sessionInfo: SessionInfo): string {
+  const groupId = sessionInfo.meta.groupId;
+  const location = groupId === "0" ? "dm:0" : `group:${groupId}`;
+  return `${location} user:${sessionInfo.meta.ownerId} bot:${sessionInfo.meta.botId} sid:${sessionInfo.meta.sessionId} key:${sessionInfo.meta.key}`;
+}
+
+function isLikelyOpencodeSessionId(value: string): boolean {
+  return (
+    /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/.test(value) || value.startsWith("ses_")
+  );
 }

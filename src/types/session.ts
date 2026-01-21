@@ -9,6 +9,7 @@ export interface SessionMeta {
   status: SessionStatus;
   active?: boolean;
   archivedAt?: string;
+  opencodeSessionId?: string;
   nietaToken?: string;
   createdAt: string;
   updatedAt: string;

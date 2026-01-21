@@ -14,6 +14,7 @@ import type {
   MessageHandler,
   PlatformAdapter,
 } from "../../types/platform";
+import type { OpencodeClient } from "../../opencode/server-client";
 import type { OpencodeRunner, OpencodeRunResult } from "../runner";
 import { SessionWorker } from "../worker";
 
@@ -22,6 +23,21 @@ class FakeRunner implements OpencodeRunner {
     return { output: "Test response" };
   }
 }
+
+const opencodeClient: OpencodeClient = {
+  async createSession() {
+    return { id: "ses_test" };
+  },
+  async getSession(input) {
+    return { id: input.sessionId };
+  },
+  async prompt(input) {
+    return {
+      info: { id: "msg_test", sessionID: input.sessionId, role: "assistant" },
+      parts: [{ type: "text", text: "ok" }],
+    };
+  },
+};
 
 class MemoryAdapter implements PlatformAdapter {
   platform = "test";
@@ -92,6 +108,7 @@ describe("session worker integration", () => {
       dataDir: tempDir,
       adapter,
       historyStore,
+      opencodeClient,
       redis: {
         url: redisUrl,
       },
@@ -179,6 +196,7 @@ describe("session worker integration", () => {
       dataDir: tempDir,
       adapter,
       historyStore,
+      opencodeClient,
       redis: {
         url: redisUrl,
       },

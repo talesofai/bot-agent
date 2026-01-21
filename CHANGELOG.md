@@ -21,6 +21,7 @@
 - Opencode：外部模式（LiteLLM）请求自动附带 `traceparent` 与 `x-opencode-trace-id`，便于把 opencode 内部网络请求与上游网关/ARMS 链路追踪串联
 - Telemetry：支持将 `telemetry.span` 同步导出为 OpenTelemetry traces（OTLP），可上报到 ARMS 并与 LiteLLM spans 在同一 workspace 内聚合
 - K8s：新增 `AliyunLogConfig` 采集 bot 命名空间内 adapter/worker 容器 stdout/stderr 到 SLS（默认 Project：`k8s-log-<clusterId>`，Logstore：`opencode-bot-agent-stdout-<clusterId>`）
+- 部署：新增 opencode server 部署示例（Docker Compose + K8s），并提供 `configs/opencode/config.json` / ConfigMap 注入 talesofai MCP 配置
 - Discord：AI 处理期间发送 typing indicator（“正在输入”状态）
 - Discord：注册并支持 Slash Commands（`/reset`、`/resetall`、`/model`、`/ping`、`/help`）
 - MCP：opencode 配置注入 talesofai 远程 MCP（`x-token` 来自环境变量 `NIETA_TOKEN`，支持会话内覆盖）
@@ -71,6 +72,7 @@
 
 - Opencode：默认强制使用 `opencode/glm-4.7-free`；仅在同时设置 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENCODE_MODELS` 时启用外部模式（litellm），并自动生成 `~/.config/opencode/opencode.json` 与 `~/.local/share/opencode/auth.json`
 - Opencode：默认使用 yolo chat agent（全工具/全权限 allow）；可通过 `OPENCODE_YOLO=false` 降低权限（将不再显式指定 agent）
+- Worker：opencode 执行方式从本地 `opencode run` 切换为 opencode server HTTP API（`OPENCODE_SERVER_URL`），并在会话 meta 持久化 `opencodeSessionId`
 - Opencode：system prompt 兜底改为更通用的默认提示词；私聊（groupId=0）默认也使用 `configs/default-agent.md`（如果存在）
 - Opencode：system prompt 硬性规则前置，并强制“找图/给图”只输出已验证的图片直链（禁止搜索页/集合页链接）
 - Opencode：找图默认优先使用 `bing-image-search`，避免 Wikimedia 图片域名被 429 限流导致无图
@@ -88,7 +90,7 @@
 - 部署：补齐 `pmhq` 需要 `privileged: true` 的原因说明，并明确最小权限目标（`SYS_PTRACE` + `seccomp=unconfined`）
 - Opencode：外部模式使用临时 `HOME` 生成配置并在结束后清理，避免 API Key 落盘到宿主机目录
 - 输出/History：输出层审计并对 token/key 等敏感串打码，避免意外泄露
-- Worker：opencode 子进程环境变量改为白名单透传（仅保留基础运行变量 + 显式注入项），降低提示词注入场景下的 env 泄露面
+- Worker：不再 spawn opencode 子进程；通过 opencode server 调用，避免将宿主进程 `process.env` 透传给 agent 执行环境
 - Opencode：对疑似“读取 env/文件系统/密钥”输入追加安全审计提示，并要求仅输出安全 JSON（不执行工具/命令）
 - SSRF：统一拦截私网/loopback/link-local/metadata URL，并限制重定向；allowlist 预留但默认不启用（Discord 外链图片抓取 + `url-access-check` 等链路生效）
 

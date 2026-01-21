@@ -105,11 +105,30 @@ services:
       - ../../configs/.env
     environment:
       - REDIS_URL=redis://redis:6379
+      - OPENCODE_SERVER_URL=http://opencode-server:4096
     volumes:
       - ../../data:/data
     depends_on:
       - redis
       - postgres
+      - opencode-server
+    networks:
+      - llbot_net
+
+  opencode-server:
+    image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
+    container_name: opencode-server
+    restart: unless-stopped
+    command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]
+    env_file:
+      - ../../configs/.env
+    environment:
+      - HOME=/data/opencode-home
+    volumes:
+      - ../../data:/data
+      - ../../configs/opencode:/data/opencode-home/.config/opencode:ro
+    ports:
+      - "4096:4096"
     networks:
       - llbot_net
 

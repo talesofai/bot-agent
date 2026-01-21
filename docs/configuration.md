@@ -24,6 +24,27 @@ SSRF_ALLOWLIST_ENABLED=false
 SSRF_ALLOWLIST_HOSTS=
 ```
 
+### Opencode Server（HTTP）
+
+Worker 通过 HTTP 调用 **常驻** 的 opencode server（而不是每条消息 `spawn opencode run`）。同一会话的串行由 Worker 侧的 Redis gate 保证。
+
+```env
+# opencode server 地址（K8s/Compose 通常是 Service 名称；本地可用 http://localhost:4096）
+OPENCODE_SERVER_URL=http://opencode-server:4096
+
+# 可选：opencode server Basic Auth（与 server 端 OPENCODE_SERVER_* 对齐）
+OPENCODE_SERVER_USERNAME=opencode
+OPENCODE_SERVER_PASSWORD=
+
+# 请求超时（毫秒）
+OPENCODE_SERVER_TIMEOUT_MS=600000
+```
+
+生产部署要点（避免“多副本不共享会话”）：
+
+- opencode server 需要共享 `~/.local/share/opencode`（XDG data）与 `~/.config/opencode`（XDG config）；推荐把 `HOME` 指到 RWX 共享卷（例如 `/data/opencode-home`）
+- Worker 传入的 `x-opencode-directory` 必须在 opencode server 容器内可访问（因此 server 也要挂载同一份 `/data`）
+
 ### Opencode 模型模式
 
 默认模式下，Bot Agent **不需要任何 API Key**，并强制使用 opencode 自带的 `opencode/glm-4.7-free`。
@@ -38,10 +59,12 @@ OPENCODE_MODELS=gpt-5.2,gpt-5.1
 
 - `OPENCODE_MODELS` 为逗号分隔的“裸模型名”，内部会拼为 `litellm/<name>` 传给 opencode。
 - 群配置里的 `model` 仅在外部模式生效，且必须在 `OPENCODE_MODELS` 白名单内。
-- `OPENCODE_YOLO` 默认开启（true）：使用内置 `chat-yolo-responder` agent（全工具/全权限 allow）。如需降低权限，可设置为 `false/0`（将不再显式指定 agent）。
+- `OPENCODE_YOLO` 默认开启（true）：Worker 会在请求里显式开启必要工具（bash/read/write/webfetch...）。如需降低权限，可设置为 `false/0`（不再显式开启工具）。
 - 外部模式下会自动给 LiteLLM 请求附带追踪头，便于和网关/上游日志串联：
   - `traceparent`（W3C Trace Context）
   - `x-opencode-trace-id`（与 `telemetry.span` 的 `traceId` 相同）
+
+> 注意：`OPENAI_BASE_URL/OPENAI_API_KEY` 等 provider/auth 配置由 opencode server 实际使用；Worker 侧主要用于判断“外部模式是否启用”与 `OPENCODE_MODELS` 白名单校验。
 
 ### 连接配置
 
@@ -182,7 +205,7 @@ MCP_TALESOFAI_URL=https://mcp.talesofai.cn/mcp
 # talesofai MCP 鉴权 token（请求头 x-token）
 # - 可直接在环境变量里配置（推荐）
 # - 或使用 /login 写入“当前会话”并在会话内覆盖
-# 注意：Worker 启动 opencode 子进程时仅白名单透传环境变量；未在白名单内的 env 不会传给 opencode。
+# 注意：在 opencode server 模式下，NIETA_TOKEN 需要注入到 **opencode server 容器** 的环境变量中，供 MCP header 模板 `{env:NIETA_TOKEN}` 读取。
 NIETA_TOKEN=
 
 ```

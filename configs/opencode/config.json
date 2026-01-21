@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "talesofai": {
+      "type": "remote",
+      "url": "https://mcp.talesofai.cn/mcp",
+      "enabled": true,
+      "timeout": 600000,
+      "headers": {
+        "x-token": "{env:NIETA_TOKEN}"
+      }
+    }
+  }
+}

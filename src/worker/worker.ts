@@ -7,8 +7,8 @@ import { GroupFileRepository } from "../store/repository";
 import { SessionRepository } from "../session/repository";
 import type { HistoryStore } from "../session/history";
 import { PostgresHistoryStore } from "../session/history";
-import { OpencodeLauncher } from "../opencode/launcher";
 import type { OpencodeRunner } from "./runner";
+import type { OpencodeClient } from "../opencode/server-client";
 import type { PlatformAdapter } from "../types/platform";
 import { SessionActivityStore } from "../session/activity-store";
 import { assertValidSessionKey } from "../session/utils";
@@ -22,6 +22,7 @@ export interface SessionWorkerOptions {
   adapter: PlatformAdapter;
   databaseUrl?: string;
   historyStore?: HistoryStore;
+  opencodeClient: OpencodeClient;
   redis: {
     url: string;
   };
@@ -32,7 +33,6 @@ export interface SessionWorkerOptions {
     stalledIntervalMs?: number;
     maxStalledCount?: number;
   };
-  launcher?: OpencodeLauncher;
   runner: OpencodeRunner;
   logger: Logger;
   limits?: {
@@ -68,7 +68,6 @@ export class SessionWorker {
     const historyStore =
       options.historyStore ??
       createDefaultHistoryStore(this.logger, options.databaseUrl);
-    const launcher = options.launcher ?? new OpencodeLauncher();
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
@@ -87,7 +86,7 @@ export class SessionWorker {
       groupRepository,
       sessionRepository,
       historyStore,
-      launcher,
+      opencodeClient: options.opencodeClient,
       runner: options.runner,
       activityIndex,
       bufferStore,

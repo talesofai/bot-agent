@@ -60,6 +60,20 @@ spec:
                   name: llbot-secrets
                   key: OPENCODE_MODELS
                   optional: true
+            - name: OPENCODE_SERVER_URL
+              value: "http://opencode-server:4096"
+            - name: OPENCODE_SERVER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OPENCODE_SERVER_USERNAME
+                  optional: true
+            - name: OPENCODE_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OPENCODE_SERVER_PASSWORD
+                  optional: true
           resources:
             requests:
               cpu: 200m

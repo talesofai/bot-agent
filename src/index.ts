@@ -4,7 +4,7 @@ export { RouterStore } from "./store/router";
 export { MessageDispatcher } from "./entry/message-dispatcher";
 export { EchoTracker } from "./entry/echo";
 export { createSession, generateSessionId } from "./session";
-export { SessionWorker, ShellOpencodeRunner } from "./worker";
+export { SessionWorker, OpencodeServerRunner } from "./worker";
 export { startHttpServer } from "./http/server";
 export type { HttpServer } from "./http/server";
 export type {

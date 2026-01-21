@@ -7,7 +7,7 @@
 - Docker 和 Docker Compose
 - QQ 账号（用于机器人登录）
 - 可选：OpenAI-compatible API Key（仅外部模式需要）
-- opencode CLI（仅在本机运行 Bot Agent 时需要）
+- 可选：opencode server（仅在本机运行 Bot Agent 时需要）
 
 ## 步骤 1：克隆项目
 
@@ -31,6 +31,9 @@ cp configs/example.env configs/.env
 ```env
 # LuckyLilliaBot WebUI token（不要留空）
 WEBUI_TOKEN=change-me
+
+# opencode server（Docker Compose 默认已包含；本机直跑需要自行启动并填 URL）
+OPENCODE_SERVER_URL=http://opencode-server:4096
 
 # 外部模式（可选；三项都非空才启用）
 OPENAI_BASE_URL=
@@ -80,6 +83,10 @@ psql "$DATABASE_URL" -f deployments/docker/postgres-init/001-history-entries.sql
 完成后再在两个终端分别启动 Adapter 与 Worker：
 
 ```bash
+# 终端 0：启动 opencode server（默认端口 4096）
+OPENCODE_SERVER_PASSWORD=... \\
+opencode serve --hostname 127.0.0.1 --port 4096
+
 # 终端 1
 CONFIG_PATH=configs/.env bun run start:adapter
 
@@ -87,7 +94,7 @@ CONFIG_PATH=configs/.env bun run start:adapter
 CONFIG_PATH=configs/.env bun run start:worker
 ```
 
-本地运行需要 `opencode` CLI 已安装并可从 `PATH` 访问。
+本地运行需要 `opencode` 已安装（用于启动 `opencode serve`）。
 
 可选：验证本地连通性（WebUI + Milky）：
 

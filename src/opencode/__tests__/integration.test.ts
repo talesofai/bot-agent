@@ -2,150 +2,76 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import pino from "pino";
 
-import type { SessionJob } from "../../queue";
-import { GroupFileRepository } from "../../store/repository";
-import { InMemoryHistoryStore } from "../../session/history";
-import { SessionRepository } from "../../session/repository";
-import { createSession } from "../../session/session-ops";
-import { OpencodeLauncher } from "../launcher";
-import { ShellOpencodeRunner } from "../../worker/runner";
-import { buildSystemPrompt } from "../default-system-prompt";
-import { buildOpencodePrompt } from "../prompt";
+import { extractAssistantText, OpencodeServerClient } from "../server-client";
 
-const opencodeEnabled = process.env.OPENCODE_INTEGRATION === "1";
-const opencodeAvailable = opencodeEnabled && (await canRunOpencode());
+const opencodeEnabled = process.env.OPENCODE_SERVER_INTEGRATION === "1";
+const opencodeAvailable =
+  opencodeEnabled &&
+  (await canReachOpencodeServer(process.env.OPENCODE_SERVER_URL));
 const integrationTest = opencodeAvailable ? test : test.skip;
 
-describe("opencode integration", () => {
-  integrationTest("runs opencode and writes history", async () => {
+describe("opencode server integration", () => {
+  integrationTest("creates session and prompts via server", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "opencode-test-"));
-    const logger = pino({ level: "silent" });
-    const groupRepository = new GroupFileRepository({
-      dataDir: tempDir,
-      logger,
-    });
-    const sessionRepository = new SessionRepository({
-      dataDir: tempDir,
-      logger,
-    });
-    const historyStore = new InMemoryHistoryStore();
-    const groupId = "group-1";
-    const userId = "user-1";
-    const key = 0;
-    const historyKey = { botAccountId: "test:bot-1", userId };
 
     try {
-      const opencodeBin = process.env.OPENCODE_BIN ?? "opencode";
-      if (!process.env.OPENCODE_BIN) {
-        const resolved = Bun.which(opencodeBin);
-        if (!resolved) {
-          throw new Error(
-            "Missing opencode binary. Set OPENCODE_BIN or ensure opencode is on PATH.",
-          );
-        }
-      }
-      const session = await createSession({
-        groupId,
-        botId: "bot-1",
-        userId,
-        sessionId: "session-0",
-        key,
-        groupRepository,
-        sessionRepository,
+      const baseUrl =
+        process.env.OPENCODE_SERVER_URL ?? "http://localhost:4096";
+      const client = new OpencodeServerClient({
+        baseUrl,
+        username: process.env.OPENCODE_SERVER_USERNAME,
+        password: process.env.OPENCODE_SERVER_PASSWORD,
+        timeoutMs: 600_000,
       });
-      const launcher = new OpencodeLauncher();
-      const runner = new ShellOpencodeRunner();
-
-      const runTurn = async (input: string): Promise<void> => {
-        const now = new Date().toISOString();
-        await historyStore.appendHistory(historyKey, {
-          role: "user",
-          content: input,
-          createdAt: now,
-          groupId,
-        });
-        const history = await historyStore.readHistory(historyKey, {
-          maxEntries: 20,
-        });
-        await groupRepository.ensureGroupDir(groupId);
-        const groupPath = sessionRepository.getGroupPath(groupId);
-        const agentContent = await groupRepository.loadAgentPrompt(groupPath);
-        const agentPrompt = agentContent.content;
-        const systemPrompt = buildSystemPrompt(agentPrompt);
-        const prompt = buildOpencodePrompt({
-          systemPrompt,
-          history,
-          input,
-        });
-        const launchSpec = await launcher.buildLaunchSpec(session, prompt);
-        launchSpec.command = opencodeBin;
-        const job: SessionJob = {
-          id: "opencode-integration",
-          data: {
-            botId: "bot-1",
-            groupId,
-            sessionId: session.meta.sessionId,
-            userId,
-            key,
-            gateToken: "gate-token",
-          },
-        };
-        const result = await runner.run({
-          job,
-          session,
-          history,
-          launchSpec,
-        });
-        const createdAt = new Date().toISOString();
-        if (result.historyEntries?.length) {
-          for (const entry of result.historyEntries) {
-            await historyStore.appendHistory(historyKey, {
-              ...entry,
-              groupId,
-            });
-          }
-          return;
-        }
-        if (result.output) {
-          await historyStore.appendHistory(historyKey, {
-            role: "assistant",
-            content: result.output,
-            createdAt,
-            groupId,
-          });
-          return;
-        }
-        throw new Error("Opencode returned no output");
-      };
-
-      await runTurn("Say hi in one short sentence.");
-      await runTurn("Now answer in one short sentence.");
-
-      const updated = await historyStore.readHistory(historyKey, {
-        maxEntries: 50,
+      const session = await client.createSession({
+        directory: tempDir,
+        title: "integration-test",
       });
-      const assistantMessages = updated.filter(
-        (entry) => entry.role === "assistant",
-      );
-      expect(assistantMessages.length).toBeGreaterThanOrEqual(2);
-      const lastMessage = assistantMessages[assistantMessages.length - 1];
-      expect(lastMessage.content.trim().length).toBeGreaterThan(0);
+      expect(session.id).toBeTruthy();
+
+      const first = await client.prompt({
+        directory: tempDir,
+        sessionId: session.id,
+        body: {
+          system: "You are a helpful assistant.",
+          parts: [{ type: "text", text: "Say hi in one short sentence." }],
+        },
+      });
+      expect(extractAssistantText(first)).toBeTruthy();
+
+      const second = await client.prompt({
+        directory: tempDir,
+        sessionId: session.id,
+        body: {
+          parts: [{ type: "text", text: "Now answer in one short sentence." }],
+        },
+      });
+      expect(extractAssistantText(second)).toBeTruthy();
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
   });
 });
 
-async function canRunOpencode(): Promise<boolean> {
-  const opencodeBin = process.env.OPENCODE_BIN ?? "opencode";
-  const resolved = Bun.which(opencodeBin);
-  if (!resolved) {
+async function canReachOpencodeServer(
+  baseUrl: string | undefined,
+): Promise<boolean> {
+  const url = (baseUrl ?? "http://localhost:4096").replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2_000);
+  try {
+    await fetch(`${url}/session/invalid`, {
+      method: "GET",
+      headers: {
+        "x-opencode-directory": "/tmp",
+      },
+      signal: controller.signal,
+    });
+    return true;
+  } catch {
     return false;
+  } finally {
+    clearTimeout(timeout);
   }
-  const { exitCode } = Bun.spawnSync([resolved, "--version"], {
-    stdio: ["ignore", "ignore", "pipe"],
-  });
-  return exitCode === 0;
 }

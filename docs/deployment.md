@@ -38,6 +38,8 @@ LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节�
 - `DATABASE_URL` 必须可用（建议通过 `configs/.env` 或运行环境变量注入）
 - `REDIS_URL` 必须可用（BullMQ 依赖）
 - 数据库 Schema 不在运行时自动创建：Compose 的 Postgres 容器会在首次初始化时执行 `deployments/docker/postgres-init/*.sql`；使用外部/既有 Postgres 时需要手动执行同一迁移脚本
+- Worker 依赖 opencode server：Compose 已包含 `opencode-server` 服务，Worker 通过 `OPENCODE_SERVER_URL=http://opencode-server:4096` 调用
+- 为支持 opencode server 多副本/重启后继续使用同一会话，建议把 server 的 `HOME` 指到持久化卷（Compose 示例使用 `/data/opencode-home`）
 
 ### PMHQ 的 `privileged: true`（安全说明）
 
@@ -177,6 +179,12 @@ LLBot 的 Kubernetes 资源见：
 
 Adapter 与 Worker 分离部署，入口命令分别为 `start:adapter` / `start:worker`。
 无需配置 `PLATFORM`；默认启用 QQ，提供 `DISCORD_TOKEN` 时会同时启用 Discord。
+
+此外需要部署独立的 opencode server（HTTP），供 Worker 调用：
+
+- 建议独立 Deployment + Service（例如 `opencode-server:4096`）
+- **必须挂载同一份 RWX `/data`**，并设置 `HOME=/data/opencode-home` 让 opencode 的 `~/.local/share/opencode` 会话存储在共享卷上
+- 可选：设置 `OPENCODE_SERVER_PASSWORD` 启用 Basic Auth，并同步配置 Worker 的 `OPENCODE_SERVER_USERNAME/OPENCODE_SERVER_PASSWORD`
 
 ```yaml
 # deployments/k8s/opencode-bot-agent-adapter.yaml（示例）

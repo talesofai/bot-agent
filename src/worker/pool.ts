@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { PlatformAdapter } from "../types/platform";
 import type { OpencodeRunner } from "./runner";
 import { SessionWorker } from "./worker";
+import type { OpencodeClient } from "../opencode/server-client";
 
 export interface SessionWorkerPoolOptions {
   size: number;
@@ -11,6 +12,7 @@ export interface SessionWorkerPoolOptions {
   databaseUrl: string;
   dataDir: string;
   adapter: PlatformAdapter;
+  opencodeClient: OpencodeClient;
   runner: OpencodeRunner;
   logger: Logger;
   prefix?: string;
@@ -31,6 +33,7 @@ export class SessionWorkerPool {
       dataDir: options.dataDir,
       adapter: options.adapter,
       databaseUrl: options.databaseUrl,
+      opencodeClient: options.opencodeClient,
       redis: {
         url: options.redisUrl,
       },

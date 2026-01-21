@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opencode-server-config
+  namespace: bot
+data:
+  config.json: |
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "talesofai": {
+          "type": "remote",
+          "url": "https://mcp.talesofai.cn/mcp",
+          "enabled": true,
+          "timeout": 600000,
+          "headers": {
+            "x-token": "{env:NIETA_TOKEN}"
+          }
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opencode-server
+  namespace: bot
+spec:
+  selector:
+    app: opencode-server
+  ports:
+    - name: http
+      port: 4096
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-server
+  namespace: bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opencode-server
+  template:
+    metadata:
+      labels:
+        app: opencode-server
+    spec:
+      containers:
+        - name: opencode-server
+          image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+          command:
+            - opencode
+            - serve
+            - --hostname
+            - 0.0.0.0
+            - --port
+            - "4096"
+          env:
+            # Store opencode state on the shared /data RWX volume so multiple replicas can serve the same sessions.
+            - name: HOME
+              value: "/data/opencode-home"
+            # Optional: enable HTTP basic auth (worker must use the same values).
+            - name: OPENCODE_SERVER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OPENCODE_SERVER_USERNAME
+                  optional: true
+            - name: OPENCODE_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: OPENCODE_SERVER_PASSWORD
+                  optional: true
+            # MCP token for talesofai MCP server (used by config.json header template).
+            - name: NIETA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: NIETA_TOKEN
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 4096
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: opencode-config
+              mountPath: /data/opencode-home/.config/opencode
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bot-data
+        - name: opencode-config
+          configMap:
+            name: opencode-server-config

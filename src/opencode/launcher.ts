@@ -86,9 +86,10 @@ export class OpencodeLauncher {
       sessionInfo.meta.nietaToken ?? null,
     );
     const envNietaToken = sanitizeTokenValue(process.env.NIETA_TOKEN ?? null);
-    const resolvedNietaToken =
-      sessionNietaToken ?? envNietaToken ?? DEFAULT_NIETA_TOKEN;
-    env.NIETA_TOKEN = resolvedNietaToken;
+    const resolvedNietaToken = sessionNietaToken ?? envNietaToken;
+    if (resolvedNietaToken) {
+      env.NIETA_TOKEN = resolvedNietaToken;
+    }
 
     const model = externalModeEnabled
       ? await prepareExternalMode({
@@ -390,8 +391,6 @@ function buildLitellmTraceHeaders(traceId: string): Record<string, string> {
 }
 
 const DEFAULT_MCP_TALESOFAI_URL = "https://mcp.talesofai.cn/mcp";
-const DEFAULT_NIETA_TOKEN =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NDQ1NzU4MywidXVpZCI6IjNjMDhmNDg1MzVjNTQzMTlhMmQ3MzMyN2Y1NWY5YWI1IiwicGhvbmVfbnVtIjoiMTgzNjA4MzE5MDAiLCJleHBpcmVzX2F0IjoxNzg2NjgyODM2LCJpc19yZWdpc3RlciI6ZmFsc2UsInVzZXJfYWdlbnQiOiJNb3ppbGxhLzUuMCAoTWFjaW50b3NoOyBJbnRlbCBNYWMgT1MgWCAxMF8xNV83KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBDaHJvbWUvMTM4LjAuMC4wIFNhZmFyaS81MzcuMzYiLCJzYWx0IjoiMDlkMWRiNTI1MzcwNGMwYjhjOTE3OWM3MmQxZGY1MjcifQ.R-3NNqclL_ZhUcqHfEB5Ahad92QoZST3ZE_IJ5r8UE4";
 
 async function writeChatAgent(agentPath: string): Promise<void> {
   await mkdir(path.dirname(agentPath), { recursive: true });

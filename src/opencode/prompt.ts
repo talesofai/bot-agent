@@ -34,6 +34,30 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
   return sections.join("\n\n");
 }
 
+export function buildOpencodeSystemContext(input: {
+  systemPrompt: string;
+  history: HistoryEntry[];
+}): string {
+  const sections: string[] = [];
+  const systemPrompt = input.systemPrompt.trim();
+  if (systemPrompt) {
+    sections.push(systemPrompt);
+  }
+
+  const grouped = groupHistoryLines(input.history);
+  if (grouped.groupWindow.length > 0) {
+    sections.push(`群窗口:\n${grouped.groupWindow.join("\n")}`);
+  }
+  if (grouped.userMemory.length > 0) {
+    sections.push(`跨群记忆:\n${grouped.userMemory.join("\n")}`);
+  }
+  if (grouped.other.length > 0) {
+    sections.push(`历史:\n${grouped.other.join("\n")}`);
+  }
+
+  return sections.join("\n\n").trim();
+}
+
 function groupHistoryLines(history: HistoryEntry[]): {
   groupWindow: string[];
   userMemory: string[];

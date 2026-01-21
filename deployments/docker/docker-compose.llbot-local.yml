@@ -110,14 +110,100 @@ services:
   opencode-server:
     image: ghcr.io/opencode-bot-agent/opencode-bot-agent:latest
     container_name: opencode-server
-    command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+
+        mkdir -p "${HOME}/.local/share/opencode" "${HOME}/.config/opencode"
+
+        if [ -n "${OPENAI_API_KEY:-}" ]; then
+          cat > "${HOME}/.local/share/opencode/auth.json" <<EOF
+          {
+            "litellm": {
+              "type": "api",
+              "key": "${OPENAI_API_KEY}"
+            }
+          }
+        EOF
+          chmod 600 "${HOME}/.local/share/opencode/auth.json" || true
+        fi
+
+        cat > /tmp/opencode-config-gen.mjs <<'EOF'
+        import * as fs from "node:fs/promises";
+        import * as path from "node:path";
+
+        const homeDir = process.env.HOME ?? "/data/opencode-home";
+        const configPath = path.join(homeDir, ".config", "opencode", "config.json");
+        const raw = (process.env.OPENCODE_MODELS ?? "").trim();
+        const models = raw
+          ? raw
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean)
+          : [];
+        const unique = Array.from(new Set(models));
+        if (unique.some((model) => model.includes("/"))) {
+          throw new Error(
+            "OPENCODE_MODELS must be comma-separated bare model names (no provider prefix)",
+          );
+        }
+
+        const config = {
+          $schema: "https://opencode.ai/config.json",
+          ...(unique.length > 0
+            ? {
+                provider: {
+                  litellm: {
+                    npm: "@ai-sdk/openai-compatible",
+                    options: {
+                      baseURL: "{env:OPENAI_BASE_URL}",
+                    },
+                    models: Object.fromEntries(unique.map((name) => [name, { name }])),
+                  },
+                },
+              }
+            : {}),
+          mcp: {
+            talesofai: {
+              type: "remote",
+              url: "https://mcp.talesofai.cn/mcp",
+              enabled: true,
+              timeout: 600000,
+              headers: {
+                "x-token": "{env:NIETA_TOKEN}",
+              },
+            },
+          },
+        };
+
+        await fs.mkdir(path.dirname(configPath), { recursive: true });
+        const tmpPath = `${configPath}.tmp`;
+        await fs.writeFile(tmpPath, JSON.stringify(config, null, 2), "utf8");
+        await fs.rename(tmpPath, configPath);
+        EOF
+
+        bun run /tmp/opencode-config-gen.mjs
+        rm -f /tmp/opencode-config-gen.mjs
+
+        for c in \
+          /usr/local/bun/install/global/node_modules/opencode-linux-x64-baseline/bin/opencode \
+          /usr/local/bun/install/global/node_modules/opencode-linux-x64/bin/opencode \
+          /usr/local/bun/install/global/node_modules/opencode-linux-x64-musl/bin/opencode; do
+          if [ -x "$c" ]; then
+            exec "$c" serve --hostname 0.0.0.0 --port 4096
+          fi
+        done
+
+        echo "opencode binary not found" >&2
+        exit 1
     env_file:
       - ../../configs/.env
     environment:
       - HOME=/data/opencode-home
     volumes:
       - ../../data:/data
-      - ../../configs/opencode:/data/opencode-home/.config/opencode:ro
     ports:
       - "4096:4096"
     networks:

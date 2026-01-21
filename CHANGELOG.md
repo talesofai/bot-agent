@@ -21,7 +21,7 @@
 - Opencode：外部模式（LiteLLM）请求自动附带 `traceparent` 与 `x-opencode-trace-id`，便于把 opencode 内部网络请求与上游网关/ARMS 链路追踪串联
 - Telemetry：支持将 `telemetry.span` 同步导出为 OpenTelemetry traces（OTLP），可上报到 ARMS 并与 LiteLLM spans 在同一 workspace 内聚合
 - K8s：新增 `AliyunLogConfig` 采集 bot 命名空间内 adapter/worker 容器 stdout/stderr 到 SLS（默认 Project：`k8s-log-<clusterId>`，Logstore：`opencode-bot-agent-stdout-<clusterId>`）
-- 部署：新增 opencode server 部署示例（Docker Compose + K8s），并提供 `configs/opencode/config.json` / ConfigMap 注入 talesofai MCP 配置
+- 部署：新增 opencode server 部署示例（Docker Compose + K8s）；启动时根据 `OPENCODE_MODELS` 生成 opencode `config.json`（talesofai MCP + litellm models），避免为新增模型手改 YAML/ConfigMap
 - Discord：AI 处理期间发送 typing indicator（“正在输入”状态）
 - Discord：注册并支持 Slash Commands（`/reset`、`/resetall`、`/model`、`/ping`、`/help`）
 - MCP：opencode 配置注入 talesofai 远程 MCP（`x-token` 来自环境变量 `NIETA_TOKEN`，支持会话内覆盖）

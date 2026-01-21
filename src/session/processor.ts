@@ -17,6 +17,7 @@ import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { buildBotAccountId } from "../utils/bot-id";
 import { extractOutputElements } from "./output-elements";
+import { redactSensitiveText } from "../utils/redact";
 import {
   type TelemetrySpanInput,
   resolveTraceId,
@@ -332,9 +333,12 @@ export class SessionProcessor {
                       return;
                     }
                     const output = resolveOutput(result.output);
+                    const auditedOutput = output
+                      ? redactSensitiveText(output)
+                      : undefined;
 
                     await batchSpan("send_response", async () =>
-                      this.sendResponse(mergedWithTrace, output),
+                      this.sendResponse(mergedWithTrace, auditedOutput),
                     );
                     await batchSpan("append_history", async () =>
                       this.appendHistoryFromJob(
@@ -343,7 +347,7 @@ export class SessionProcessor {
                         historyKey,
                         result.historyEntries,
                         result.streamEvents,
-                        output,
+                        auditedOutput,
                         { stdout: result.rawStdout, stderr: result.rawStderr },
                       ),
                     );
@@ -587,9 +591,10 @@ export class SessionProcessor {
         if (!event.text) {
           continue;
         }
+        const redactedText = redactSensitiveText(event.text);
         entries.push({
           role: "system",
-          content: event.text,
+          content: redactedText,
           createdAt: nowIso,
           groupId: sessionInfo.meta.groupId,
           sessionId: sessionInfo.meta.sessionId,
@@ -606,7 +611,10 @@ export class SessionProcessor {
     const logMaxBytes = 20_000;
     const stdout = runLogs?.stdout?.trim();
     if (stdout) {
-      const trimmed = truncateTextByBytes(stdout, logMaxBytes);
+      const trimmed = truncateTextByBytes(
+        redactSensitiveText(stdout),
+        logMaxBytes,
+      );
       entries.push({
         role: "system",
         content: trimmed.content,
@@ -624,7 +632,10 @@ export class SessionProcessor {
     }
     const stderr = runLogs?.stderr?.trim();
     if (stderr) {
-      const trimmed = truncateTextByBytes(stderr, logMaxBytes);
+      const trimmed = truncateTextByBytes(
+        redactSensitiveText(stderr),
+        logMaxBytes,
+      );
       entries.push({
         role: "system",
         content: trimmed.content,

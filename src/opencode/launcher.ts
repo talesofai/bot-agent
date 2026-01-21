@@ -59,6 +59,9 @@ export class OpencodeLauncher {
         ? buildLitellmTraceHeaders(traceId)
         : undefined;
 
+    const mcpUrl =
+      config.MCP_TALESOFAI_URL?.trim() || DEFAULT_MCP_TALESOFAI_URL;
+
     let opencodeHomeDir: string | null = null;
     if (externalModeEnabled) {
       opencodeHomeDir = await mkdtemp(path.join(os.tmpdir(), "opencode-home-"));
@@ -79,6 +82,13 @@ export class OpencodeLauncher {
       args.push("--agent", CHAT_AGENT_NAME);
     }
 
+    const sessionNietaToken = sanitizeTokenValue(
+      sessionInfo.meta.nietaToken ?? null,
+    );
+    if (sessionNietaToken) {
+      env.NIETA_TOKEN = sessionNietaToken;
+    }
+
     const model = externalModeEnabled
       ? await prepareExternalMode({
           baseUrl: externalBaseUrl!,
@@ -88,8 +98,9 @@ export class OpencodeLauncher {
           env,
           homeDir: opencodeHomeDir!,
           traceHeaders,
+          mcpUrl,
         })
-      : prepareDefaultMode(env);
+      : await prepareDefaultMode(env, mcpUrl, cleanupPaths);
 
     args.push("-m", model);
     args.push(
@@ -115,6 +126,7 @@ type ExternalModeInput = {
   env: Record<string, string | null>;
   homeDir: string;
   traceHeaders?: Record<string, string>;
+  mcpUrl: string;
 };
 
 const CHAT_AGENT_NAME = "chat-yolo-responder";
@@ -182,6 +194,7 @@ async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
     upsertAuthFile(authPath, input.apiKey),
     writeOpencodeConfig(configPath, input.baseUrl, allowedModels, {
       headers: input.traceHeaders,
+      mcpUrl: input.mcpUrl,
     }),
   ]);
 
@@ -204,12 +217,22 @@ function sanitizeModelOverride(value: string | undefined): string | null {
   return trimmed;
 }
 
-function prepareDefaultMode(env: Record<string, string | null>): string {
-  // Enforce the built-in default and ignore any external configuration.
-  env.OPENCODE_CONFIG = null;
+async function prepareDefaultMode(
+  env: Record<string, string | null>,
+  mcpUrl: string,
+  cleanupPaths: string[],
+): Promise<string> {
+  // Enforce the built-in default and ignore any external provider configuration,
+  // but still allow an explicit opencode config for MCP.
   env.OPENAI_BASE_URL = null;
   env.OPENAI_API_KEY = null;
   env.OPENCODE_MODELS = null;
+
+  const configDir = await mkdtemp(path.join(os.tmpdir(), "opencode-config-"));
+  cleanupPaths.push(configDir);
+  const configPath = path.join(configDir, "opencode.json");
+  await writeOpencodeMcpConfig(configPath, mcpUrl);
+  env.OPENCODE_CONFIG = configPath;
   return "opencode/glm-4.7-free";
 }
 
@@ -284,6 +307,7 @@ async function writeOpencodeConfig(
   models: string[],
   options?: {
     headers?: Record<string, string>;
+    mcpUrl?: string;
   },
 ): Promise<void> {
   await mkdir(path.dirname(configPath), { recursive: true });
@@ -313,8 +337,44 @@ async function writeOpencodeConfig(
         models: Object.fromEntries(modelEntries),
       },
     },
+    mcp: buildMcpConfig(options?.mcpUrl),
   };
   await writeJsonAtomic(configPath, config, 0o600);
+}
+
+async function writeOpencodeMcpConfig(
+  configPath: string,
+  mcpUrl: string,
+): Promise<void> {
+  await mkdir(path.dirname(configPath), { recursive: true });
+  const config = {
+    $schema: "https://opencode.ai/config.json",
+    mcp: buildMcpConfig(mcpUrl),
+  };
+  await writeJsonAtomic(configPath, config, 0o600);
+}
+
+function buildMcpConfig(mcpUrl: string | undefined): Record<string, unknown> {
+  const url = (mcpUrl ?? "").trim() || DEFAULT_MCP_TALESOFAI_URL;
+  return {
+    talesofai: {
+      type: "remote",
+      url,
+      enabled: true,
+      timeout: 600_000,
+      headers: {
+        "x-token": "{env:NIETA_TOKEN}",
+      },
+    },
+  };
+}
+
+function sanitizeTokenValue(value: string | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed;
 }
 
 function buildLitellmTraceHeaders(traceId: string): Record<string, string> {
@@ -327,6 +387,8 @@ function buildLitellmTraceHeaders(traceId: string): Record<string, string> {
     "x-opencode-trace-id": normalized,
   };
 }
+
+const DEFAULT_MCP_TALESOFAI_URL = "https://mcp.talesofai.cn/mcp";
 
 async function writeChatAgent(agentPath: string): Promise<void> {
   await mkdir(path.dirname(agentPath), { recursive: true });

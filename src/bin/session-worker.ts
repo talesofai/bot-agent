@@ -6,6 +6,7 @@ import { startHttpServer, type HttpServer } from "../http/server";
 import type { Bot } from "../types/platform";
 import { getBotIdAliasMap } from "../utils/bot-id";
 import { shutdownOtel, startOtel } from "../otel";
+import { BotMessageStore } from "../store/bot-message-store";
 
 const config = getConfig();
 
@@ -22,7 +23,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const platformAdapters = createPlatformAdapters(config);
+  const botMessageStore = new BotMessageStore({
+    redisUrl: config.REDIS_URL,
+    logger,
+  });
+  const platformAdapters = createPlatformAdapters(config, { botMessageStore });
 
   logger.info(
     {
@@ -86,6 +91,7 @@ async function main(): Promise<void> {
       if (httpServer) {
         httpServer.stop();
       }
+      await botMessageStore.close();
       await adapter.disconnect(bot);
     } catch (err) {
       logger.error({ err }, "Error during disconnect");

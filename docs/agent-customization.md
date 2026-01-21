@@ -204,7 +204,7 @@ speaking_style: 年轻人网络用语
 enabled: true
 
 # 触发方式
-triggerMode: mention # mention | keyword
+triggerMode: keyword # mention | keyword（keyword 为“前缀匹配”）
 keywords: # keyword 模式的触发词（群级）
   - "小助手"
   - "机器人"
@@ -213,6 +213,12 @@ keywordRouting: # 关键词路由开关（群级）
   enableGroup: true # 是否响应群关键词
   enableBot: true # 是否允许机器人关键词
 echoRate: null # 复读概率（0-100），空为继承上一级
+
+# 定时热点推送（默认不启用；管理员可 /push 配置）
+push:
+  enabled: false
+  time: "09:00"
+  timezone: Asia/Shanghai
 
 # 每个用户最大会话数
 maxSessions: 1
@@ -240,6 +246,11 @@ adminUsers:
 | `/reset all`         | 重置全群对话（仅管理员；仅影响已创建会话的用户） |
 | `/model <name>`      | 切换群模型（仅管理员）                           |
 | `/model default`     | 清除群配置 model 覆盖                            |
+| `/push`              | 查看定时推送状态与用法（仅管理员）               |
+| `/push on/off`       | 启用/关闭定时推送（仅管理员）                    |
+| `/push time HH:MM`   | 设置推送时间（仅管理员）                         |
+| `/login [token]`     | 保存 MCP token 到当前会话（不推荐在群里执行）    |
+| `/logout`            | 从当前会话移除 MCP token                         |
 
 仍在规划中：
 

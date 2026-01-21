@@ -58,7 +58,7 @@ DISCORD_APPLICATION_ID=
 ```
 
 > Adapter 进程默认连接 QQ 注册表；提供 `DISCORD_TOKEN` 时会同时连接 Discord。
-> Discord Slash Commands（`/ask`、`/reset` 等）需要额外配置 `DISCORD_APPLICATION_ID`（Discord 应用 ID），否则会跳过注册。
+> Discord Slash Commands（`/reset`、`/resetall`、`/model`、`/ping`、`/help`）需要额外配置 `DISCORD_APPLICATION_ID`（Discord 应用 ID），否则会跳过注册。
 > 管理指令 `/model` 会读取 `OPENCODE_MODELS` 白名单，请确保 Adapter 进程也注入了该环境变量。
 
 ### 队列配置
@@ -146,7 +146,12 @@ OTEL_SERVICE_NAME=opencode-bot-agent-worker-sg
 
 ```env
 # talesofai MCP Server 地址
-MCP_TALESOFAI_URL=http://mcp.talesofai.com
+MCP_TALESOFAI_URL=https://mcp.talesofai.cn/mcp
+
+# talesofai MCP 鉴权 token（请求头 x-token）
+# - 可直接在环境变量里配置（推荐）
+# - 或使用 /login 写入“当前会话”并在会话内覆盖
+NIETA_TOKEN=
 
 ```
 
@@ -259,7 +264,7 @@ EXPIRE bot:route:{bot_account_id} 30
 ```yaml
 # 群特定配置
 enabled: true # 是否启用 AI 回复
-triggerMode: mention # 触发方式: mention | keyword
+triggerMode: keyword # 触发方式: mention | keyword（keyword 为“前缀匹配”）
 keywords: # keyword 模式的触发词（群级）
   - "小助手"
   - "机器人"
@@ -271,6 +276,12 @@ echoRate: null # 复读概率（0-100），空为继承上一级
 maxSessions: 1 # 每个用户最大会话数
 model: glm-4.7 # 可选：仅外部模式生效，且必须在 OPENCODE_MODELS 白名单内（裸模型名）；也可用 /model 管理指令切换
 
+# 定时热点推送（默认不启用；管理员可 /push 配置）
+push:
+  enabled: false
+  time: "09:00"
+  timezone: Asia/Shanghai
+
 # 管理员配置
 adminUsers:
   - "123456789" # QQ 号
@@ -281,17 +292,19 @@ adminUsers:
 群级开关由 `keywordRouting` 控制，机器人级开关可在机器人配置中进一步细化。
 复读概率 `echoRate` 由 bot > group > global 依次回退，空值代表继承。
 
+群聊入队规则：仅在 **@Bot** / **关键词前缀** / **回复 Bot 消息** 三种情况下触发 AI 处理；其中 `triggerMode=keyword` 时关键词为“前缀匹配”（大小写不敏感）。
+
 ### 全局关键词配置
 
 ```yaml
 # /data/router/global.yaml
 keywords:
-  - "生成图像"
-  - "画图"
-echoRate: 30
+  - "奈塔"
+  - "小捏"
+echoRate: 0
 ```
 
-> 首次启动时若 `router/global.yaml` 不存在，Adapter 会自动创建默认文件（空关键词 + `echoRate=30`），方便运维直接改文件生效。
+> 首次启动时若 `router/global.yaml` 不存在，Adapter 会自动创建默认文件（默认唤醒词关键词 + `echoRate=0`），方便运维直接改文件生效。
 
 ### 机器人关键词配置
 

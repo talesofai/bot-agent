@@ -80,7 +80,7 @@
 	    ├── llbot/             # Docker Compose：LuckyLilliaBot 数据
 	    ├── postgres/          # Docker Compose：PostgreSQL 数据
 	    └── redis/             # Docker Compose：Redis 数据
-	```
+```
 
 默认 Agent 设计来自 `configs/default-agent.md`。通用技能仍在规划中，目前仅加载群内 `skills/`。
 

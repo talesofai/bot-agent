@@ -14,6 +14,9 @@ import { SessionBufferStore } from "../session/buffer";
 import { SessionRepository } from "../session";
 import { getBotIdAliasMap } from "../utils/bot-id";
 import { shutdownOtel, startOtel } from "../otel";
+import { BotMessageStore } from "../store/bot-message-store";
+import { GroupRouteStore } from "../store/group-route-store";
+import { GroupHotPushScheduler } from "../push/scheduler";
 
 const config = getConfig();
 
@@ -24,7 +27,15 @@ async function main(): Promise<void> {
     logger.warn({ err }, "Failed to start OpenTelemetry");
   }
 
-  const platformAdapters = createPlatformAdapters(config);
+  const botMessageStore = new BotMessageStore({
+    redisUrl: config.REDIS_URL,
+    logger,
+  });
+  const groupRouteStore = new GroupRouteStore({
+    redisUrl: config.REDIS_URL,
+    logger,
+  });
+  const platformAdapters = createPlatformAdapters(config, { botMessageStore });
   for (const adapter of platformAdapters) {
     if (adapter instanceof DiscordAdapter) {
       adapter.enableSlashCommands();
@@ -117,6 +128,8 @@ async function main(): Promise<void> {
     sessionQueue,
     bufferStore,
     echoTracker,
+    botMessageStore,
+    groupRouteStore,
     logger,
     forceGroupId: config.FORCE_GROUP_ID,
   });
@@ -124,15 +137,26 @@ async function main(): Promise<void> {
     void dispatcher.dispatch(message);
   });
 
+  const pushScheduler = new GroupHotPushScheduler({
+    groupsDataDir: config.GROUPS_DATA_DIR,
+    dispatcher,
+    groupRouteStore,
+    logger,
+  });
+  pushScheduler.start();
+
   const shutdown = async (exitCode = 0) => {
     logger.info("Shutting down...");
     try {
       if (httpServer) {
         httpServer.stop();
       }
+      pushScheduler.stop();
       await bufferStore.close();
       await echoTracker.close();
       await sessionQueue.close();
+      await botMessageStore.close();
+      await groupRouteStore.close();
       await adapter.disconnect(bot);
     } catch (err) {
       logger.error({ err }, "Error during disconnect");

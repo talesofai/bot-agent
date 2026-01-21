@@ -8,9 +8,12 @@ import type { RouterStore } from "../store/router";
 import type { BullmqSessionQueue } from "../queue";
 import type { SessionRepository } from "../session";
 import { getConfig } from "../config";
+import type { BotMessageStore } from "../store/bot-message-store";
+import type { GroupRouteStore } from "../store/group-route-store";
 import {
   extractSessionKey,
   resolveTriggerRule,
+  stripKeywordPrefix,
   shouldEnqueue,
 } from "./trigger";
 import { EchoTracker } from "./echo";
@@ -33,6 +36,8 @@ export interface MessageDispatcherOptions {
   sessionQueue: BullmqSessionQueue;
   bufferStore: SessionBuffer;
   echoTracker: EchoTracker;
+  botMessageStore?: BotMessageStore;
+  groupRouteStore?: GroupRouteStore;
   logger: Logger;
   forceGroupId?: string;
 }
@@ -45,6 +50,8 @@ export class MessageDispatcher {
   private sessionQueue: BullmqSessionQueue;
   private bufferStore: SessionBuffer;
   private echoTracker: EchoTracker;
+  private botMessageStore?: BotMessageStore;
+  private groupRouteStore?: GroupRouteStore;
   private logger: Logger;
   private forceGroupId?: string;
 
@@ -56,6 +63,8 @@ export class MessageDispatcher {
     this.sessionQueue = options.sessionQueue;
     this.bufferStore = options.bufferStore;
     this.echoTracker = options.echoTracker;
+    this.botMessageStore = options.botMessageStore;
+    this.groupRouteStore = options.groupRouteStore;
     this.logger = options.logger;
     const forceGroupId = options.forceGroupId?.trim();
     this.forceGroupId = forceGroupId ? forceGroupId : undefined;
@@ -64,10 +73,11 @@ export class MessageDispatcher {
   async dispatch(message: SessionEvent): Promise<void> {
     const traceStartedAt = Date.now();
     const traceId = getTraceIdFromExtras(message.extras) ?? createTraceId();
-    const tracedMessage: SessionEvent = {
+    let tracedMessage: SessionEvent = {
       ...message,
       extras: setTraceIdOnExtras(message.extras, traceId),
     };
+    tracedMessage = await this.augmentReplyMention(tracedMessage);
     const log = this.logger.child({ traceId });
     const baseSpanMessage = {
       platform: tracedMessage.platform,
@@ -111,6 +121,14 @@ export class MessageDispatcher {
             );
           }
           const botId = buildBotFsId(tracedMessage.platform, rawBotId);
+          if (tracedMessage.guildId) {
+            await this.groupRouteStore?.recordRoute({
+              groupId,
+              platform: tracedMessage.platform,
+              selfId: rawBotId,
+              channelId: tracedMessage.channelId,
+            });
+          }
           await withTelemetrySpan(
             log,
             {
@@ -226,10 +244,43 @@ export class MessageDispatcher {
             return;
           }
 
-          const { key, content, prefixLength } = extractSessionKey(
-            tracedMessage.content,
+          let normalizedMessage = tracedMessage;
+
+          const wakePrefixFirst = stripKeywordPrefix(
+            normalizedMessage.content,
+            triggerRule.keywords,
           );
-          const trimmedContent = content.trim();
+          normalizedMessage = applySessionKey(
+            normalizedMessage,
+            wakePrefixFirst.content,
+            wakePrefixFirst.prefixLength,
+          );
+
+          const { key, content, prefixLength } = extractSessionKey(
+            normalizedMessage.content,
+          );
+          normalizedMessage = applySessionKey(
+            normalizedMessage,
+            content,
+            prefixLength,
+          );
+
+          const wakePrefixSecond = stripKeywordPrefix(
+            normalizedMessage.content,
+            triggerRule.keywords,
+          );
+          normalizedMessage = applySessionKey(
+            normalizedMessage,
+            wakePrefixSecond.content,
+            wakePrefixSecond.prefixLength,
+          );
+
+          const trimmedContent = normalizedMessage.content.trim();
+          normalizedMessage = applySessionKey(
+            normalizedMessage,
+            trimmedContent,
+            0,
+          );
           if (key >= groupConfig.maxSessions) {
             log.warn(
               {
@@ -242,10 +293,7 @@ export class MessageDispatcher {
             );
             return;
           }
-          const logContent =
-            groupConfig.triggerMode === "keyword"
-              ? tracedMessage.content
-              : trimmedContent;
+          const logContent = trimmedContent;
           const contentHash = createHash("sha256")
             .update(logContent)
             .digest("hex")
@@ -290,11 +338,7 @@ export class MessageDispatcher {
             return;
           }
 
-          const session = applySessionKey(
-            tracedMessage,
-            trimmedContent,
-            prefixLength,
-          );
+          const session = normalizedMessage;
           const sessionId = await withTelemetrySpan(
             log,
             {
@@ -420,7 +464,188 @@ export class MessageDispatcher {
         groupConfig,
         model: command.model,
       });
+      return;
     }
+    if (command.type === "push") {
+      await this.handlePushCommand({
+        message,
+        groupId,
+        groupConfig,
+        command,
+      });
+      return;
+    }
+    if (command.type === "login") {
+      await this.handleLoginCommand({
+        message,
+        groupId,
+        botId,
+        key,
+        token: command.token,
+      });
+      return;
+    }
+    if (command.type === "logout") {
+      await this.handleLogoutCommand({
+        message,
+        groupId,
+        botId,
+        key,
+      });
+    }
+  }
+
+  private async handlePushCommand(input: {
+    message: SessionEvent;
+    groupId: string;
+    groupConfig: GroupConfig;
+    command: Extract<ManagementCommand, { type: "push" }>;
+  }): Promise<void> {
+    const { message, groupId, groupConfig, command } = input;
+    if (!message.guildId) {
+      await this.adapter.sendMessage(message, "该指令仅支持在群内使用。");
+      return;
+    }
+    if (!isGroupAdminUser(message, groupConfig)) {
+      await this.adapter.sendMessage(
+        message,
+        "无权限：仅管理员可配置定时推送。",
+      );
+      return;
+    }
+
+    if (command.action === "status") {
+      const enabled = groupConfig.push?.enabled ? "已启用" : "未启用";
+      const time = groupConfig.push?.time ?? "09:00";
+      const timezone = groupConfig.push?.timezone ?? "Asia/Shanghai";
+      await this.adapter.sendMessage(
+        message,
+        `定时推送：${enabled}\n时间：${time}\n时区：${timezone}\n用法：/push on | /push off | /push time HH:MM`,
+      );
+      return;
+    }
+
+    if (command.action === "enable") {
+      const updated = await this.groupStore.updateGroupConfig(
+        groupId,
+        (cfg) => {
+          return { ...cfg, push: { ...cfg.push, enabled: true } };
+        },
+      );
+      await this.adapter.sendMessage(
+        message,
+        `定时推送已启用（时间：${updated.push.time}，时区：${updated.push.timezone}）。`,
+      );
+      return;
+    }
+
+    if (command.action === "disable") {
+      await this.groupStore.updateGroupConfig(groupId, (cfg) => {
+        return { ...cfg, push: { ...cfg.push, enabled: false } };
+      });
+      await this.adapter.sendMessage(message, "定时推送已关闭。");
+      return;
+    }
+
+    const parsedTime = parseTimeHHMM(command.time ?? "");
+    if (!parsedTime) {
+      await this.adapter.sendMessage(
+        message,
+        "时间格式错误：请使用 HH:MM（例如 09:00）。",
+      );
+      return;
+    }
+    const updated = await this.groupStore.updateGroupConfig(groupId, (cfg) => {
+      return { ...cfg, push: { ...cfg.push, time: parsedTime } };
+    });
+    await this.adapter.sendMessage(
+      message,
+      `推送时间已更新：${updated.push.time}（默认不自动启用；如需启用请 /push on）。`,
+    );
+  }
+
+  private async handleLoginCommand(input: {
+    message: SessionEvent;
+    groupId: string;
+    botId: string;
+    key: number;
+    token: string | null;
+  }): Promise<void> {
+    const { message, groupId, botId, key, token } = input;
+    if (!token) {
+      await this.adapter.sendMessage(
+        message,
+        "暂不支持自动登录；请设置环境变量 NIETA_TOKEN，或使用 `/login <token>` 保存到当前会话（不推荐在群里执行）。",
+      );
+      return;
+    }
+    const sessionId = await this.sessionRepository.resolveActiveSessionId(
+      botId,
+      groupId,
+      message.userId,
+      key,
+    );
+    await this.ensureSessionFiles({
+      botId,
+      groupId,
+      userId: message.userId,
+      key,
+      sessionId,
+    });
+    const existing = await this.sessionRepository.loadSession(
+      botId,
+      groupId,
+      message.userId,
+      sessionId,
+    );
+    if (!existing) {
+      await this.adapter.sendMessage(message, "登录失败：无法加载会话。");
+      return;
+    }
+    const now = new Date().toISOString();
+    await this.sessionRepository.updateMeta({
+      ...existing.meta,
+      nietaToken: token,
+      updatedAt: now,
+    });
+    await this.adapter.sendMessage(message, "登录态已保存到当前会话。");
+  }
+
+  private async handleLogoutCommand(input: {
+    message: SessionEvent;
+    groupId: string;
+    botId: string;
+    key: number;
+  }): Promise<void> {
+    const { message, groupId, botId, key } = input;
+    const sessionId = await this.sessionRepository.resolveActiveSessionId(
+      botId,
+      groupId,
+      message.userId,
+      key,
+    );
+    await this.ensureSessionFiles({
+      botId,
+      groupId,
+      userId: message.userId,
+      key,
+      sessionId,
+    });
+    const existing = await this.sessionRepository.loadSession(
+      botId,
+      groupId,
+      message.userId,
+      sessionId,
+    );
+    if (!existing) {
+      await this.adapter.sendMessage(message, "退出失败：无法加载会话。");
+      return;
+    }
+    const now = new Date().toISOString();
+    const nextMeta = { ...existing.meta };
+    delete nextMeta.nietaToken;
+    await this.sessionRepository.updateMeta({ ...nextMeta, updatedAt: now });
+    await this.adapter.sendMessage(message, "登录态已从当前会话移除。");
   }
 
   private async handleResetCommand(input: {
@@ -698,6 +923,48 @@ export class MessageDispatcher {
       `已切换模型：${updated.model ?? "(默认)"}（实际使用：${effective}）`,
     );
   }
+
+  private async augmentReplyMention(
+    message: SessionEvent,
+  ): Promise<SessionEvent> {
+    if (!message.guildId) {
+      return message;
+    }
+    if (!this.botMessageStore) {
+      return message;
+    }
+    const selfId = message.selfId?.trim();
+    if (!selfId) {
+      return message;
+    }
+    const hasSelfMention = message.elements.some(
+      (element) => element.type === "mention" && element.userId === selfId,
+    );
+    if (hasSelfMention) {
+      return message;
+    }
+    const quoteIds = message.elements.flatMap((element) =>
+      element.type === "quote" ? [element.messageId] : [],
+    );
+    if (quoteIds.length === 0) {
+      return message;
+    }
+    for (const quoteId of quoteIds) {
+      if (
+        await this.botMessageStore.isBotMessage({
+          platform: message.platform,
+          selfId,
+          messageId: quoteId,
+        })
+      ) {
+        return {
+          ...message,
+          elements: [{ type: "mention", userId: selfId }, ...message.elements],
+        };
+      }
+    }
+    return message;
+  }
 }
 
 export function resolveDispatchGroupId(
@@ -758,7 +1025,14 @@ function stripPrefixFromElements(
 
 type ManagementCommand =
   | { type: "reset"; scope: "self" | "all" }
-  | { type: "model"; model: string | null };
+  | { type: "model"; model: string | null }
+  | {
+      type: "push";
+      action: "status" | "enable" | "disable" | "time";
+      time?: string;
+    }
+  | { type: "login"; token: string | null }
+  | { type: "logout" };
 
 function parseManagementCommand(input: string): ManagementCommand | null {
   const trimmed = input.trim();
@@ -793,21 +1067,71 @@ function parseManagementCommand(input: string): ManagementCommand | null {
   const modelMatch =
     trimmed.match(/^(?:\/model|model)(?:\s+|$)(.*)$/i) ??
     trimmed.match(/^(?:\/模型|模型)(?:\s+|$)(.*)$/);
-  if (!modelMatch) {
-    return null;
+  if (modelMatch) {
+    const rawArg = modelMatch[1]?.trim() ?? "";
+    if (!rawArg) {
+      return { type: "model", model: "" };
+    }
+    if (
+      ["default", "clear", "none", "off", "reset", "默认"].includes(
+        rawArg.toLowerCase(),
+      )
+    ) {
+      return { type: "model", model: null };
+    }
+    return { type: "model", model: rawArg };
   }
-  const rawArg = modelMatch[1]?.trim() ?? "";
-  if (!rawArg) {
-    return { type: "model", model: "" };
+
+  const pushMatch =
+    trimmed.match(/^(?:\/push|push)(?:\s+(.+))?$/i) ??
+    trimmed.match(/^(?:\/推送|推送)(?:\s+(.+))?$/);
+  if (pushMatch) {
+    const arg = pushMatch[1]?.trim() ?? "";
+    if (!arg) {
+      return { type: "push", action: "status" };
+    }
+    const lowered = arg.toLowerCase();
+    if (
+      ["on", "enable", "enabled", "1", "true", "开", "开启", "启用"].includes(
+        lowered,
+      )
+    ) {
+      return { type: "push", action: "enable" };
+    }
+    if (
+      [
+        "off",
+        "disable",
+        "disabled",
+        "0",
+        "false",
+        "关",
+        "关闭",
+        "停用",
+      ].includes(lowered)
+    ) {
+      return { type: "push", action: "disable" };
+    }
+    const timeMatch =
+      arg.match(/^(?:time|at|时间)\s+(\d{1,2}:\d{2})$/i) ??
+      arg.match(/^(\d{1,2}:\d{2})$/);
+    if (timeMatch) {
+      return { type: "push", action: "time", time: timeMatch[1] };
+    }
+    return { type: "push", action: "status" };
   }
-  if (
-    ["default", "clear", "none", "off", "reset", "默认"].includes(
-      rawArg.toLowerCase(),
-    )
-  ) {
-    return { type: "model", model: null };
+
+  const loginMatch = trimmed.match(/^(?:\/login|login)(?:\s+(.+))?$/i);
+  if (loginMatch) {
+    const token = loginMatch[1]?.trim() ?? "";
+    return { type: "login", token: token ? token : null };
   }
-  return { type: "model", model: rawArg };
+
+  if (trimmed.match(/^(?:\/logout|logout)$/i)) {
+    return { type: "logout" };
+  }
+
+  return null;
 }
 
 function parseModelsCsv(value: string): string[] {
@@ -865,4 +1189,26 @@ function isGroupAdminUser(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseTimeHHMM(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    return null;
+  }
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return null;
+  }
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  return `${hh}:${mm}`;
 }

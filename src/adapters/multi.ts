@@ -8,6 +8,7 @@ import type {
   SessionEvent,
 } from "../types/platform";
 import { logger as defaultLogger } from "../logger";
+import { redactSensitiveElements, redactSensitiveText } from "../utils/redact";
 
 interface AdapterEntry {
   adapter: PlatformAdapter;
@@ -111,7 +112,11 @@ export class MultiAdapter implements PlatformAdapter {
       );
       return;
     }
-    await entry.adapter.sendMessage(session, content, options);
+    const auditedContent = redactSensitiveText(content);
+    const auditedOptions = options?.elements
+      ? { ...options, elements: redactSensitiveElements(options.elements) }
+      : options;
+    await entry.adapter.sendMessage(session, auditedContent, auditedOptions);
   }
 
   getBotUserId(): string | null {

@@ -68,7 +68,7 @@ GET /api/v1/groups/{group_id}
   "id": "123456789",
   "config": {
     "enabled": true,
-    "triggerMode": "mention",
+    "triggerMode": "keyword",
     "keywords": ["小助手"],
     "keywordRouting": {
       "enableGlobal": true,
@@ -77,6 +77,11 @@ GET /api/v1/groups/{group_id}
     },
     "echoRate": null,
     "adminUsers": ["123456789"],
+    "push": {
+      "enabled": false,
+      "time": "09:00",
+      "timezone": "Asia/Shanghai"
+    },
     "maxSessions": 1,
     "model": "gpt-5.2"
   },
@@ -101,7 +106,7 @@ Content-Type: application/json
 
 {
   "enabled": true,
-  "triggerMode": "mention",
+  "triggerMode": "keyword",
   "keywords": ["小助手"],
   "keywordRouting": {
     "enableGlobal": true,
@@ -110,6 +115,11 @@ Content-Type: application/json
   },
   "echoRate": null,
   "adminUsers": ["123456789"],
+  "push": {
+    "enabled": false,
+    "time": "09:00",
+    "timezone": "Asia/Shanghai"
+  },
   "maxSessions": 1
 }
 ```

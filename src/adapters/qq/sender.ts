@@ -6,6 +6,7 @@ import type {
 } from "../../types/platform";
 import type { MilkyConnection } from "./connection";
 import { getTraceIdFromExtras } from "../../telemetry";
+import type { BotMessageStore } from "../../store/bot-message-store";
 
 interface MilkyMessageSegment {
   type: string;
@@ -15,10 +16,16 @@ interface MilkyMessageSegment {
 export class MessageSender {
   private connection: MilkyConnection;
   private logger: Logger;
+  private botMessageStore?: BotMessageStore;
 
-  constructor(connection: MilkyConnection, logger: Logger) {
+  constructor(
+    connection: MilkyConnection,
+    logger: Logger,
+    botMessageStore?: BotMessageStore,
+  ) {
     this.connection = connection;
     this.logger = logger.child({ component: "sender" });
+    this.botMessageStore = botMessageStore;
   }
 
   async send(
@@ -47,7 +54,15 @@ export class MessageSender {
       : { user_id: channelId, message };
 
     try {
-      await this.connection.sendRequest(action, params);
+      const result = await this.connection.sendRequest(action, params);
+      const sentMessageId = extractMilkyMessageId(result);
+      if (sentMessageId && session.selfId) {
+        await this.botMessageStore?.recordSentMessage({
+          platform: session.platform,
+          selfId: session.selfId,
+          messageId: sentMessageId,
+        });
+      }
       log.debug(
         { action, channelId, messageLength: message.length },
         "Message sent",
@@ -107,4 +122,19 @@ export class MessageSender {
     }
     return segments;
   }
+}
+
+function extractMilkyMessageId(result: unknown): string | null {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const record = result as Record<string, unknown>;
+  const messageId = record["message_id"];
+  if (typeof messageId === "number" && Number.isFinite(messageId)) {
+    return String(messageId);
+  }
+  if (typeof messageId === "string" && messageId.trim()) {
+    return messageId.trim();
+  }
+  return null;
 }

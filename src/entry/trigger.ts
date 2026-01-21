@@ -80,14 +80,70 @@ export function matchesKeywords(content: string, keywords: string[]): boolean {
   if (keywords.length === 0) {
     return false;
   }
-  const lowered = content.toLowerCase();
-  return keywords.some((keyword) => lowered.includes(keyword));
+  const { content: withoutSessionKey } = extractSessionKey(content);
+  const lowered = withoutSessionKey.trimStart().toLowerCase();
+  return keywords.some((keyword) => matchesKeywordPrefix(lowered, keyword));
 }
 
 export function normalizeKeywords(keywords: string[]): string[] {
   return keywords
     .map((keyword) => keyword.trim().toLowerCase())
     .filter((keyword) => keyword.length > 0);
+}
+
+export function stripKeywordPrefix(
+  content: string,
+  keywords: string[],
+): { content: string; prefixLength: number } {
+  if (!content || keywords.length === 0) {
+    return { content, prefixLength: 0 };
+  }
+  const leadingWhitespace = content.match(/^\s*/u)?.[0]?.length ?? 0;
+  const withoutLeading = content.slice(leadingWhitespace);
+  if (!withoutLeading) {
+    return { content, prefixLength: 0 };
+  }
+  const lowered = withoutLeading.toLowerCase();
+  const sorted = [...keywords].sort((a, b) => b.length - a.length);
+  for (const keyword of sorted) {
+    if (!keyword) {
+      continue;
+    }
+    if (!matchesKeywordPrefix(lowered, keyword)) {
+      continue;
+    }
+    let end = leadingWhitespace + keyword.length;
+    while (end < content.length && isAllowedKeywordBoundary(content[end])) {
+      end += 1;
+    }
+    return { content: content.slice(end), prefixLength: end };
+  }
+  return { content, prefixLength: 0 };
+}
+
+function matchesKeywordPrefix(content: string, keyword: string): boolean {
+  if (!content.startsWith(keyword)) {
+    return false;
+  }
+  const next = content.slice(keyword.length);
+  if (!next) {
+    return true;
+  }
+  return isAllowedKeywordBoundary(next[0]);
+}
+
+function isAllowedKeywordBoundary(char: string): boolean {
+  if (!char) {
+    return true;
+  }
+  if (/\s/u.test(char)) {
+    return true;
+  }
+  // Common punctuation/symbol separators after wake words.
+  if (/[，,。.!！？?：:；;、~～\-—]/u.test(char)) {
+    return true;
+  }
+  return false;
 }
 
 export function extractSessionKey(input: string): {

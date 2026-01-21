@@ -13,11 +13,13 @@ import {
   type LlbotRegistryEntry,
 } from "../../registry/llbot-registry";
 import { QQAdapter } from "./adapter";
+import type { BotMessageStore } from "../../store/bot-message-store";
 
 interface QQAdapterPoolOptions {
   redisUrl: string;
   registryPrefix: string;
   logger?: Logger;
+  botMessageStore?: BotMessageStore;
 }
 
 interface BotConnection {
@@ -34,6 +36,7 @@ export class QQAdapterPool implements PlatformAdapter {
   private handlers: MessageHandler[] = [];
   private connections = new Map<string, BotConnection>();
   private connecting = new Set<string>();
+  private botMessageStore?: BotMessageStore;
 
   constructor(options: QQAdapterPoolOptions) {
     this.logger = (options.logger ?? defaultLogger).child({
@@ -44,6 +47,7 @@ export class QQAdapterPool implements PlatformAdapter {
       prefix: options.registryPrefix,
       logger: this.logger,
     });
+    this.botMessageStore = options.botMessageStore;
   }
 
   async connect(bot: Bot): Promise<void> {
@@ -125,7 +129,11 @@ export class QQAdapterPool implements PlatformAdapter {
       return;
     }
     this.connecting.add(entry.botId);
-    const adapter = new QQAdapter({ url: entry.wsUrl, logger: this.logger });
+    const adapter = new QQAdapter({
+      url: entry.wsUrl,
+      logger: this.logger,
+      botMessageStore: this.botMessageStore,
+    });
     const bot: Bot = {
       platform: this.platform,
       selfId: entry.botId,

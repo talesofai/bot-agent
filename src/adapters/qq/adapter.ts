@@ -11,12 +11,14 @@ import { MilkyConnection } from "./connection";
 import { parseMessage } from "./parser";
 import { MessageSender } from "./sender";
 import { logger as defaultLogger } from "../../logger";
+import type { BotMessageStore } from "../../store/bot-message-store";
 
 export interface QQAdapterOptions {
   /** Milky WebSocket URL */
   url?: string;
   /** Custom logger instance */
   logger?: Logger;
+  botMessageStore?: BotMessageStore;
 }
 
 export class QQAdapter extends EventEmitter implements PlatformAdapter {
@@ -65,7 +67,11 @@ export class QQAdapter extends EventEmitter implements PlatformAdapter {
       this.emit("disconnect");
     });
 
-    this.sender = new MessageSender(this.connection, this.logger);
+    this.sender = new MessageSender(
+      this.connection,
+      this.logger,
+      options.botMessageStore,
+    );
   }
 
   async connect(bot: Bot): Promise<void> {

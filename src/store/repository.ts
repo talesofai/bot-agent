@@ -21,7 +21,7 @@ const DEFAULT_AGENT_MD_PATH = join(PROJECT_ROOT, "configs", "default-agent.md");
 
 const DEFAULT_CONFIG_YAML = `# 群配置
 enabled: true
-triggerMode: mention
+triggerMode: keyword
 keywords: []
 keywordRouting:
   enableGlobal: true
@@ -30,6 +30,10 @@ keywordRouting:
 echoRate: null
 adminUsers: []
 maxSessions: 1
+push:
+  enabled: false
+  time: "09:00"
+  timezone: Asia/Shanghai
 `;
 
 export interface GroupFileRepositoryOptions {

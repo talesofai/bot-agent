@@ -93,7 +93,7 @@ describe("shouldEnqueue", () => {
   });
 
   test("matches keyword mode", () => {
-    const message: SessionEvent = { ...baseMessage, content: "Hello Bot" };
+    const message: SessionEvent = { ...baseMessage, content: "bot hello" };
     const config = makeConfig({ triggerMode: "keyword", keywords: ["bot"] });
     const rule = resolveTriggerRule({
       groupConfig: config,
@@ -129,7 +129,7 @@ describe("shouldEnqueue", () => {
   });
 
   test("respects bot keyword ownership", () => {
-    const message: SessionEvent = { ...baseMessage, content: "hello bot-a" };
+    const message: SessionEvent = { ...baseMessage, content: "bot-a hello" };
     const config = makeConfig({ triggerMode: "keyword" });
     const rule = resolveTriggerRule({
       groupConfig: config,
@@ -147,7 +147,7 @@ describe("shouldEnqueue", () => {
   });
 
   test("allows bot keyword match for self", () => {
-    const message: SessionEvent = { ...baseMessage, content: "hello bot-a" };
+    const message: SessionEvent = { ...baseMessage, content: "bot-a hello" };
     const config = makeConfig({ triggerMode: "keyword" });
     const rule = resolveTriggerRule({
       groupConfig: config,

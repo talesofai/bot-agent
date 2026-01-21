@@ -12,8 +12,10 @@ import {
 } from "../types/group";
 
 const DEFAULT_GLOBAL_CONFIG_YAML = `# 全局关键词配置
-keywords: []
-echoRate: 30
+keywords:
+  - 奈塔
+  - 小捏
+echoRate: 0
 `;
 
 const DEFAULT_BOT_CONFIG_YAML = `# 机器人关键词配置
@@ -28,7 +30,7 @@ echoRate: null
 const GlobalConfigSchema = z
   .object({
     keywords: z.array(z.string()).default([]),
-    echoRate: EchoRateSchema.default(30),
+    echoRate: EchoRateSchema.default(0),
   })
   .passthrough();
 
@@ -158,10 +160,10 @@ export class RouterStore {
     try {
       const fileStat = await stat(path);
       if (!fileStat.isFile()) {
-        return { keywords: [], echoRate: 30 };
+        return { keywords: [], echoRate: 0 };
       }
     } catch {
-      return { keywords: [], echoRate: 30 };
+      return { keywords: [], echoRate: 0 };
     }
     try {
       const content = await readFile(path, "utf-8");
@@ -170,7 +172,7 @@ export class RouterStore {
       return { keywords: config.keywords, echoRate: config.echoRate };
     } catch (err) {
       this.logger.warn({ err, path }, "Failed to load keywords config");
-      return { keywords: [], echoRate: 30 };
+      return { keywords: [], echoRate: 0 };
     }
   }
 

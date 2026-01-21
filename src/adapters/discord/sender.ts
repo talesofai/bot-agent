@@ -7,14 +7,21 @@ import type {
 import { Client, type MessageCreateOptions } from "discord.js";
 import { resolveDiscordImageAttachments } from "./image-attachments";
 import { getTraceIdFromExtras } from "../../telemetry";
+import type { BotMessageStore } from "../../store/bot-message-store";
 
 export class MessageSender {
   private client: Client;
   private logger: Logger;
+  private botMessageStore?: BotMessageStore;
 
-  constructor(client: Client, logger: Logger) {
+  constructor(
+    client: Client,
+    logger: Logger,
+    botMessageStore?: BotMessageStore,
+  ) {
     this.client = client;
     this.logger = logger.child({ component: "sender" });
+    this.botMessageStore = botMessageStore;
   }
 
   async send(
@@ -52,7 +59,16 @@ export class MessageSender {
     }
 
     try {
-      await channel.send(payload);
+      const sent = await channel.send(payload);
+      const messageId =
+        sent && typeof sent === "object" && "id" in sent ? String(sent.id) : "";
+      if (messageId && session.selfId) {
+        await this.botMessageStore?.recordSentMessage({
+          platform: session.platform,
+          selfId: session.selfId,
+          messageId,
+        });
+      }
       log.debug({ channelId: session.channelId }, "Message sent");
     } catch (err) {
       log.error({ err, channelId: session.channelId }, "Send failed");

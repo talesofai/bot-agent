@@ -95,6 +95,36 @@ describe("parseMessage", () => {
     expect(result!.content).toBe("Help me");
   });
 
+  test("should parse reply segments into quote elements", () => {
+    const event = {
+      post_type: "message",
+      message_type: "group",
+      message_id: 12345,
+      user_id: 123456789,
+      group_id: 987654321,
+      message: [
+        { type: "reply", data: { id: 777 } },
+        { type: "text", data: { text: " hi" } },
+      ],
+      raw_message: "[CQ:reply,id=777] hi",
+      sender: {
+        user_id: 123456789,
+        nickname: "TestUser",
+      },
+      time: 1704067200,
+      self_id: 111111111,
+    };
+
+    const result = parseMessage(event);
+
+    expect(result).not.toBeNull();
+    expect(result!.elements).toEqual([
+      { type: "quote", messageId: "777" },
+      { type: "text", text: "hi" },
+    ]);
+    expect(result!.content).toBe("hi");
+  });
+
   test("should return null for non-message events", () => {
     const event = {
       post_type: "meta_event",

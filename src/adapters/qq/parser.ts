@@ -110,6 +110,11 @@ function mapSegmentsToElements(
     }
     if (seg.type === "at" && seg.data.qq !== undefined) {
       elements.push({ type: "mention", userId: String(seg.data.qq) });
+      continue;
+    }
+    if (seg.type === "reply" && seg.data.id !== undefined) {
+      elements.push({ type: "quote", messageId: String(seg.data.id) });
+      continue;
     }
   }
   return trimTextElements(elements);
@@ -136,6 +141,8 @@ function parseRawElements(rawMessage: string): SessionElement[] {
     const params = parseCqParams(match[2]);
     if (type === "at" && params.qq) {
       elements.push({ type: "mention", userId: params.qq });
+    } else if (type === "reply" && params.id) {
+      elements.push({ type: "quote", messageId: params.id });
     } else if (type === "image") {
       const file = params.file ?? params.url;
       if (file) {

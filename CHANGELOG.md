@@ -20,7 +20,10 @@
 - Telemetry：支持将 `telemetry.span` 同步导出为 OpenTelemetry traces（OTLP），可上报到 ARMS 并与 LiteLLM spans 在同一 workspace 内聚合
 - K8s：新增 `AliyunLogConfig` 采集 bot 命名空间内 adapter/worker 容器 stdout/stderr 到 SLS（默认 Project：`k8s-log-<clusterId>`，Logstore：`opencode-bot-agent-stdout-<clusterId>`）
 - Discord：AI 处理期间发送 typing indicator（“正在输入”状态）
-- Discord：注册并支持 Slash Commands（`/ask`、`/ping`、`/help`）
+- Discord：注册并支持 Slash Commands（`/reset`、`/resetall`、`/model`、`/ping`、`/help`）
+- MCP：opencode 配置注入 talesofai 远程 MCP（`x-token` 来自环境变量 `NIETA_TOKEN`，支持会话内覆盖）
+- Push：新增群定时热点推送（管理员 `/push` 配置；默认不启用）
+- Session：新增 `/login`/`/logout`（token 存在当前会话 meta，用于 MCP 调用）
 - Session：新增会话映射 `sessions/{botId}/{groupId}/{userId}/index.json`（`key -> sessionId`），支持创建新会话并封存旧会话
 - Session：新增管理指令 `/reset`（自己/指定用户/全群）用于创建新会话；旧会话仅允许通过 API 复用
 - GroupConfig：新增管理员指令 `/model` 切换群模型（仅外部模式生效且受 `OPENCODE_MODELS` 白名单约束）；支持 `/model default` 清除覆盖
@@ -72,11 +75,14 @@
 - 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）
 - K8s：opencode-bot-agent 默认镜像改为阿里云仓库（`registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest`）
 - Session：`sessionId` 改为系统生成（不再使用 `{userId}-{key}`），并将 History 上下文过滤收敛到同一 `groupId + sessionId`
+- Trigger：keyword 触发改为“前缀匹配”，并支持唤醒词前缀剥离（例如 `奈塔 ...`）
+- Router：全局默认唤醒词设置为 `奈塔`/`小捏`，并将默认 `echoRate` 调整为 0（默认不复读）
 
 ### Security
 
 - 部署：补齐 `pmhq` 需要 `privileged: true` 的原因说明，并明确最小权限目标（`SYS_PTRACE` + `seccomp=unconfined`）
 - Opencode：外部模式使用临时 `HOME` 生成配置并在结束后清理，避免 API Key 落盘到宿主机目录
+- 输出/History：输出层审计并对 token/key 等敏感串打码，避免意外泄露
 
 ## [0.0.28] - 2026-01-16
 

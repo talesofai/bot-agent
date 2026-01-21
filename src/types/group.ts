@@ -19,7 +19,7 @@ export const EchoRateSchema = z.number().int().min(0).max(100);
  */
 export const GroupConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  triggerMode: z.enum(["mention", "keyword"]).default("mention"),
+  triggerMode: z.enum(["mention", "keyword"]).default("keyword"),
   keywords: z.array(z.string()).default([]),
   keywordRouting: KeywordRoutingSchema.default({
     enableGlobal: true,
@@ -30,6 +30,20 @@ export const GroupConfigSchema = z.object({
   adminUsers: z.array(z.string()).default([]),
   maxSessions: z.number().int().min(1).default(1),
   model: z.string().optional(),
+  push: z
+    .object({
+      enabled: z.boolean().default(false),
+      time: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .default("09:00"),
+      timezone: z.string().default("Asia/Shanghai"),
+    })
+    .default({
+      enabled: false,
+      time: "09:00",
+      timezone: "Asia/Shanghai",
+    }),
 });
 
 export type GroupConfig = z.infer<typeof GroupConfigSchema>;
@@ -80,7 +94,7 @@ export interface AgentContent {
  */
 export const DEFAULT_GROUP_CONFIG: GroupConfig = {
   enabled: true,
-  triggerMode: "mention",
+  triggerMode: "keyword",
   keywords: [],
   keywordRouting: {
     enableGlobal: true,
@@ -90,4 +104,9 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = {
   echoRate: null,
   adminUsers: [],
   maxSessions: 1,
+  push: {
+    enabled: false,
+    time: "09:00",
+    timezone: "Asia/Shanghai",
+  },
 };

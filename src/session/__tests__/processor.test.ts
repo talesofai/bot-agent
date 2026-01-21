@@ -697,6 +697,193 @@ describe("SessionProcessor", () => {
     expect(bufferStore.bufferLength(bufferKey)).toBe(0);
   });
 
+  test("handles rename-only messages without calling opencode", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const opencodeClient = new FakeOpencodeClient();
+    const runner = new CountingRunner();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+      limits: { historyEntries: 10, historyBytes: 10_000 },
+    });
+
+    try {
+      const message: SessionEvent = {
+        type: "message",
+        platform: "qq",
+        selfId: "123",
+        userId: jobData.userId,
+        guildId: jobData.groupId,
+        channelId: jobData.groupId,
+        messageId: "msg-1",
+        content: "叫我小明",
+        elements: [{ type: "text", text: "叫我小明" }],
+        timestamp: Date.now(),
+        extras: { sender: { nickname: "Alice" } },
+      };
+      const acquired = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        message,
+        jobData.gateToken,
+      );
+      expect(acquired).toBe(jobData.gateToken);
+
+      await processor.process({ id: 0, data: jobData }, jobData);
+
+      expect(runner.runs).toBe(0);
+      expect(adapter.messages).toEqual(["好的，以后叫你小明。"]);
+
+      const storedSession = await sessionRepository.loadSession(
+        jobData.botId,
+        jobData.groupId,
+        jobData.userId,
+        jobData.sessionId,
+      );
+      expect(storedSession?.meta.preferredName).toBe("小明");
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("injects preferred name into system context", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const opencodeClient = new FakeOpencodeClient();
+
+    class SystemCapturingRunner implements OpencodeRunner {
+      runs = 0;
+      lastSystem: string | null = null;
+
+      async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
+        this.runs += 1;
+        this.lastSystem = input.request.body.system ?? null;
+        return { output: "ok" };
+      }
+    }
+    const runner = new SystemCapturingRunner();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+      limits: { historyEntries: 10, historyBytes: 10_000 },
+    });
+
+    try {
+      const renameMessage: SessionEvent = {
+        type: "message",
+        platform: "qq",
+        selfId: "123",
+        userId: jobData.userId,
+        guildId: jobData.groupId,
+        channelId: jobData.groupId,
+        messageId: "msg-1",
+        content: "叫我小明",
+        elements: [{ type: "text", text: "叫我小明" }],
+        timestamp: Date.now(),
+        extras: { sender: { nickname: "Alice" } },
+      };
+      const acquired = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        renameMessage,
+        jobData.gateToken,
+      );
+      expect(acquired).toBe(jobData.gateToken);
+      await processor.process({ id: 0, data: jobData }, jobData);
+
+      const message: SessionEvent = {
+        ...renameMessage,
+        messageId: "msg-2",
+        content: "你好",
+        elements: [{ type: "text", text: "你好" }],
+        timestamp: Date.now(),
+      };
+      const acquiredAgain = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        message,
+        jobData.gateToken,
+      );
+      expect(acquiredAgain).toBe(jobData.gateToken);
+      await processor.process({ id: 1, data: jobData }, jobData);
+
+      expect(runner.runs).toBe(1);
+      expect(runner.lastSystem).toContain("用户希望的称呼：小明");
+      expect(runner.lastSystem).toContain("平台用户名：Alice");
+      expect(adapter.messages).toEqual(["好的，以后叫你小明。", "ok"]);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("requeues drained messages when gate token changes during run", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });

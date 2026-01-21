@@ -27,6 +27,7 @@
 - MCP：opencode 配置注入 talesofai 远程 MCP（`x-token` 来自环境变量 `NIETA_TOKEN`，支持会话内覆盖）
 - Push：新增群定时热点推送（管理员 `/push` 配置；默认不启用）
 - Session：新增 `/login`/`/logout`（token 存在当前会话 meta，用于 MCP 调用）
+- Session：会话 meta 记录用户昵称/称呼（`ownerName`/`preferredName`），并支持自然语言“叫我X/我是X”更新；system context 注入称呼信息
 - Session：新增会话映射 `sessions/{botId}/{groupId}/{userId}/index.json`（`key -> sessionId`），支持创建新会话并封存旧会话
 - Session：新增管理指令 `/reset`（自己/指定用户/全群）用于创建新会话；旧会话仅允许通过 API 复用
 - GroupConfig：新增管理员指令 `/model` 切换群模型（仅外部模式生效且受 `OPENCODE_MODELS` 白名单约束）；支持 `/model default` 清除覆盖
@@ -41,6 +42,7 @@
 - Discord：对外链图片尝试下载并以附件发送（best-effort），避免部分站点禁用 embed 导致“只有链接没图片”
 - Discord：外链图片不可下载/非图片响应时丢弃该图片元素，避免出现“空图片框”
 - 输出：支持无扩展名的 Markdown 图片 URL；Discord 下载外链图片时自动补齐附件扩展名，避免“有图片但不显示”
+- Discord/QQ：回复输出改为平台原生 reply（引用触发消息），不再在正文插入 `[quote:...]`/`[Quote:...]` 占位文本
 - HTTP：adapter/worker 默认使用不同端口（新增 `WORKER_HTTP_PORT`，默认 8081），避免本地同机多进程端口冲突
 - Opencode：prompt file 以 `--file` 追加到 message 之后，避免被 CLI 误当作文件列表吞掉导致 `opencode run` 直接失败
 - Opencode：支持解析 `--format json` 的事件流输出（text chunks），确保能提取最终回复

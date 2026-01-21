@@ -5,6 +5,8 @@ export interface SessionMeta {
   groupId: string;
   botId: string;
   ownerId: string;
+  ownerName?: string;
+  preferredName?: string;
   key: number;
   status: SessionStatus;
   active?: boolean;

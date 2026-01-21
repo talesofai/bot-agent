@@ -46,9 +46,16 @@ export class MessageSender {
       { logger: log },
     );
 
-    const payload = buildPayload(content, elements);
+    const resolvedReply = resolveReplyTarget(session, elements);
+    const payload = buildPayload(content, resolvedReply.elements);
     if (files.length > 0) {
       payload.files = files;
+    }
+    if (resolvedReply.replyTo) {
+      payload.reply = {
+        messageReference: resolvedReply.replyTo,
+        failIfNotExists: false,
+      };
     }
     if (
       !payload.content &&
@@ -144,9 +151,6 @@ function buildPayload(
       imageUrls.push(element.url);
       continue;
     }
-    if (element.type === "quote") {
-      textParts.push(`[quote:${element.messageId}]`);
-    }
   }
 
   const normalizedContent = content.trim();
@@ -205,4 +209,57 @@ function isTypableChannel(
   }
   const candidate = channel as { sendTyping?: unknown };
   return typeof candidate.sendTyping === "function";
+}
+
+function resolveReplyTarget(
+  session: SessionEvent,
+  elements: ReadonlyArray<SessionElement>,
+): { replyTo: string | null; elements: SessionElement[] } {
+  let replyTo: string | null = null;
+  const cleanedElements: SessionElement[] = [];
+  for (const element of elements) {
+    if (element.type === "quote") {
+      const candidate = element.messageId?.trim();
+      if (candidate && isLikelyDiscordMessageId(candidate)) {
+        replyTo = candidate;
+      }
+      continue;
+    }
+    cleanedElements.push(element);
+  }
+
+  if (!replyTo) {
+    const fallback = session.messageId?.trim();
+    if (
+      fallback &&
+      isLikelyDiscordMessageId(fallback) &&
+      !isDiscordInteractionEvent(session.extras) &&
+      !isScheduledPushEvent(session.extras)
+    ) {
+      replyTo = fallback;
+    }
+  }
+
+  return { replyTo, elements: cleanedElements };
+}
+
+function isLikelyDiscordMessageId(value: string): boolean {
+  return /^\d{16,20}$/.test(value);
+}
+
+function isDiscordInteractionEvent(extras: unknown): boolean {
+  if (!extras || typeof extras !== "object") {
+    return false;
+  }
+  const record = extras as Record<string, unknown>;
+  const interactionId = record["interactionId"];
+  return typeof interactionId === "string" && interactionId.trim().length > 0;
+}
+
+function isScheduledPushEvent(extras: unknown): boolean {
+  if (!extras || typeof extras !== "object") {
+    return false;
+  }
+  const record = extras as Record<string, unknown>;
+  return record["isScheduledPush"] === true;
 }

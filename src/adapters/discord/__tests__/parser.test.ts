@@ -5,12 +5,14 @@ import { parseMessage } from "../parser";
 function createDiscordMessage({
   botId,
   authorId,
+  authorName,
   content,
   mentions = [],
   repliedUserId,
 }: {
   botId: string;
   authorId: string;
+  authorName?: string;
   content: string;
   mentions?: string[];
   repliedUserId?: string;
@@ -20,7 +22,12 @@ function createDiscordMessage({
     { id },
   ]);
   return {
-    author: { bot: false, id: authorId },
+    author: {
+      bot: false,
+      id: authorId,
+      username: authorName ?? authorId,
+      globalName: null,
+    },
     client: { user: { id: botId } },
     content,
     mentions: {
@@ -41,6 +48,7 @@ describe("parseMessage", () => {
     const message = createDiscordMessage({
       botId,
       authorId: "user-1",
+      authorName: "alice",
       content: `<@${botId}> 你好`,
       mentions: [botId],
     });
@@ -56,6 +64,7 @@ describe("parseMessage", () => {
     const message = createDiscordMessage({
       botId,
       authorId: "user-1",
+      authorName: "alice",
       content: "你好",
       repliedUserId: botId,
     });
@@ -71,6 +80,7 @@ describe("parseMessage", () => {
     const message = createDiscordMessage({
       botId,
       authorId: "user-1",
+      authorName: "alice",
       content: "你好",
       mentions: [botId],
     });
@@ -86,6 +96,7 @@ describe("parseMessage", () => {
     const message = createDiscordMessage({
       botId,
       authorId: "user-1",
+      authorName: "alice",
       content: "你好",
       repliedUserId: "999",
     });
@@ -97,5 +108,18 @@ describe("parseMessage", () => {
         (element) => element.type === "mention" && element.userId === botId,
       ),
     ).toBe(false);
+  });
+
+  test("captures author name in extras", () => {
+    const botId = "123";
+    const message = createDiscordMessage({
+      botId,
+      authorId: "user-1",
+      authorName: "alice",
+      content: "你好",
+    });
+
+    const parsed = parseMessage(message, botId);
+    expect(parsed?.extras.authorName).toBe("alice");
   });
 });

@@ -294,9 +294,45 @@ export class SessionProcessor {
                       fn,
                     );
 
+                  const historyKey = resolveHistoryKey(mergedWithTrace);
+
+                  const profileResult = await batchSpan(
+                    "update_user_profile",
+                    async () =>
+                      this.updateUserProfileFromMessages(
+                        sessionInfo!,
+                        buffered,
+                        mergedWithTrace,
+                      ),
+                    { bufferedCount: buffered.length },
+                  );
+                  sessionInfo = profileResult.sessionInfo;
+
+                  if (profileResult.quickReply) {
+                    const auditedOutput = redactSensitiveText(
+                      profileResult.quickReply,
+                    );
+                    await batchSpan("send_response", async () =>
+                      this.sendResponse(mergedWithTrace, auditedOutput),
+                    );
+                    await batchSpan("append_history", async () =>
+                      this.appendHistoryFromJob(
+                        sessionInfo!,
+                        mergedWithTrace,
+                        historyKey,
+                        undefined,
+                        undefined,
+                        auditedOutput,
+                      ),
+                    );
+                    await batchSpan("record_activity", async () =>
+                      this.recordActivity(sessionInfo!, log),
+                    );
+                    return;
+                  }
+
                   const stopTyping = this.startTyping(mergedWithTrace, log);
                   try {
-                    const historyKey = resolveHistoryKey(mergedWithTrace);
                     const { history, request } = await this.buildPromptContext(
                       jobData.groupId,
                       sessionInfo!,
@@ -524,7 +560,11 @@ export class SessionProcessor {
       }),
     );
 
-    const systemPrompt = buildSystemPrompt(agentPrompt);
+    const baseSystemPrompt = buildSystemPrompt(agentPrompt);
+    const userProfilePrompt = buildUserProfilePrompt(sessionInfo.meta);
+    const systemPrompt = userProfilePrompt
+      ? `${baseSystemPrompt}\n\n${userProfilePrompt}`
+      : baseSystemPrompt;
     const system = buildOpencodeSystemContext({
       systemPrompt,
       history: mergedHistory,
@@ -659,6 +699,64 @@ export class SessionProcessor {
       updatedAt: new Date().toISOString(),
     };
     return this.sessionRepository.updateMeta(updated);
+  }
+
+  private async updateUserProfileFromMessages(
+    sessionInfo: SessionInfo,
+    buffered: ReadonlyArray<SessionEvent>,
+    latest: SessionEvent,
+  ): Promise<{ sessionInfo: SessionInfo; quickReply?: string }> {
+    const currentOwnerName = sessionInfo.meta.ownerName?.trim() ?? "";
+    const currentPreferredName = sessionInfo.meta.preferredName?.trim() ?? "";
+    const observedOwnerName = resolveUserDisplayName(latest);
+
+    let observedPreferredName: string | null = null;
+    let renameInstructionCount = 0;
+    for (const message of buffered) {
+      const candidate = extractPreferredNameInstruction(message.content);
+      if (!candidate) {
+        continue;
+      }
+      renameInstructionCount += 1;
+      observedPreferredName = candidate;
+    }
+
+    const shouldUpdateOwnerName =
+      Boolean(observedOwnerName) && observedOwnerName !== currentOwnerName;
+    const shouldUpdatePreferredName =
+      Boolean(observedPreferredName) &&
+      observedPreferredName !== currentPreferredName;
+
+    let updatedSessionInfo = sessionInfo;
+    if (shouldUpdateOwnerName || shouldUpdatePreferredName) {
+      const updatedAt = new Date().toISOString();
+      updatedSessionInfo = await this.sessionRepository.updateMeta({
+        ...sessionInfo.meta,
+        ownerName: shouldUpdateOwnerName
+          ? (observedOwnerName ?? undefined)
+          : sessionInfo.meta.ownerName,
+        preferredName: shouldUpdatePreferredName
+          ? (observedPreferredName ?? undefined)
+          : sessionInfo.meta.preferredName,
+        updatedAt,
+      });
+    }
+
+    if (renameInstructionCount === 0 || !observedPreferredName) {
+      return { sessionInfo: updatedSessionInfo };
+    }
+
+    const isRenameOnlyBatch = buffered.every(
+      (message) => extractPreferredNameInstruction(message.content) !== null,
+    );
+    if (!isRenameOnlyBatch) {
+      return { sessionInfo: updatedSessionInfo };
+    }
+
+    return {
+      sessionInfo: updatedSessionInfo,
+      quickReply: `好的，以后叫你${observedPreferredName}。`,
+    };
   }
 
   private async getGroupConfig(groupId: string) {
@@ -922,6 +1020,130 @@ function toBufferKey(jobData: SessionJobData): SessionBufferKey {
     groupId: jobData.groupId,
     sessionId: jobData.sessionId,
   };
+}
+
+function buildUserProfilePrompt(meta: SessionInfo["meta"]): string | null {
+  const preferredName = meta.preferredName?.trim();
+  const ownerName = meta.ownerName?.trim();
+  if (!preferredName && !ownerName) {
+    return null;
+  }
+
+  const lines = ["用户信息："];
+  if (preferredName) {
+    lines.push(`- 用户希望的称呼：${preferredName}`);
+  }
+  if (ownerName) {
+    lines.push(`- 平台用户名：${ownerName}`);
+  }
+
+  const effectiveName = preferredName ?? ownerName;
+  if (effectiveName) {
+    lines.push(`称呼用户时优先使用“${effectiveName}”。`);
+  }
+  return lines.join("\n");
+}
+
+function resolveUserDisplayName(session: SessionEvent): string | null {
+  if (session.platform === "discord") {
+    if (!session.extras || typeof session.extras !== "object") {
+      return null;
+    }
+    const extras = session.extras as Record<string, unknown>;
+    const authorName = extras["authorName"];
+    if (typeof authorName === "string" && authorName.trim()) {
+      return authorName.trim();
+    }
+    return null;
+  }
+
+  if (session.platform === "qq") {
+    if (!session.extras || typeof session.extras !== "object") {
+      return null;
+    }
+    const extras = session.extras as Record<string, unknown>;
+    const sender = extras["sender"];
+    if (!sender || typeof sender !== "object") {
+      return null;
+    }
+    const senderRecord = sender as Record<string, unknown>;
+    const card = senderRecord["card"];
+    if (typeof card === "string" && card.trim()) {
+      return card.trim();
+    }
+    const nickname = senderRecord["nickname"];
+    if (typeof nickname === "string" && nickname.trim()) {
+      return nickname.trim();
+    }
+    return null;
+  }
+
+  return null;
+}
+
+function extractPreferredNameInstruction(content: string): string | null {
+  const normalized = normalizeRenameText(content);
+  if (!normalized) {
+    return null;
+  }
+
+  const patterns: RegExp[] = [
+    /^(?:以后|今后|从现在起|从现在开始|以后请|请|麻烦|以后麻烦)?(?:都)?(?:叫我|称呼我|喊我)\s*([^，。,.!?\n]{1,32})[，。,.!?]*$/u,
+    /^(?:我叫|我是)\s*([^，。,.!?\n]{1,32})[，。,.!?]*$/u,
+    /^(?:把我叫做|把我称呼为|把我称作)\s*([^，。,.!?\n]{1,32})[，。,.!?]*$/u,
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (!match) {
+      continue;
+    }
+    const name = normalizePreferredName(match[1] ?? "");
+    if (!name) {
+      return null;
+    }
+    if (name.length > 32) {
+      return null;
+    }
+    return name;
+  }
+
+  return null;
+}
+
+function normalizeRenameText(content: string): string {
+  let text = content.trim();
+  if (!text) {
+    return "";
+  }
+  text = text.replace(/^#\d+\s*/u, "");
+  text = text.replace(/^(?:奈塔|小捏)(?:[,，:：\s]+|$)/u, "");
+  return text.trim();
+}
+
+function normalizePreferredName(value: string): string {
+  let name = value.trim();
+  if (!name) {
+    return "";
+  }
+
+  const wrappers: Array<[string, string]> = [
+    ["“", "”"],
+    ["‘", "’"],
+    ["「", "」"],
+    ["『", "』"],
+    ["【", "】"],
+    ['"', '"'],
+    ["'", "'"],
+    ["（", "）"],
+    ["(", ")"],
+  ];
+  for (const [open, close] of wrappers) {
+    if (name.startsWith(open) && name.endsWith(close) && name.length > 1) {
+      name = name.slice(open.length, name.length - close.length).trim();
+    }
+  }
+
+  return name;
 }
 
 const YOLO_TOOLS: Record<string, boolean> = {

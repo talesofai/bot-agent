@@ -11,6 +11,7 @@ export interface DiscordMessageExtras {
   channelId: string;
   guildId?: string;
   authorId: string;
+  authorName?: string;
   isGuildOwner?: boolean;
   isGuildAdmin?: boolean;
 }
@@ -38,6 +39,7 @@ export function parseMessage(
     message.member?.permissions?.has(PermissionFlagsBits.Administrator) ||
     message.member?.permissions?.has(PermissionFlagsBits.ManageGuild),
   );
+  const authorName = resolveAuthorName(message);
 
   return {
     type: "message",
@@ -55,10 +57,34 @@ export function parseMessage(
       channelId: message.channelId,
       guildId: message.guildId ?? undefined,
       authorId: message.author.id,
+      authorName,
       isGuildOwner: message.guildId ? isGuildOwner : undefined,
       isGuildAdmin: message.guildId ? isGuildAdmin : undefined,
     },
   };
+}
+
+function resolveAuthorName(message: Message): string | undefined {
+  const displayNameRaw = message.member?.displayName;
+  if (typeof displayNameRaw === "string" && displayNameRaw.trim()) {
+    return displayNameRaw.trim();
+  }
+
+  const author = message.author as unknown as {
+    globalName?: unknown;
+    username?: unknown;
+  };
+  const globalNameRaw = author.globalName;
+  if (typeof globalNameRaw === "string" && globalNameRaw.trim()) {
+    return globalNameRaw.trim();
+  }
+
+  const usernameRaw = author.username;
+  if (typeof usernameRaw === "string" && usernameRaw.trim()) {
+    return usernameRaw.trim();
+  }
+
+  return undefined;
 }
 
 function buildElements(

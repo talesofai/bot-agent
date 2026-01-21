@@ -40,7 +40,7 @@ describe("MessageSender", () => {
       userId: "user-1",
       guildId: "group-1",
       channelId: "",
-      messageId: "msg-1",
+      messageId: "101",
       content: "hello",
       elements: [{ type: "text", text: "hello" }],
       timestamp: 0,
@@ -61,7 +61,7 @@ describe("MessageSender", () => {
       userId: "user-1",
       guildId: "456",
       channelId: "456",
-      messageId: "msg-1",
+      messageId: "101",
       content: "hi",
       elements: [{ type: "text", text: "hi" }],
       timestamp: 0,
@@ -73,7 +73,10 @@ describe("MessageSender", () => {
     expect(sendRequestMock).toHaveBeenCalledTimes(1);
     expect(sendRequestMock).toHaveBeenCalledWith("send_group_msg", {
       group_id: "456",
-      message: [{ type: "text", data: { text: "hi" } }],
+      message: [
+        { type: "reply", data: { id: "101" } },
+        { type: "text", data: { text: "hi" } },
+      ],
     });
   });
 
@@ -85,7 +88,7 @@ describe("MessageSender", () => {
       selfId: "bot-1",
       userId: "user-1",
       channelId: "789",
-      messageId: "msg-1",
+      messageId: "101",
       content: "hello",
       elements: [{ type: "text", text: "hello" }],
       timestamp: 0,
@@ -95,7 +98,7 @@ describe("MessageSender", () => {
       elements: [
         { type: "text", text: "hello" },
         { type: "image", url: "https://example.com/a.png" },
-        { type: "quote", messageId: "msg-9" },
+        { type: "quote", messageId: "909" },
       ],
     };
 
@@ -105,9 +108,9 @@ describe("MessageSender", () => {
     expect(sendRequestMock).toHaveBeenCalledWith("send_private_msg", {
       user_id: "789",
       message: [
+        { type: "reply", data: { id: "909" } },
         { type: "text", data: { text: "hello" } },
         { type: "image", data: { file: "https://example.com/a.png" } },
-        { type: "text", data: { text: "\n[Quote:msg-9]" } },
       ],
     });
   });

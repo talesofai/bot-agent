@@ -38,7 +38,12 @@ export class MessageSender {
     const channelId = session.channelId;
     const isGroup = Boolean(session.guildId);
     const elements = options?.elements ?? [];
-    const message = this.buildMessage(content, elements);
+    const resolvedReply = resolveReplyTarget(session, elements);
+    const message = this.buildMessage(
+      content,
+      resolvedReply.elements,
+      resolvedReply.replyTo,
+    );
 
     if (!channelId) {
       throw new Error("channelId is required for sending messages.");
@@ -76,8 +81,13 @@ export class MessageSender {
   private buildMessage(
     content: string,
     elements?: ReadonlyArray<SessionElement>,
+    replyTo?: string | null,
   ): MilkyMessageSegment[] {
     const segments: MilkyMessageSegment[] = [];
+
+    if (replyTo) {
+      segments.push({ type: "reply", data: { id: replyTo } });
+    }
 
     if (elements && elements.length > 0) {
       const mapped = this.mapElements(elements);
@@ -113,12 +123,6 @@ export class MessageSender {
         segments.push({ type: "at", data: { qq: element.userId } });
         continue;
       }
-      if (element.type === "quote") {
-        segments.push({
-          type: "text",
-          data: { text: `\n[Quote:${element.messageId}]` },
-        });
-      }
     }
     return segments;
   }
@@ -137,4 +141,48 @@ function extractMilkyMessageId(result: unknown): string | null {
     return messageId.trim();
   }
   return null;
+}
+
+function resolveReplyTarget(
+  session: SessionEvent,
+  elements: ReadonlyArray<SessionElement>,
+): { replyTo: string | null; elements: SessionElement[] } {
+  let replyTo: string | null = null;
+  const cleanedElements: SessionElement[] = [];
+
+  for (const element of elements) {
+    if (element.type === "quote") {
+      const candidate = element.messageId?.trim();
+      if (candidate && isLikelyMilkyMessageId(candidate)) {
+        replyTo = candidate;
+      }
+      continue;
+    }
+    cleanedElements.push(element);
+  }
+
+  if (!replyTo) {
+    const fallback = session.messageId?.trim();
+    if (
+      fallback &&
+      isLikelyMilkyMessageId(fallback) &&
+      !isScheduledPushEvent(session.extras)
+    ) {
+      replyTo = fallback;
+    }
+  }
+
+  return { replyTo, elements: cleanedElements };
+}
+
+function isLikelyMilkyMessageId(value: string): boolean {
+  return /^\d+$/.test(value);
+}
+
+function isScheduledPushEvent(extras: unknown): boolean {
+  if (!extras || typeof extras !== "object") {
+    return false;
+  }
+  const record = extras as Record<string, unknown>;
+  return record["isScheduledPush"] === true;
 }

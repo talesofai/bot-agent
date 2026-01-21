@@ -36,6 +36,9 @@ export interface SessionWorkerOptions {
   runner: OpencodeRunner;
   logger: Logger;
   limits?: {
+    groupWindowEntries?: number;
+    userMemoryEntries?: number;
+    /** Deprecated: use groupWindowEntries/userMemoryEntries. */
     historyEntries?: number;
     historyBytes?: number;
   };
@@ -89,7 +92,14 @@ export class SessionWorker {
       activityIndex,
       bufferStore,
       limits: {
-        historyEntries: options.limits?.historyEntries ?? 100,
+        groupWindowEntries:
+          options.limits?.groupWindowEntries ??
+          options.limits?.historyEntries ??
+          30,
+        userMemoryEntries:
+          options.limits?.userMemoryEntries ??
+          options.limits?.historyEntries ??
+          20,
         historyBytes: options.limits?.historyBytes ?? 200_000,
       },
     });

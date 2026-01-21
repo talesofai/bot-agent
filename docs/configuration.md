@@ -88,6 +88,24 @@ REDIS_URL=redis://localhost:6379
 DATABASE_URL=postgres://postgres:postgres@postgres:5432/opencode
 ```
 
+### 历史上下文
+
+Worker 构建提示词时会把历史拆成两段，避免“别的群的记录把当前群窗口挤掉”：
+
+- 群窗口：当前群最近 N 条（包含其他人发给 bot、以及 bot 的回复）；私聊（`groupId=0`）会自动按 `userId` 过滤，避免不同用户私聊串台
+- 跨群记忆：当前用户在其他群/私聊与 bot 的最近 N 条（默认不包含当前群，避免重复）
+
+```env
+# 群窗口：当前群最近 N 条（默认 30）
+HISTORY_GROUP_WINDOW_MAX_ENTRIES=30
+
+# 跨群记忆：当前用户在其他群/私聊最近 N 条（默认 20）
+HISTORY_USER_MEMORY_MAX_ENTRIES=20
+
+# 历史总字节上限（默认 200000）
+HISTORY_MAX_BYTES=200000
+```
+
 ### HTTP 服务配置
 
 ```env

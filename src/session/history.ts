@@ -13,9 +13,20 @@ export interface HistoryKey {
   userId: string;
 }
 
+export interface GroupHistoryKey {
+  botAccountId: string;
+  groupId: string;
+  /** When groupId === "0" (dm), must scope to a single user. */
+  userId?: string;
+}
+
 export interface HistoryStore {
   readHistory(
     key: HistoryKey,
+    options?: HistoryReadOptions,
+  ): Promise<HistoryEntry[]>;
+  readGroupHistory(
+    key: GroupHistoryKey,
     options?: HistoryReadOptions,
   ): Promise<HistoryEntry[]>;
   appendHistory(key: HistoryKey, entry: HistoryEntry): Promise<void>;
@@ -38,6 +49,34 @@ export class InMemoryHistoryStore implements HistoryStore {
     return applyMaxBytes([...selected], options.maxBytes);
   }
 
+  async readGroupHistory(
+    key: GroupHistoryKey,
+    options: HistoryReadOptions = {},
+  ): Promise<HistoryEntry[]> {
+    const collected: HistoryEntry[] = [];
+    for (const stored of this.entries.values()) {
+      for (const entry of stored) {
+        if (entry.groupId !== key.groupId) {
+          continue;
+        }
+        if (key.userId && entry.userId !== key.userId) {
+          continue;
+        }
+        if (entry.includeInContext === false) {
+          continue;
+        }
+        collected.push(entry);
+      }
+    }
+    collected.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const maxEntries = options.maxEntries ?? 0;
+    const selected =
+      maxEntries > 0
+        ? collected.slice(Math.max(0, collected.length - maxEntries))
+        : collected;
+    return applyMaxBytes([...selected], options.maxBytes);
+  }
+
   async appendHistory(key: HistoryKey, entry: HistoryEntry): Promise<void> {
     const composed = composeKey(key);
     const stored = this.entries.get(composed) ?? [];
@@ -55,10 +94,13 @@ export interface PostgresHistoryStoreOptions {
 }
 
 interface HistoryRow {
+  id: string;
+  userId: string;
   role: HistoryEntry["role"];
   content: string;
   createdAt: string | Date;
   groupId: string;
+  sessionId: string;
   meta: unknown;
 }
 
@@ -86,10 +128,13 @@ export class PostgresHistoryStore implements HistoryStore {
     const limit = maxEntries > 0 ? maxEntries : 200;
     try {
       const rows = await this.sql<HistoryRow[]>`
-        SELECT role,
+        SELECT id::text AS id,
+               user_id AS "userId",
+               role,
                content,
                created_at AS "createdAt",
                group_id AS "groupId",
+               session_id AS "sessionId",
                meta
          FROM history_entries
          WHERE bot_account_id = ${key.botAccountId}
@@ -105,19 +150,72 @@ export class PostgresHistoryStore implements HistoryStore {
     }
   }
 
+  async readGroupHistory(
+    key: GroupHistoryKey,
+    options: HistoryReadOptions = {},
+  ): Promise<HistoryEntry[]> {
+    await this.init();
+    const maxEntries = options.maxEntries ?? 0;
+    const limit = maxEntries > 0 ? maxEntries : 200;
+    const scopedUserId = key.userId?.trim();
+    try {
+      const rows = scopedUserId
+        ? await this.sql<HistoryRow[]>`
+            SELECT id::text AS id,
+                   user_id AS "userId",
+                   role,
+                   content,
+                   created_at AS "createdAt",
+                   group_id AS "groupId",
+                   session_id AS "sessionId",
+                   meta
+              FROM history_entries
+             WHERE bot_account_id = ${key.botAccountId}
+               AND group_id = ${key.groupId}
+               AND user_id = ${scopedUserId}
+             ORDER BY id DESC
+             LIMIT ${limit}
+          `
+        : await this.sql<HistoryRow[]>`
+            SELECT id::text AS id,
+                   user_id AS "userId",
+                   role,
+                   content,
+                   created_at AS "createdAt",
+                   group_id AS "groupId",
+                   session_id AS "sessionId",
+                   meta
+              FROM history_entries
+             WHERE bot_account_id = ${key.botAccountId}
+               AND group_id = ${key.groupId}
+             ORDER BY id DESC
+             LIMIT ${limit}
+          `;
+      const ordered = rows.reverse().map((row) => parseHistoryRow(row));
+      return applyMaxBytes(ordered, options.maxBytes);
+    } catch (err) {
+      this.logger.warn({ err, key }, "Failed to read group history");
+      return [];
+    }
+  }
+
   async appendHistory(key: HistoryKey, entry: HistoryEntry): Promise<void> {
     await this.init();
-    const { role, content, createdAt, groupId, ...meta } = entry;
+    const { role, content, createdAt, groupId, sessionId, ...meta } = entry;
     const resolvedGroupId = typeof groupId === "string" ? groupId : "0";
+    const resolvedSessionId =
+      typeof sessionId === "string" && sessionId.trim()
+        ? sessionId.trim()
+        : "0";
     const metaPayload =
       Object.keys(meta).length > 0 ? normalizeHistoryMeta(meta) : null;
     const metaParam = metaPayload ? this.sql.json(metaPayload) : null;
     try {
       await this.sql`
         INSERT INTO history_entries
-          (bot_account_id, user_id, group_id, role, content, created_at, meta)
+          (bot_account_id, user_id, group_id, session_id, role, content, created_at, meta)
         VALUES
-          (${key.botAccountId}, ${key.userId}, ${resolvedGroupId}, ${role}, ${content}, ${createdAt}, ${metaParam})
+          (${key.botAccountId}, ${key.userId}, ${resolvedGroupId}, ${resolvedSessionId}, ${role}, ${content}, ${createdAt}, ${metaParam})
       `;
     } catch (err) {
       this.logger.warn({ err, key }, "Failed to append history");
@@ -145,6 +243,7 @@ export class PostgresHistoryStore implements HistoryStore {
         bot_account_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
         group_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL,
@@ -152,10 +251,36 @@ export class PostgresHistoryStore implements HistoryStore {
       )
     `;
     await this.ensureCreatedAtColumnType();
+    await this.ensureSessionIdColumn();
     await this.sql`
       CREATE INDEX IF NOT EXISTS history_entries_lookup_idx
         ON history_entries (bot_account_id, user_id, id)
     `;
+    await this.sql`
+      CREATE INDEX IF NOT EXISTS history_entries_group_lookup_idx
+        ON history_entries (bot_account_id, group_id, id)
+    `;
+    await this.sql`
+      CREATE INDEX IF NOT EXISTS history_entries_group_session_lookup_idx
+        ON history_entries (bot_account_id, group_id, session_id, id)
+    `;
+  }
+
+  private async ensureSessionIdColumn(): Promise<void> {
+    try {
+      await this.sql`
+        ALTER TABLE history_entries
+          ADD COLUMN IF NOT EXISTS session_id TEXT NOT NULL DEFAULT '0'
+      `;
+      await this.sql`
+        UPDATE history_entries
+           SET session_id = COALESCE(NULLIF(meta->>'sessionId',''), session_id)
+         WHERE session_id = '0'
+           AND meta ? 'sessionId'
+      `;
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to ensure session_id column");
+    }
   }
 
   private async ensureCreatedAtColumnType(): Promise<void> {
@@ -192,15 +317,25 @@ function composeKey(key: HistoryKey): string {
 
 function parseHistoryRow(row: HistoryRow): HistoryEntry {
   const base: HistoryEntry = {
+    id: row.id,
+    userId: row.userId,
     role: row.role,
     content: row.content,
     createdAt: normalizeCreatedAt(row.createdAt),
     groupId: row.groupId,
+    sessionId: row.sessionId,
   };
   if (!row.meta || !isRecord(row.meta)) {
     return base;
   }
-  return { ...base, ...row.meta };
+  const merged: HistoryEntry = { ...base };
+  for (const [key, value] of Object.entries(row.meta)) {
+    if (key in base) {
+      continue;
+    }
+    merged[key] = value;
+  }
+  return merged;
 }
 
 function normalizeCreatedAt(value: string | Date): string {

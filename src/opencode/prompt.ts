@@ -15,23 +15,15 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
     sections.push(`System:\n${systemPrompt}`);
   }
 
-  const historyLines = input.history
-    .map((entry) => {
-      const content = entry.content.trim();
-      if (!content) {
-        return null;
-      }
-      const timestamp = formatHistoryTimestamp(entry.createdAt);
-      const groupId = entry.groupId?.trim();
-      const context =
-        groupId === "0" ? "dm:0" : groupId ? `group:${groupId}` : "";
-      const suffix = context ? ` ${context}` : "";
-      return `${entry.role} [${timestamp}${suffix}]: ${content}`;
-    })
-    .filter((line): line is string => Boolean(line));
-
-  if (historyLines.length > 0) {
-    sections.push(`History:\n${historyLines.join("\n")}`);
+  const grouped = groupHistoryLines(input.history);
+  if (grouped.groupWindow.length > 0) {
+    sections.push(`History (群窗口):\n${grouped.groupWindow.join("\n")}`);
+  }
+  if (grouped.userMemory.length > 0) {
+    sections.push(`History (跨群记忆):\n${grouped.userMemory.join("\n")}`);
+  }
+  if (grouped.other.length > 0) {
+    sections.push(`History:\n${grouped.other.join("\n")}`);
   }
 
   const userInput = input.input.trim();
@@ -40,6 +32,60 @@ export function buildOpencodePrompt(input: OpencodePromptInput): string {
   }
 
   return sections.join("\n\n");
+}
+
+function groupHistoryLines(history: HistoryEntry[]): {
+  groupWindow: string[];
+  userMemory: string[];
+  other: string[];
+} {
+  const groupWindow: string[] = [];
+  const userMemory: string[] = [];
+  const other: string[] = [];
+
+  for (const entry of history) {
+    const line = formatHistoryLine(entry);
+    if (!line) {
+      continue;
+    }
+    const context = entry.context;
+    if (context === "group_window") {
+      groupWindow.push(line);
+      continue;
+    }
+    if (context === "user_memory") {
+      userMemory.push(line);
+      continue;
+    }
+    other.push(line);
+  }
+
+  return { groupWindow, userMemory, other };
+}
+
+function formatHistoryLine(entry: HistoryEntry): string | null {
+  const content = entry.content.trim();
+  if (!content) {
+    return null;
+  }
+  const timestamp = formatHistoryTimestamp(entry.createdAt);
+  const groupId = entry.groupId?.trim();
+  const location = groupId === "0" ? "dm:0" : groupId ? `group:${groupId}` : "";
+
+  const userIdRaw = entry.userId;
+  const userId =
+    typeof userIdRaw === "string" && userIdRaw.trim() ? userIdRaw.trim() : "";
+
+  const parts = [timestamp];
+  if (location) {
+    parts.push(location);
+  }
+  if (userId) {
+    parts.push(`user:${userId}`);
+  }
+  const label = parts.join(" ");
+
+  return `${entry.role} [${label}]: ${content}`;
 }
 
 export function buildBufferedInput(messages: SessionEvent[]): {

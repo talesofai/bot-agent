@@ -41,6 +41,9 @@ export interface SessionProcessorOptions {
   activityIndex: SessionActivityIndex;
   bufferStore: SessionBuffer;
   limits?: {
+    groupWindowEntries?: number;
+    userMemoryEntries?: number;
+    /** Deprecated: use groupWindowEntries/userMemoryEntries. */
     historyEntries?: number;
     historyBytes?: number;
   };
@@ -56,7 +59,8 @@ export class SessionProcessor {
   private runner: OpencodeRunner;
   private activityIndex: SessionActivityIndex;
   private bufferStore: SessionBuffer;
-  private historyMaxEntries?: number;
+  private groupWindowMaxEntries: number;
+  private userMemoryMaxEntries: number;
   private historyMaxBytes?: number;
 
   constructor(options: SessionProcessorOptions) {
@@ -69,7 +73,11 @@ export class SessionProcessor {
     this.runner = options.runner;
     this.activityIndex = options.activityIndex;
     this.bufferStore = options.bufferStore;
-    this.historyMaxEntries = options.limits?.historyEntries;
+    const deprecatedHistoryEntries = options.limits?.historyEntries;
+    this.groupWindowMaxEntries =
+      options.limits?.groupWindowEntries ?? deprecatedHistoryEntries ?? 30;
+    this.userMemoryMaxEntries =
+      options.limits?.userMemoryEntries ?? deprecatedHistoryEntries ?? 20;
     this.historyMaxBytes = options.limits?.historyBytes;
   }
 
@@ -454,28 +462,49 @@ export class SessionProcessor {
       ? await span(
           "history_read",
           async () =>
-            this.historyStore.readHistory(historyKey, {
-              maxEntries: this.historyMaxEntries,
-              maxBytes: this.historyMaxBytes,
-            }),
+            this.historyStore.readGroupHistory(
+              {
+                botAccountId: historyKey.botAccountId,
+                groupId: sessionInfo.meta.groupId,
+                userId:
+                  sessionInfo.meta.groupId === "0"
+                    ? historyKey.userId
+                    : undefined,
+              },
+              {
+                maxEntries: this.groupWindowMaxEntries,
+                maxBytes: this.historyMaxBytes,
+              },
+            ),
           {
-            maxEntries: this.historyMaxEntries,
+            maxEntries: this.groupWindowMaxEntries,
             maxBytes: this.historyMaxBytes,
           },
         )
       : [];
-    const visibleHistory = history.filter((entry) => {
-      if (entry.includeInContext === false) {
-        return false;
-      }
-      if (entry.groupId !== sessionInfo.meta.groupId) {
-        return false;
-      }
-      if (entry.sessionId !== sessionInfo.meta.sessionId) {
-        return false;
-      }
-      return true;
-    });
+    const userMemory = historyKey
+      ? await span(
+          "history_read_user",
+          async () =>
+            this.historyStore.readHistory(historyKey, {
+              maxEntries: this.userMemoryMaxEntries,
+              maxBytes: this.historyMaxBytes,
+            }),
+          {
+            maxEntries: this.userMemoryMaxEntries,
+            maxBytes: this.historyMaxBytes,
+          },
+        )
+      : [];
+    const visibleHistory = history
+      .filter((entry) => entry.includeInContext !== false)
+      .map((entry) => ({ ...entry, context: "group_window" }));
+    const visibleUserMemory = userMemory
+      .filter((entry) => entry.includeInContext !== false)
+      .filter((entry) => entry.groupId !== sessionInfo.meta.groupId)
+      .map((entry) => ({ ...entry, context: "user_memory" }));
+
+    const mergedHistory = [...visibleHistory, ...visibleUserMemory];
     const groupConfig = await span("load_group_config", async () =>
       this.getGroupConfig(groupId),
     );
@@ -486,7 +515,7 @@ export class SessionProcessor {
     const resolvedInput = resolveSessionInput(promptInput);
     const prompt = buildOpencodePrompt({
       systemPrompt,
-      history: visibleHistory,
+      history: mergedHistory,
       input: resolvedInput,
     });
     const promptBytes = Buffer.byteLength(prompt, "utf8");
@@ -498,11 +527,11 @@ export class SessionProcessor {
         }),
       {
         promptBytes,
-        historyEntries: visibleHistory.length,
+        historyEntries: mergedHistory.length,
         modelOverride: groupConfig.model,
       },
     );
-    return { history: visibleHistory, launchSpec };
+    return { history: mergedHistory, launchSpec };
   }
 
   private async ensureSession(

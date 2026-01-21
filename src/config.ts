@@ -120,6 +120,16 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   BOT_ID_ALIASES: z.string().optional(),
   HISTORY_MAX_ENTRIES: z.coerce.number().int().positive().optional(),
+  HISTORY_GROUP_WINDOW_MAX_ENTRIES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30),
+  HISTORY_USER_MEMORY_MAX_ENTRIES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(20),
   HISTORY_MAX_BYTES: z.coerce.number().int().positive().optional(),
   HTTP_PORT: z.coerce.number().int().min(1).default(8080),
   WORKER_HTTP_PORT: z.coerce.number().int().min(0).default(8081),

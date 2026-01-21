@@ -75,7 +75,8 @@ async function main(): Promise<void> {
       name: sessionQueueName,
     },
     limits: {
-      historyEntries: config.HISTORY_MAX_ENTRIES,
+      groupWindowEntries: config.HISTORY_GROUP_WINDOW_MAX_ENTRIES,
+      userMemoryEntries: config.HISTORY_USER_MEMORY_MAX_ENTRIES,
       historyBytes: config.HISTORY_MAX_BYTES,
     },
     runner: new ShellOpencodeRunner(),

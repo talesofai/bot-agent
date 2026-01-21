@@ -15,12 +15,15 @@ export interface SessionMeta {
 }
 
 export interface HistoryEntry {
+  id?: string;
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+  userId?: string;
   groupId?: string;
   sessionId?: string;
   includeInContext?: boolean;
+  context?: "group_window" | "user_memory" | (string & {});
   [key: string]: unknown;
 }
 

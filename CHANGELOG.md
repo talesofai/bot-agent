@@ -15,6 +15,8 @@
 - Opencode：新增全局技能 `bing-image-search`（从 Bing 图片结果提取原图直链并校验），用于在 Wikimedia 被 429 限流等场景下继续可用
 - 测试：新增 RouterStore 默认配置与 bot 配置落盘用例
 - History：将 opencode 事件流中间态写入 Postgres（`includeInContext=false`），便于追踪但默认不进上下文
+- History：`history_entries` 新增 `session_id` 列，并补齐按群读取所需索引（`bot_account_id + group_id + id`）
+- Config：新增 `HISTORY_GROUP_WINDOW_MAX_ENTRIES` / `HISTORY_USER_MEMORY_MAX_ENTRIES`，将上下文拆分为“群窗口 + 跨群记忆”
 - Telemetry：新增全链路 `traceId`/`span` 结构化埋点（`event=telemetry.span`），可在阿里云日志/SLS 侧按 `traceId` 查看每一步触发时间与耗时
 - Opencode：外部模式（LiteLLM）请求自动附带 `traceparent` 与 `x-opencode-trace-id`，便于把 opencode 内部网络请求与上游网关/ARMS 链路追踪串联
 - Telemetry：支持将 `telemetry.span` 同步导出为 OpenTelemetry traces（OTLP），可上报到 ARMS 并与 LiteLLM spans 在同一 workspace 内聚合
@@ -122,6 +124,7 @@
 - Session TTL 清理：lastActive 改为读取 meta.updatedAt，避免目录 mtime 不更新导致误删
 - SessionActivityStore：移除未使用的 `fetchExpired`/`remove` 半成品接口，避免维护噪音
 - 测试：新增 SessionProcessor 缓冲尾部竞态回归用例，防止消息滞留/丢失回归
+- SessionProcessor：上下文改为“群窗口（当前群最近 N 条）+ 跨群记忆（其他群/私聊最近 N 条）”，避免别的群记录挤占当前对话窗口
 - Docker：补齐 `.dockerignore` 并收敛 Dockerfile 复制范围，避免把本地 `data/` 与 `.env` 等打进镜像
 - Docker：`opencode-linux-x64` 改为 `@latest`，避免与 `opencode-ai@latest` 混用导致版本漂移
 - Typecheck：关闭 `skipLibCheck` 并补齐 `node:util`/`node:tls` 类型兼容层，确保 `tsc --noEmit` 全量检查通过

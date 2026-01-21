@@ -579,6 +579,13 @@ export class MessageDispatcher {
       );
       return;
     }
+    if (message.guildId) {
+      await this.adapter.sendMessage(
+        message,
+        "为避免泄露敏感信息，请私聊执行 `/login <token>`。",
+      );
+      return;
+    }
     const sessionId = await this.sessionRepository.resolveActiveSessionId(
       botId,
       groupId,

@@ -331,6 +331,146 @@ describe("SessionProcessor", () => {
     }
   });
 
+  test("builds context with group window plus cross-group user memory", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const launcher = new OpencodeLauncher();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const botAccountId = buildBotAccountId("qq", "123");
+    const now = Date.now();
+    const t1 = new Date(now - 30_000).toISOString();
+    const t2 = new Date(now - 20_000).toISOString();
+    const t3 = new Date(now - 10_000).toISOString();
+
+    await historyStore.appendHistory(
+      { botAccountId, userId: "user-2" },
+      {
+        role: "user",
+        content: "u2 in group-1",
+        createdAt: t1,
+        groupId: "group-1",
+        sessionId: "user-2-0",
+      },
+    );
+    await historyStore.appendHistory(
+      { botAccountId, userId: "user-1" },
+      {
+        role: "user",
+        content: "u1 in group-2",
+        createdAt: t2,
+        groupId: "group-2",
+        sessionId: "user-1-0",
+      },
+    );
+    await historyStore.appendHistory(
+      { botAccountId, userId: "user-1" },
+      {
+        role: "assistant",
+        content: "u1 in group-1 (old)",
+        createdAt: t3,
+        groupId: "group-1",
+        sessionId: "user-1-0",
+      },
+    );
+
+    class CapturingRunner implements OpencodeRunner {
+      lastHistory: OpencodeRunInput["history"] = [];
+
+      async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
+        this.lastHistory = input.history;
+        return { output: "ok" };
+      }
+    }
+    const runner = new CapturingRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      launcher,
+      runner,
+      activityIndex,
+      bufferStore,
+      limits: {
+        groupWindowEntries: 30,
+        userMemoryEntries: 20,
+        historyBytes: 50_000,
+      },
+    });
+
+    try {
+      const first: SessionEvent = {
+        type: "message",
+        platform: "qq",
+        selfId: "123",
+        userId: jobData.userId,
+        guildId: jobData.groupId,
+        channelId: jobData.groupId,
+        messageId: "msg-1",
+        content: "hello",
+        elements: [{ type: "text", text: "hello" }],
+        timestamp: Date.now(),
+        extras: {},
+      };
+      const acquired = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        first,
+        jobData.gateToken,
+      );
+      expect(acquired).toBe(jobData.gateToken);
+
+      await processor.process({ id: 0, data: jobData }, jobData);
+
+      const groupWindow = runner.lastHistory.filter(
+        (entry) => entry.context === "group_window",
+      );
+      const userMemory = runner.lastHistory.filter(
+        (entry) => entry.context === "user_memory",
+      );
+
+      expect(
+        groupWindow.some((entry) => entry.content === "u2 in group-1"),
+      ).toBe(true);
+      expect(
+        userMemory.some((entry) => entry.content === "u1 in group-2"),
+      ).toBe(true);
+      expect(
+        userMemory.some((entry) => entry.content === "u1 in group-1 (old)"),
+      ).toBe(false);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("preserves numeric job id 0", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });

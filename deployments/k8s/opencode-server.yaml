@@ -108,6 +108,30 @@ spec:
               bun run /tmp/opencode-config-gen.mjs
               rm -f /tmp/opencode-config-gen.mjs
 
+              # Ensure opencode web can see sessions created under /data.
+              # The web UI filters sessions by project.worktree prefix.
+              projectFile="${HOME}/.local/share/opencode/storage/project/global.json"
+              mkdir -p "$(dirname "$projectFile")"
+              if [ -f "$projectFile" ]; then
+                sed -i 's/"worktree": "\\/"/"worktree": "\\/data"/' "$projectFile" || true
+              else
+                now_ms="$(( $(date +%s) * 1000 ))"
+                cat > "$projectFile" <<EOF
+              {
+                "id": "global",
+                "worktree": "/data",
+                "sandboxes": [],
+                "time": {
+                  "created": ${now_ms},
+                  "updated": ${now_ms}
+                },
+                "icon": {
+                  "color": "cyan"
+                }
+              }
+              EOF
+              fi
+
               for c in \
                 /usr/local/bun/install/global/node_modules/opencode-linux-x64-baseline/bin/opencode \
                 /usr/local/bun/install/global/node_modules/opencode-linux-x64/bin/opencode \

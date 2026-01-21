@@ -52,6 +52,7 @@ OPENCODE_SERVER_TIMEOUT_MS=600000
   - `--cors https://app.opencode.ai`
   - `--cors https://opencode.ai`
 - 若你自行启动 server，请确保也带上以上 `--cors` 参数（以及生产环境务必设置 `OPENCODE_SERVER_PASSWORD`）。
+- Web UI 会按 `project.worktree` 前缀过滤 sessions；如列表为空，请检查 opencode server 的 `~/.local/share/opencode/storage/project/global.json` 里 `worktree` 是否覆盖到会话目录（K8s 示例固定为 `/data`）。
 
 ### Opencode 模型模式
 

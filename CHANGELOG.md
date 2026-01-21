@@ -71,6 +71,7 @@
 - Discord：Slash Commands 事件补齐 `isGuildOwner/isGuildAdmin` 权限标记，确保 `/resetall` 对服务器 owner 生效
 - Discord：Slash Commands `/model` 不再硬编码模型 choices，允许输入任意模型名（仍由 `OPENCODE_MODELS` 白名单校验）
 - History：Postgres history 默认不再执行运行时 DDL（CREATE/ALTER/INDEX），避免受限账号/生产策略导致初始化失败并影响读写路径（使用迁移脚本创建/升级表结构）
+- Opencode Web：K8s 部署默认将 `project.worktree` 设为 `/data`，避免 worktree 为 `/` 时 Web UI 前缀过滤导致 sessions 列表为空
 
 ### Changed
 

@@ -88,6 +88,7 @@
 - Trigger：keyword 触发改为“前缀匹配”，并支持唤醒词前缀剥离（例如 `奈塔 ...`）
 - Router：全局默认唤醒词设置为 `奈塔`/`小捏`，并将默认 `echoRate` 调整为 0（默认不复读）
 - MessageDispatcher：dispatch 主流程拆分为“解析/鉴权/路由/入队”四段纯函数 + 薄 orchestrator，降低分支复杂度
+- Dev：git pre-commit hook 强制要求每次提交都包含已暂存的 `CHANGELOG.md` 更新
 
 ### Security
 

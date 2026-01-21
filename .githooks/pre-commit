@@ -8,3 +8,9 @@ if ! git diff --quiet; then
   echo "Formatting modified files; stage changes before committing." >&2
   exit 1
 fi
+
+# Enforce changelog updates for every commit.
+if git diff --cached --quiet -- CHANGELOG.md; then
+  echo "Missing staged CHANGELOG.md update; add an entry under [Unreleased] and stage it." >&2
+  exit 1
+fi

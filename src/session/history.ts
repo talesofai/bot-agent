@@ -90,6 +90,7 @@ export class InMemoryHistoryStore implements HistoryStore {
 export interface PostgresHistoryStoreOptions {
   databaseUrl: string;
   maxConnections?: number;
+  /** Enable runtime DDL (dev only). Production should use migrations. */
   ensureSchema?: boolean;
 }
 
@@ -116,7 +117,7 @@ export class PostgresHistoryStore implements HistoryStore {
       databaseUrl: options.databaseUrl,
       maxConnections: options.maxConnections,
     });
-    this.ensureSchema = options.ensureSchema ?? true;
+    this.ensureSchema = options.ensureSchema ?? false;
   }
 
   async readHistory(
@@ -231,7 +232,12 @@ export class PostgresHistoryStore implements HistoryStore {
       return this.initPromise;
     }
     this.initPromise = this.ensureSchema
-      ? this.ensureSchemaReady()
+      ? this.ensureSchemaReady().catch((err) => {
+          this.logger.warn(
+            { err },
+            "Failed to ensure history schema; continuing without runtime DDL",
+          );
+        })
       : Promise.resolve();
     return this.initPromise;
   }

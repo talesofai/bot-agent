@@ -65,6 +65,7 @@
 - Discord：将服务器 owner/管理员权限视为群管理员，允许执行 `/resetall` 与 `/model`（无需额外配置 `adminUsers`）
 - Discord：Slash Commands 事件补齐 `isGuildOwner/isGuildAdmin` 权限标记，确保 `/resetall` 对服务器 owner 生效
 - Discord：Slash Commands `/model` 不再硬编码模型 choices，允许输入任意模型名（仍由 `OPENCODE_MODELS` 白名单校验）
+- History：Postgres history 默认不再执行运行时 DDL（CREATE/ALTER/INDEX），避免受限账号/生产策略导致初始化失败并影响读写路径（使用迁移脚本创建/升级表结构）
 
 ### Changed
 

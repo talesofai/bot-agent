@@ -37,6 +37,7 @@ LuckyLilliaBot 可稳定部署，Bot Agent 已提供基础能力但部署细节�
 
 - `DATABASE_URL` 必须可用（建议通过 `configs/.env` 或运行环境变量注入）
 - `REDIS_URL` 必须可用（BullMQ 依赖）
+- 数据库 Schema 不在运行时自动创建：Compose 的 Postgres 容器会在首次初始化时执行 `deployments/docker/postgres-init/*.sql`；使用外部/既有 Postgres 时需要手动执行同一迁移脚本
 
 ### PMHQ 的 `privileged: true`（安全说明）
 

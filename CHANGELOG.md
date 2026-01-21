@@ -26,7 +26,7 @@
 - Discord：注册并支持 Slash Commands（`/reset`、`/resetall`、`/model`、`/ping`、`/help`）
 - MCP：opencode 配置注入 talesofai 远程 MCP（`x-token` 来自环境变量 `NIETA_TOKEN`，支持会话内覆盖）
 - Opencode：部署示例默认允许 `https://app.opencode.ai` CORS，支持使用官方 Web UI 查看 sessions
-- K8s：新增 opencode-web Ingress（`bot-opencode-web.talesofai.cm` → `opencode-server:4096`，Basic Auth + TLS）
+- K8s：新增 opencode-web Ingress（`bot-opencode-web.talesofai.cn` → `opencode-server:4096`，Basic Auth + TLS）
 - Push：新增群定时热点推送（管理员 `/push` 配置；默认不启用）
 - Session：新增 `/login`/`/logout`（token 存在当前会话 meta，用于 MCP 调用）
 - Session：会话 meta 记录用户昵称/称呼（`ownerName`/`preferredName`），并支持自然语言“叫我X/我是X”更新；system context 注入称呼信息

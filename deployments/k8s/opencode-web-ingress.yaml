@@ -11,7 +11,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: bot-opencode-web.talesofai.cn
+    - host: bot-opencode-web.talesofai.com
       http:
         paths:
           - path: /
@@ -32,5 +32,5 @@ spec:
                   number: 4096
   tls:
     - hosts:
-        - bot-opencode-web.talesofai.cn
-      secretName: ssl-bot-opencode-web.talesofai.cn
+        - bot-opencode-web.talesofai.com
+      secretName: ssl-bot-opencode-web.talesofai.com

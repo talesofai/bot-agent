@@ -19,7 +19,7 @@ describe("resolveDiscordImageAttachments", () => {
 
   test("downloads external images as attachments", async () => {
     const elements: SessionElement[] = [
-      { type: "image", url: "https://example.com/naita.png" },
+      { type: "image", url: "https://1.1.1.1/naita.png" },
     ];
     const result = await resolveDiscordImageAttachments(elements, {
       fetchFn: async () =>
@@ -39,7 +39,7 @@ describe("resolveDiscordImageAttachments", () => {
 
   test("adds extension when url has no filename extension", async () => {
     const elements: SessionElement[] = [
-      { type: "image", url: "https://example.com/images?q=1" },
+      { type: "image", url: "https://1.1.1.1/images?q=1" },
     ];
     const result = await resolveDiscordImageAttachments(elements, {
       fetchFn: async () =>
@@ -59,7 +59,7 @@ describe("resolveDiscordImageAttachments", () => {
 
   test("keeps element when response is not an image", async () => {
     const elements: SessionElement[] = [
-      { type: "image", url: "https://example.com/not-image.png" },
+      { type: "image", url: "https://1.1.1.1/not-image.png" },
     ];
     const result = await resolveDiscordImageAttachments(elements, {
       fetchFn: async () =>
@@ -77,7 +77,7 @@ describe("resolveDiscordImageAttachments", () => {
 
   test("keeps element when content-length exceeds maxBytes", async () => {
     const elements: SessionElement[] = [
-      { type: "image", url: "https://example.com/big.png" },
+      { type: "image", url: "https://1.1.1.1/big.png" },
     ];
     const result = await resolveDiscordImageAttachments(elements, {
       maxBytes: 2,
@@ -89,6 +89,20 @@ describe("resolveDiscordImageAttachments", () => {
             "content-length": "3",
           },
         }),
+    });
+
+    expect(result.files).toHaveLength(0);
+    expect(result.elements).toEqual(elements);
+  });
+
+  test("blocks SSRF attempts to loopback/private hosts", async () => {
+    const elements: SessionElement[] = [
+      { type: "image", url: "http://127.0.0.1/secret.png" },
+    ];
+    const result = await resolveDiscordImageAttachments(elements, {
+      fetchFn: async () => {
+        throw new Error("fetch should not be called");
+      },
     });
 
     expect(result.files).toHaveLength(0);

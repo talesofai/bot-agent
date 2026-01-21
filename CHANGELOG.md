@@ -85,6 +85,7 @@
 - 输出/History：输出层审计并对 token/key 等敏感串打码，避免意外泄露
 - Worker：opencode 子进程环境变量改为白名单透传（仅保留基础运行变量 + 显式注入项），降低提示词注入场景下的 env 泄露面
 - Opencode：对疑似“读取 env/文件系统/密钥”输入追加安全审计提示，并要求仅输出安全 JSON（不执行工具/命令）
+- SSRF：统一拦截私网/loopback/link-local/metadata URL，并限制重定向；allowlist 预留但默认不启用（Discord 外链图片抓取 + `url-access-check` 等链路生效）
 
 ## [0.0.28] - 2026-01-16
 

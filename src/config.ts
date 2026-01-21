@@ -8,6 +8,38 @@ const envSchema = z.object({
   NODE_ENV: z.string().optional(),
   /** Path to env file */
   CONFIG_PATH: z.string().optional(),
+  /** SSRF protection: max redirects allowed for any URL fetch. */
+  SSRF_MAX_REDIRECTS: z.coerce.number().int().min(0).max(10).default(3),
+  /** SSRF protection: allowlist is implemented but disabled by default. */
+  SSRF_ALLOWLIST_ENABLED: z
+    .preprocess((value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      if (typeof value === "boolean") {
+        return value;
+      }
+      if (typeof value === "number") {
+        return value !== 0;
+      }
+      if (typeof value !== "string") {
+        return value;
+      }
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "") {
+        return undefined;
+      }
+      if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+      }
+      return value;
+    }, z.boolean())
+    .default(false),
+  /** SSRF protection: comma-separated hostname patterns (e.g. example.com,.example.com). */
+  SSRF_ALLOWLIST_HOSTS: z.string().optional(),
   // OpenAI compatible configuration (optional; only used when all three are provided)
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),

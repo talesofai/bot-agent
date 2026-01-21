@@ -1,6 +1,8 @@
 import { AttachmentBuilder } from "discord.js";
 import type { Logger } from "pino";
 import type { SessionElement } from "../../types/platform";
+import { getConfig } from "../../config";
+import { createSsrfPolicy, fetchWithSsrfProtection } from "../../utils/ssrf";
 
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -27,6 +29,7 @@ export async function resolveDiscordImageAttachments(
     logger?: Pick<Logger, "debug" | "warn">;
   },
 ): Promise<{ elements: SessionElement[]; files: AttachmentBuilder[] }> {
+  const ssrfPolicy = createSsrfPolicy(getConfig());
   const maxBytes = options?.maxBytes ?? DEFAULT_MAX_BYTES;
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxFiles = options?.maxFiles ?? DEFAULT_MAX_FILES;
@@ -65,6 +68,7 @@ export async function resolveDiscordImageAttachments(
       timeoutMs,
       fetchFn,
       filenameHint: `image-${fileIndex + 1}`,
+      ssrfPolicy,
     }).catch((err) => {
       logger?.debug?.({ err, url: element.url }, "Failed to fetch image");
       return { kind: "keep" } as const;
@@ -101,20 +105,26 @@ async function fetchImageAttachment(
     timeoutMs: number;
     fetchFn: FetchFn;
     filenameHint: string;
+    ssrfPolicy: ReturnType<typeof createSsrfPolicy>;
   },
 ): Promise<FetchImageAttachmentResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
-    const response = await options.fetchFn(url.toString(), {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        accept: "image/*,*/*;q=0.8",
-        "user-agent":
-          "Mozilla/5.0 (compatible; opencode-bot-agent/1.0; +https://github.com/opencode-ai/opencode)",
+    const { response, url: finalUrl } = await fetchWithSsrfProtection(
+      url,
+      {
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          accept: "image/*,*/*;q=0.8",
+          "user-agent":
+            "Mozilla/5.0 (compatible; opencode-bot-agent/1.0; +https://github.com/opencode-ai/opencode)",
+        },
       },
-    });
+      options.ssrfPolicy,
+      options.fetchFn,
+    );
     if (!response.ok) {
       return { kind: "keep" };
     }
@@ -138,7 +148,7 @@ async function fetchImageAttachment(
     }
 
     const filename = resolveFilename({
-      url,
+      url: finalUrl,
       contentType,
       fallback: options.filenameHint,
     });

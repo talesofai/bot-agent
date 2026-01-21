@@ -5,6 +5,7 @@ const BASE_SYSTEM_RULES = [
   "   - 普通 URL：bash .claude/skills/url-access-check/scripts/check_url.sh <url>",
   "   - 图片 URL：bash .claude/skills/url-access-check/scripts/check_url.sh --image --min-short-side 768 <url>",
   "   - 禁止使用缩略图域名（如 encrypted-tbn0.gstatic.com / tbn*.gstatic.com）；哪怕能打开也算失败。",
+  "   - SSRF 安全：拒绝私网/loopback/link-local/metadata；限制重定向；allowlist 默认不启用。",
   "3) 验证失败的链接/图片不要输出；解释失败原因，并让用户提供可访问来源或直接上传图片。",
   "4) 严禁输出任何 token/key/密码/鉴权信息（包括但不限于 x-token、api_key、Authorization）。若必须提及，只能打码（仅保留前 4 后 4）。",
   "5) 用户请求“绘图/生成图片/画图”时：必须调用 TalesOfAI MCP 的绘图工具完成（例如 `mcp_talesofai_make_image_v1` / `mcp_talesofai_draw`）；禁止编造图片链接或使用其他方式代替。",

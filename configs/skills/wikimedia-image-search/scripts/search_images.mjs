@@ -1,6 +1,8 @@
 import process from "node:process";
 import { URL } from "node:url";
 
+import { checkSsrfUrl } from "../../url-access-check/scripts/ssrf.mjs";
+
 const args = process.argv.slice(2);
 
 function usage(exitCode = 2) {
@@ -55,7 +57,7 @@ const userAgent =
   "Mozilla/5.0 (compatible; opencode-bot-agent/1.0; +https://github.com/opencode-ai/opencode)";
 
 async function fetchJson(url) {
-  const response = await globalThis.fetch(url, {
+  const response = await safeFetch(url, {
     headers: {
       accept: "application/json",
       "user-agent": userAgent,
@@ -68,6 +70,60 @@ async function fetchJson(url) {
     );
   }
   return await response.json();
+}
+
+function parseMaxRedirects(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+    return 3;
+  }
+  return Math.min(n, 10);
+}
+
+const maxRedirects = parseMaxRedirects(process.env.SSRF_MAX_REDIRECTS ?? "3");
+
+function isRedirectStatus(status) {
+  return (
+    status === 301 ||
+    status === 302 ||
+    status === 303 ||
+    status === 307 ||
+    status === 308
+  );
+}
+
+async function safeFetch(input, init) {
+  let current = new URL(input);
+  let redirects = 0;
+  for (;;) {
+    const ssrf = await checkSsrfUrl(current);
+    if (!ssrf.allowed) {
+      throw new Error(`SSRF blocked: ${ssrf.reason}`);
+    }
+    const response = await globalThis.fetch(current, {
+      ...init,
+      redirect: "manual",
+    });
+    const location = response.headers.get("location");
+    if (!isRedirectStatus(response.status) || !location) {
+      return response;
+    }
+    if (redirects >= maxRedirects) {
+      try {
+        await response.body?.cancel();
+      } catch (err) {
+        void err;
+      }
+      throw new Error("SSRF blocked: too_many_redirects");
+    }
+    try {
+      await response.body?.cancel();
+    } catch (err) {
+      void err;
+    }
+    current = new URL(location, current);
+    redirects += 1;
+  }
 }
 
 function buildApiUrl(params) {

@@ -80,6 +80,7 @@ fi
 connect_timeout="${CHECK_URL_CONNECT_TIMEOUT:-10}"
 max_time="${CHECK_URL_MAX_TIME:-15}"
 max_bytes="${CHECK_URL_MAX_BYTES:-1048576}"
+ssrf_max_redirects="${SSRF_MAX_REDIRECTS:-3}"
 user_agent="${CHECK_URL_USER_AGENT:-Mozilla/5.0 (compatible; opencode-bot-agent/1.0; +https://github.com/opencode-ai/opencode)}"
 accept_header="${CHECK_URL_ACCEPT_HEADER:-image/*,*/*;q=0.8}"
 curl_headers=(-H "user-agent: ${user_agent}" -H "accept: ${accept_header}")
@@ -96,6 +97,10 @@ min_short_side="${min_short_side:-$default_min_short_side}"
 
 if ! is_non_negative_int "$max_bytes" || [[ "$max_bytes" -lt 1 ]]; then
   echo "FAIL reason=invalid_max_bytes value=$max_bytes"
+  exit 2
+fi
+if ! is_non_negative_int "$ssrf_max_redirects"; then
+  echo "FAIL reason=invalid_ssrf_max_redirects value=$ssrf_max_redirects"
   exit 2
 fi
 
@@ -145,6 +150,59 @@ is_rejected_thumbnail_host() {
   esac
 }
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+resolve_redirect_url() {
+  local base="$1"
+  local location="$2"
+  local output=""
+  local code=0
+  set +e
+  output="$(bun "$script_dir/resolve_url.mjs" "$base" "$location" 2>/dev/null)"
+  code=$?
+  set -e
+  if [[ "$code" -ne 0 || -z "$output" ]]; then
+    return 1
+  fi
+  printf '%s' "$output"
+  return 0
+}
+
+ssrf_check_url() {
+  local url="$1"
+  local output=""
+  local code=0
+  set +e
+  output="$(bun "$script_dir/ssrf_guard.mjs" "$url" 2>/dev/null)"
+  code=$?
+  set -e
+  if [[ "$code" -eq 0 ]]; then
+    return 0
+  fi
+  output="$(printf '%s' "$output" | tr -d '\r\n')"
+  if [[ -z "$output" ]]; then
+    output="ssrf_blocked"
+  fi
+  printf '%s' "$output"
+  return 1
+}
+
+fetch_headers_no_redirect() {
+  local url="$1"
+  local headers=""
+  headers="$(curl -fsSIL --compressed --connect-timeout "$connect_timeout" --max-time "$max_time" "${curl_headers[@]}" "$url" 2>/dev/null || true)"
+  if [[ -n "$headers" ]]; then
+    printf '%s\n' "$headers"
+    return 0
+  fi
+  headers="$(curl -fsSL --compressed --range 0-0 -D - -o /dev/null --connect-timeout "$connect_timeout" --max-time "$max_time" "${curl_headers[@]}" "$url" 2>/dev/null || true)"
+  if [[ -n "$headers" ]]; then
+    printf '%s\n' "$headers"
+    return 0
+  fi
+  return 1
+}
+
 check_one() {
   local url="$1"
   local width=""
@@ -154,25 +212,93 @@ check_one() {
     return 1
   fi
 
+  local current_url="$url"
+  local redirects=0
   local headers=""
-  headers="$(curl -fsSIL --compressed --location --connect-timeout "$connect_timeout" --max-time "$max_time" "${curl_headers[@]}" "$url" 2>/dev/null || true)"
-  if [[ -z "$headers" ]]; then
-    headers="$(curl -fsSL --compressed --location --range 0-0 -D - -o /dev/null --connect-timeout "$connect_timeout" --max-time "$max_time" "${curl_headers[@]}" "$url" 2>/dev/null || true)"
-  fi
-  if [[ -z "$headers" ]]; then
-    echo "FAIL url=$url reason=connect"
-    return 1
-  fi
-
   local status=""
-  status="$(printf '%s\n' "$headers" | awk 'BEGIN{IGNORECASE=1} $1 ~ /^HTTP\// {code=$2} END{print code}')"
-  if [[ -z "$status" ]]; then
-    echo "FAIL url=$url reason=no_status"
-    return 1
-  fi
+  local effective_url="$url"
+  local location=""
+
+  while true; do
+    local ssrf_reason=""
+    if ! ssrf_reason="$(ssrf_check_url "$current_url")"; then
+      local suffix=""
+      if [[ "$current_url" != "$url" ]]; then
+        suffix=" effective_url=$current_url"
+      fi
+      echo "FAIL url=$url$suffix reason=ssrf_${ssrf_reason}"
+      return 1
+    fi
+
+    if ! headers="$(fetch_headers_no_redirect "$current_url")"; then
+      local suffix=""
+      if [[ "$current_url" != "$url" ]]; then
+        suffix=" effective_url=$current_url"
+      fi
+      echo "FAIL url=$url$suffix reason=connect"
+      return 1
+    fi
+
+    status="$(printf '%s\n' "$headers" | awk 'BEGIN{IGNORECASE=1} $1 ~ /^HTTP\// {code=$2} END{print code}')"
+    if [[ -z "$status" ]]; then
+      local suffix=""
+      if [[ "$current_url" != "$url" ]]; then
+        suffix=" effective_url=$current_url"
+      fi
+      echo "FAIL url=$url$suffix reason=no_status"
+      return 1
+    fi
+
+    if [[ "$status" -ge 300 && "$status" -lt 400 ]]; then
+      location="$(printf '%s\n' "$headers" | extract_last_header_value "location" | tr -d '\r')"
+      if [[ -z "$location" ]]; then
+        local suffix=""
+        if [[ "$current_url" != "$url" ]]; then
+          suffix=" effective_url=$current_url"
+        fi
+        echo "FAIL url=$url$suffix status=$status reason=redirect_no_location"
+        return 1
+      fi
+      if [[ "$redirects" -ge "$ssrf_max_redirects" ]]; then
+        local suffix=""
+        if [[ "$current_url" != "$url" ]]; then
+          suffix=" effective_url=$current_url"
+        fi
+        echo "FAIL url=$url$suffix status=$status reason=too_many_redirects max_redirects=$ssrf_max_redirects"
+        return 1
+      fi
+      local next_url=""
+      if ! next_url="$(resolve_redirect_url "$current_url" "$location")"; then
+        local suffix=""
+        if [[ "$current_url" != "$url" ]]; then
+          suffix=" effective_url=$current_url"
+        fi
+        echo "FAIL url=$url$suffix status=$status reason=invalid_redirect"
+        return 1
+      fi
+      if ! is_http_url "$next_url"; then
+        local suffix=""
+        if [[ "$current_url" != "$url" ]]; then
+          suffix=" effective_url=$current_url"
+        fi
+        echo "FAIL url=$url$suffix status=$status reason=invalid_redirect_scheme redirect_url=$next_url"
+        return 1
+      fi
+      current_url="$next_url"
+      redirects=$((redirects+1))
+      continue
+    fi
+
+    effective_url="$current_url"
+    break
+  done
 
   if [[ "$status" -lt 200 || "$status" -ge 400 ]]; then
-    echo "FAIL url=$url status=$status"
+    local suffix=""
+    if [[ "$effective_url" != "$url" ]]; then
+      suffix=" effective_url=$effective_url"
+    fi
+    echo "FAIL url=$url$suffix status=$status"
     return 1
   fi
 
@@ -181,7 +307,7 @@ check_one() {
 
   if [[ "$expect_image" -eq 1 ]]; then
     local host=""
-    host="$(extract_hostname "$url")"
+    host="$(extract_hostname "$effective_url")"
     if [[ -n "$host" ]] && is_rejected_thumbnail_host "$host"; then
       echo "FAIL url=$url status=$status reason=thumbnail_host host=$host"
       return 1
@@ -206,9 +332,8 @@ check_one() {
 
     local tmp=""
     tmp="$(mktemp)"
-    local cleanup_tmp=1
-    if ! curl -fsSL --compressed --location --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" --range "0-$((max_bytes-1))" -o "$tmp" "${curl_headers[@]}" "$url" 2>/dev/null; then
-      if ! curl -fsSL --compressed --location --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" -o "$tmp" "${curl_headers[@]}" "$url" 2>/dev/null; then
+    if ! curl -fsSL --compressed --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" --range "0-$((max_bytes-1))" -o "$tmp" "${curl_headers[@]}" "$effective_url" 2>/dev/null; then
+      if ! curl -fsSL --compressed --connect-timeout "$connect_timeout" --max-time "$max_time" --max-filesize "$max_bytes" -o "$tmp" "${curl_headers[@]}" "$effective_url" 2>/dev/null; then
         rm -f "$tmp" || true
         echo "FAIL url=$url status=$status content_type=$content_type reason=download"
         return 1
@@ -223,8 +348,6 @@ check_one() {
       return 1
     fi
 
-    local script_dir=""
-    script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     local meta=""
     meta="$(bun "$script_dir/image_meta.mjs" "$tmp" 2>/dev/null || true)"
     rm -f "$tmp" || true

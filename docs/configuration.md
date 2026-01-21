@@ -11,6 +11,19 @@
 
 ## 环境变量
 
+### SSRF 防护
+
+统一在所有“URL 获取链路”上做 SSRF 防护（例如 Discord 外链图片抓取、`url-access-check`、以及脚本/工具的网络请求）：
+
+```env
+# 最大重定向次数（默认 3）
+SSRF_MAX_REDIRECTS=3
+
+# allowlist 预留但默认不启用
+SSRF_ALLOWLIST_ENABLED=false
+SSRF_ALLOWLIST_HOSTS=
+```
+
 ### Opencode 模型模式
 
 默认模式下，Bot Agent **不需要任何 API Key**，并强制使用 opencode 自带的 `opencode/glm-4.7-free`。

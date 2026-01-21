@@ -24,5 +24,6 @@ tmp
 /example/
 /deployments/k8s/llbot-secret.yaml
 /deployments/k8s/*-ingress.yaml
+!/deployments/k8s/opencode-web-ingress.yaml
 /data/
 /.github-agent-data

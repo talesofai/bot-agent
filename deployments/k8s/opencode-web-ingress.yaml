@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opencode-web
+  namespace: bot
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-http01
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: opencode-web-auth
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: bot-opencode-web.talesofai.cm
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: opencode-server
+                port:
+                  number: 4096
+  tls:
+    - hosts:
+        - bot-opencode-web.talesofai.cm
+      secretName: ssl-bot-opencode-web.talesofai.cm

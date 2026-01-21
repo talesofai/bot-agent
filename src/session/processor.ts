@@ -1193,11 +1193,6 @@ function parseModelsCsv(value: string): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
-  if (models.some((model) => model.includes("/"))) {
-    throw new Error(
-      "OPENCODE_MODELS must be comma-separated bare model names (no provider prefix)",
-    );
-  }
   return Array.from(new Set(models));
 }
 
@@ -1207,9 +1202,6 @@ function sanitizeModelOverride(value: string | undefined): string | null {
   }
   const trimmed = value.trim();
   if (!trimmed) {
-    return null;
-  }
-  if (trimmed.includes("/")) {
     return null;
   }
   return trimmed;

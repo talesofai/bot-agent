@@ -244,12 +244,6 @@ function parseModelsCsv(value: string): string[] {
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-  if (models.some((model) => model.includes("/"))) {
-    throw new Error(
-      "OPENCODE_MODELS must be comma-separated bare model names (no provider prefix)",
-    );
-  }
-
   return Array.from(new Set(models));
 }
 

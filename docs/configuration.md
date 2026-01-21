@@ -52,7 +52,7 @@ OPENCODE_SERVER_TIMEOUT_MS=600000
   - `--cors https://app.opencode.ai`
   - `--cors https://opencode.ai`
 - 若你自行启动 server，请确保也带上以上 `--cors` 参数（以及生产环境务必设置 `OPENCODE_SERVER_PASSWORD`）。
-- Web UI 会按 `project.worktree` 前缀过滤 sessions；如列表为空，请检查 opencode server 的 `~/.local/share/opencode/storage/project/global.json` 里 `worktree` 是否覆盖到会话目录（K8s 示例固定为 `/data`）。
+- Web UI 通过 `GET /session?directory=<当前项目 worktree>` 列出 sessions，按 `directory` **精确匹配**。本仓库 K8s 示例会在启动时创建 `/data` project 并将历史 sessions 迁移为 `directory=/data`，确保能看到所有 sessions。
 
 ### Opencode 模型模式
 
@@ -66,7 +66,7 @@ OPENAI_API_KEY=sk-xxx
 OPENCODE_MODELS=gpt-5.2,gpt-5.1
 ```
 
-- `OPENCODE_MODELS` 为逗号分隔的“裸模型名”，内部会拼为 `litellm/<name>` 传给 opencode。
+- `OPENCODE_MODELS` 为逗号分隔的 litellm 模型 ID（允许包含 `/`，例如 `ark/glm-4.7`），内部会拼为 `litellm/<id>` 传给 opencode。
 - 群配置里的 `model` 仅在外部模式生效，且必须在 `OPENCODE_MODELS` 白名单内。
 - `OPENCODE_YOLO` 默认开启（true）：Worker 会在请求里显式开启必要工具（bash/read/write/webfetch...）。如需降低权限，可设置为 `false/0`（不再显式开启工具）。
 - 外部模式下会自动给 LiteLLM 请求附带追踪头，便于和网关/上游日志串联：
@@ -338,7 +338,7 @@ keywordRouting: # 关键词路由开关（群级）
   enableBot: true # 是否允许机器人关键词
 echoRate: null # 复读概率（0-100），空为继承上一级
 maxSessions: 1 # 每个用户最大会话数
-model: glm-4.7 # 可选：仅外部模式生效，且必须在 OPENCODE_MODELS 白名单内（裸模型名）；也可用 /model 管理指令切换
+model: glm-4.7 # 可选：仅外部模式生效，且必须在 OPENCODE_MODELS 白名单内；也可用 /model 管理指令切换
 
 # 定时热点推送（默认不启用；管理员可 /push 配置）
 push:

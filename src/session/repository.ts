@@ -263,8 +263,14 @@ export class SessionRepository {
   }
 
   private async writeMeta(metaPath: string, meta: SessionMeta): Promise<void> {
-    const payload = JSON.stringify(meta, null, 2);
-    await writeFile(metaPath, payload, "utf-8");
+    const dir = dirname(metaPath);
+    const tmpPath = join(
+      dir,
+      `.${basename(metaPath)}.${process.pid}.${Date.now()}.tmp`,
+    );
+    const content = `${JSON.stringify(meta, null, 2)}\n`;
+    await writeFile(tmpPath, content, "utf-8");
+    await rename(tmpPath, metaPath);
   }
 
   private async exists(targetPath: string): Promise<boolean> {

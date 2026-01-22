@@ -477,7 +477,7 @@ spec:
               server = Bun.serve({
                 port: 4096,
                 idleTimeout: 0,
-                fetch(req) {
+                async fetch(req) {
                   const { url, headers } = normalizeUrlAndHeaders(req);
                   const upgrade = headers.get("upgrade")?.toLowerCase() ?? "";
                   if (upgrade === "websocket") {
@@ -507,12 +507,67 @@ spec:
                   }
 
                   const upstreamUrl = new URL(url.pathname + url.search, upstream);
-                  return fetch(upstreamUrl, {
+                  if (req.method === "PATCH" && url.pathname.startsWith("/config")) {
+                    return new Response("Config updates are disabled in this deployment", {
+                      status: 403,
+                    });
+                  }
+
+                  const upstreamResponse = await fetch(upstreamUrl, {
                     method: req.method,
                     headers,
                     body: req.body,
                     redirect: "manual",
                   });
+
+                  if (req.method === "GET" && url.pathname.startsWith("/config")) {
+                    const raw = await upstreamResponse.text();
+                    let parsed = null;
+                    try {
+                      parsed = JSON.parse(raw);
+                    } catch {
+                      parsed = null;
+                    }
+
+                    if (parsed && typeof parsed === "object") {
+                      const mcp = parsed.mcp;
+                      if (mcp && typeof mcp === "object") {
+                        for (const serverName of Object.keys(mcp)) {
+                          const entry = mcp[serverName];
+                          if (!entry || typeof entry !== "object") {
+                            continue;
+                          }
+                          const headerEntries = entry.headers;
+                          if (!headerEntries || typeof headerEntries !== "object") {
+                            continue;
+                          }
+                          for (const headerName of Object.keys(headerEntries)) {
+                            const lower = headerName.toLowerCase();
+                            if (
+                              lower === "authorization" ||
+                              lower.includes("token") ||
+                              lower.includes("secret") ||
+                              lower.includes("key")
+                            ) {
+                              headerEntries[headerName] = "[redacted]";
+                            }
+                          }
+                        }
+                      }
+                    }
+
+                    const nextHeaders = new Headers(upstreamResponse.headers);
+                    nextHeaders.delete("content-length");
+                    return new Response(
+                      parsed ? JSON.stringify(parsed) : raw,
+                      {
+                        status: upstreamResponse.status,
+                        headers: nextHeaders,
+                      },
+                    );
+                  }
+
+                  return upstreamResponse;
                 },
                 websocket: {
                   open(ws) {

@@ -78,6 +78,7 @@
 - Opencode Web：K8s 启动时安装 `git`/`rg`/`fd` 并将 `/data` 初始化为轻量 git repo，以 git root commit 作为 `projectID`，将 `/data/...` sessions 迁移到 `/data` project 并规范化为 `directory=/data`（含后台 watcher），避免 `project/current` 解析错导致 sessions 列表为空，同时恢复 `/find/file` 的目录搜索
 - Opencode Web：为兼容 Web UI 传入 `directory=/data/`（尾随斜杠）导致精确匹配失败，K8s 增加轻量 proxy 统一规范化 `directory`/`x-opencode-directory`；并关闭 Bun 默认 10s idle timeout（`idleTimeout=0`）+ 透传 WebSocket，修复 SSE/终端连接频繁断开
 - Opencode Web：新增 `/data` 与 `/session/data` 的 Ingress 重定向到 `/data` 对应的编码路由（`/L2RhdGE`），避免误访问 API 路径触发 400（并覆盖 `/data/`、`/session/data/` 等尾随斜杠）
+- Opencode Web：代理层对 `/config` 响应中的 MCP `x-token` 做打码，并禁用 Web 侧 `PATCH /config*`，避免 Web UI 泄露/误覆盖部署注入的密钥
 - Opencode Web：补齐上述重定向 Ingress 的 TLS，确保 `https://.../session/data` 也会被重定向而不是返回 400
 - K8s：opencode-server Deployment 策略改为 `Recreate`，避免集群 CPU 紧张时 RollingUpdate 无法调度第二个副本而卡死
 - Bin：退出/关停流程改为幂等 shutdown（信号/错误路径不再直接 `process.exit()`；改用 `process.exitCode` + 超时兜底）

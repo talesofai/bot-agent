@@ -58,6 +58,8 @@
 - 文档：统一 sessions 路径描述并修正 bot-data PVC 说明，避免按旧目录查找导致“没生成会话目录”的误判
 - Session：处理缓冲消息失败时回滚并 `requeueFront`；发送失败会让 job 失败以触发 BullMQ 重试，避免消息丢失/静默失败
 - 图片：`url-access-check` 对图片默认增加最小分辨率校验（短边 ≥ 768px）并拒绝 Google 缩略图域名，避免“小图/糊图”
+- K8s：opencode-web 增加 `/` → `/data` 会话页重定向，避免默认进入 `global(worktree=/)` 导致历史 sessions 列表为空
+- K8s：opencode-server 会话目录迁移脚本覆盖所有 project 目录，确保非 `global` 下的 sessions 也能在 Web UI 里按 `/data` 查看
 - 图片：`url-access-check` 的 curl 请求补齐浏览器 UA/Accept/压缩支持，减少站点对默认 curl UA 的 403 拦截
 - Skills：`*.sh` 脚本补齐可执行权限，避免 opencode 直接调用时出现 `Permission denied`
 - Discord：Slash Commands 注册使用 Application ID（`DISCORD_APPLICATION_ID`），避免误用 bot user id 导致注册失败

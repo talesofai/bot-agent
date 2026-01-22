@@ -139,49 +139,62 @@ spec:
                 "opencode",
                 "storage",
                 "session",
-                "global",
               );
 
               async function migrateOnce() {
-                let entries;
+                let projectEntries;
                 try {
-                  entries = await fs.readdir(sessionRoot, { withFileTypes: true });
+                  projectEntries = await fs.readdir(sessionRoot, { withFileTypes: true });
                 } catch {
                   return;
                 }
 
-                for (const entry of entries) {
-                  if (!entry.isFile()) {
+                for (const projectEntry of projectEntries) {
+                  if (!projectEntry.isDirectory()) {
                     continue;
                   }
-                  const name = entry.name;
-                  if (!name.startsWith("ses_") || !name.endsWith(".json")) {
-                    continue;
-                  }
-                  const filePath = path.join(sessionRoot, name);
-                  let raw;
+
+                  const projectRoot = path.join(sessionRoot, projectEntry.name);
+                  let entries;
                   try {
-                    raw = await fs.readFile(filePath, "utf8");
+                    entries = await fs.readdir(projectRoot, { withFileTypes: true });
                   } catch {
                     continue;
                   }
-                  let parsed;
-                  try {
-                    parsed = JSON.parse(raw);
-                  } catch {
-                    continue;
+
+                  for (const entry of entries) {
+                    if (!entry.isFile()) {
+                      continue;
+                    }
+                    const name = entry.name;
+                    if (!name.startsWith("ses_") || !name.endsWith(".json")) {
+                      continue;
+                    }
+                    const filePath = path.join(projectRoot, name);
+                    let raw;
+                    try {
+                      raw = await fs.readFile(filePath, "utf8");
+                    } catch {
+                      continue;
+                    }
+                    let parsed;
+                    try {
+                      parsed = JSON.parse(raw);
+                    } catch {
+                      continue;
+                    }
+                    if (!parsed || typeof parsed !== "object") {
+                      continue;
+                    }
+                    if (parsed.directory === targetDirectory) {
+                      continue;
+                    }
+                    parsed.directory = targetDirectory;
+                    const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+                    const content = `${JSON.stringify(parsed, null, 2)}\n`;
+                    await fs.writeFile(tmpPath, content, "utf8");
+                    await fs.rename(tmpPath, filePath);
                   }
-                  if (!parsed || typeof parsed !== "object") {
-                    continue;
-                  }
-                  if (parsed.directory === targetDirectory) {
-                    continue;
-                  }
-                  parsed.directory = targetDirectory;
-                  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
-                  const content = `${JSON.stringify(parsed, null, 2)}\n`;
-                  await fs.writeFile(tmpPath, content, "utf8");
-                  await fs.rename(tmpPath, filePath);
                 }
               }
 

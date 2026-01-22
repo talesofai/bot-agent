@@ -61,6 +61,16 @@ cd /opt/opencode-bot-agent
 docker compose -f deployments/docker/docker-compose.yml up -d
 ```
 
+### 升级
+
+如仅更新 Bot Agent（Adapter/Worker/opencode-server）：
+
+```bash
+cd /opt/opencode-bot-agent
+docker compose -f deployments/docker/docker-compose.yml pull opencode-bot-agent-adapter opencode-bot-agent-worker opencode-server
+docker compose -f deployments/docker/docker-compose.yml up -d --force-recreate opencode-bot-agent-adapter opencode-bot-agent-worker opencode-server
+```
+
 ## Kubernetes 部署（仍在迭代）
 
 当前仓库已提供 `deployments/k8s/` 目录，采用 `llbot` StatefulSet（单 Pod 内含 `luckylillia` + `pmhq` 两个容器）：
@@ -305,6 +315,26 @@ kubectl -n bot set image cronjob/session-cleaner session-cleaner=registry.cn-sha
 # 若集群无法访问 docker.io，可将基础依赖也切到镜像仓库
 kubectl -n bot set image statefulset/redis redis=registry.cn-shanghai.aliyuncs.com/talesofai/redis:7.4-alpine
 kubectl -n bot set image statefulset/postgres postgres=registry.cn-shanghai.aliyuncs.com/talesofai/postgres:16-alpine
+```
+
+### 升级（更新镜像）
+
+使用 `latest` tag 时，请确保相关 Deployment/CronJob 设置了 `imagePullPolicy: Always`，然后重启工作负载让节点拉取新镜像：
+
+```bash
+kubectl -n bot rollout restart deployment/opencode-bot-agent-adapter
+kubectl -n bot rollout restart deployment/opencode-bot-agent-worker
+kubectl -n bot rollout restart deployment/opencode-server
+
+kubectl -n bot rollout status deployment/opencode-bot-agent-adapter
+kubectl -n bot rollout status deployment/opencode-bot-agent-worker
+kubectl -n bot rollout status deployment/opencode-server
+```
+
+CronJob 会在下次触发时拉取新镜像；如需立刻执行一次清理，可手动触发一个 Job：
+
+```bash
+kubectl -n bot create job --from=cronjob/session-cleaner session-cleaner-manual-$(date +%s)
 ```
 
 如果你的节点是 ARM 架构，请使用 amd64 节点运行或自行构建对应架构镜像。

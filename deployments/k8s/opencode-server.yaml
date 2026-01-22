@@ -31,6 +31,7 @@ spec:
       containers:
         - name: opencode-server
           image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+          imagePullPolicy: Always
           command: ["bash", "-lc"]
           args:
             - |

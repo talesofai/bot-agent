@@ -16,6 +16,7 @@ spec:
       containers:
         - name: opencode-bot-agent-worker
           image: registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest
+          imagePullPolicy: Always
           command:
             - bun
             - run

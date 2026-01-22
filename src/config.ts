@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { z } from "zod";
+import { zEnvBoolean } from "./utils/env";
 
 const envSchema = z.object({
   NODE_ENV: z.string().optional(),
@@ -19,33 +20,7 @@ const envSchema = z.object({
   /** SSRF protection: max redirects allowed for any URL fetch. */
   SSRF_MAX_REDIRECTS: z.coerce.number().int().min(0).max(10).default(3),
   /** SSRF protection: allowlist is implemented but disabled by default. */
-  SSRF_ALLOWLIST_ENABLED: z
-    .preprocess((value) => {
-      if (value === undefined) {
-        return undefined;
-      }
-      if (typeof value === "boolean") {
-        return value;
-      }
-      if (typeof value === "number") {
-        return value !== 0;
-      }
-      if (typeof value !== "string") {
-        return value;
-      }
-      const normalized = value.trim().toLowerCase();
-      if (normalized === "") {
-        return undefined;
-      }
-      if (["1", "true", "yes", "on"].includes(normalized)) {
-        return true;
-      }
-      if (["0", "false", "no", "off"].includes(normalized)) {
-        return false;
-      }
-      return value;
-    }, z.boolean())
-    .default(false),
+  SSRF_ALLOWLIST_ENABLED: zEnvBoolean(false),
   /** SSRF protection: comma-separated hostname patterns (e.g. example.com,.example.com). */
   SSRF_ALLOWLIST_HOSTS: z.string().optional(),
   // OpenAI compatible configuration (optional; only used when all three are provided)
@@ -56,60 +31,8 @@ const envSchema = z.object({
   /** Optional override for the opencode binary path. */
   OPENCODE_BIN: z.string().optional(),
   /** Enable all tools/permissions by default when running opencode. */
-  OPENCODE_YOLO: z
-    .preprocess((value) => {
-      if (value === undefined) {
-        return undefined;
-      }
-      if (typeof value === "boolean") {
-        return value;
-      }
-      if (typeof value === "number") {
-        return value !== 0;
-      }
-      if (typeof value !== "string") {
-        return value;
-      }
-      const normalized = value.trim().toLowerCase();
-      if (normalized === "") {
-        return undefined;
-      }
-      if (["1", "true", "yes", "on"].includes(normalized)) {
-        return true;
-      }
-      if (["0", "false", "no", "off"].includes(normalized)) {
-        return false;
-      }
-      return value;
-    }, z.boolean())
-    .default(true),
-  TELEMETRY_ENABLED: z
-    .preprocess((value) => {
-      if (value === undefined) {
-        return undefined;
-      }
-      if (typeof value === "boolean") {
-        return value;
-      }
-      if (typeof value === "number") {
-        return value !== 0;
-      }
-      if (typeof value !== "string") {
-        return value;
-      }
-      const normalized = value.trim().toLowerCase();
-      if (normalized === "") {
-        return undefined;
-      }
-      if (["1", "true", "yes", "on"].includes(normalized)) {
-        return true;
-      }
-      if (["0", "false", "no", "off"].includes(normalized)) {
-        return false;
-      }
-      return value;
-    }, z.boolean())
-    .default(true),
+  OPENCODE_YOLO: zEnvBoolean(true),
+  TELEMETRY_ENABLED: zEnvBoolean(true),
   TELEMETRY_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
   // Discord platform configuration
   DISCORD_TOKEN: z.string().optional(),

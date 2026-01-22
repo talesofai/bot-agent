@@ -332,19 +332,87 @@ spec:
               # Background watcher to keep new sessions visible in Web UI without needing worker changes.
               bun /tmp/opencode-session-dir-migrate.mjs --watch >/dev/null 2>&1 &
 
+              opencode_bin=""
               for c in \
                 /usr/local/bun/install/global/node_modules/opencode-linux-x64-baseline/bin/opencode \
                 /usr/local/bun/install/global/node_modules/opencode-linux-x64/bin/opencode \
                 /usr/local/bun/install/global/node_modules/opencode-linux-x64-musl/bin/opencode; do
                 if [ -x "$c" ]; then
-                  exec "$c" serve --hostname 0.0.0.0 --port 4096 \
-                    --cors https://app.opencode.ai \
-                    --cors https://opencode.ai
+                  opencode_bin="$c"
+                  break
                 fi
               done
 
-              echo "opencode binary not found" >&2
-              exit 1
+              if [ -z "$opencode_bin" ]; then
+                echo "opencode binary not found" >&2
+                exit 1
+              fi
+
+              # Opencode's Web UI (1.1.30+) sends `directory` with a trailing slash (e.g. `/data/`),
+              # but opencode server treats it as an exact match and returns an empty session list.
+              # Run a tiny proxy on :4096 that normalizes directory strings and forwards to the real server on :4097.
+              cat > /tmp/opencode-directory-proxy.mjs <<'EOF'
+              const upstream =
+                process.env.OPENCODE_PROXY_UPSTREAM ?? "http://127.0.0.1:4097";
+
+              function normalizeDirectory(value) {
+                if (!value || typeof value !== "string") {
+                  return null;
+                }
+                if (value === "/") {
+                  return value;
+                }
+                return value.replace(/\/+$/, "");
+              }
+
+              Bun.serve({
+                port: 4096,
+                async fetch(req) {
+                  const url = new URL(req.url);
+                  const directory = url.searchParams.get("directory");
+                  const normalizedDirectory = normalizeDirectory(directory);
+                  if (normalizedDirectory && normalizedDirectory !== directory) {
+                    url.searchParams.set("directory", normalizedDirectory);
+                  }
+
+                  const headers = new Headers(req.headers);
+                  const headerDirectory = headers.get("x-opencode-directory");
+                  const normalizedHeaderDirectory = normalizeDirectory(headerDirectory);
+                  if (
+                    normalizedHeaderDirectory &&
+                    normalizedHeaderDirectory !== headerDirectory
+                  ) {
+                    headers.set("x-opencode-directory", normalizedHeaderDirectory);
+                  }
+
+                  const upstreamUrl = new URL(url.pathname + url.search, upstream);
+                  return await fetch(upstreamUrl, {
+                    method: req.method,
+                    headers,
+                    body: req.body,
+                    redirect: "manual",
+                  });
+                },
+              });
+              EOF
+
+              "$opencode_bin" serve --hostname 127.0.0.1 --port 4097 \
+                --cors https://app.opencode.ai \
+                --cors https://opencode.ai &
+              opencode_pid=$!
+
+              bun /tmp/opencode-directory-proxy.mjs &
+              proxy_pid=$!
+
+              cleanup() {
+                kill "$opencode_pid" "$proxy_pid" >/dev/null 2>&1 || true
+              }
+              trap cleanup EXIT INT TERM
+
+              wait -n "$opencode_pid" "$proxy_pid"
+              exit_code=$?
+              cleanup
+              exit "$exit_code"
           env:
             # Store opencode state on the shared /data RWX volume so multiple replicas can serve the same sessions.
             - name: HOME

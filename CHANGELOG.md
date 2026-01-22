@@ -76,6 +76,7 @@
 - Opencode Web：K8s 启动时写入 `/data` project 并将 sessions 目录统一迁移为 `directory=/data`（含后台 watcher），避免 Web UI 通过 `GET /session?directory=...` 精确匹配导致 sessions 列表为空
 - Opencode Web：新增 `/data` 与 `/session/data` 的 Ingress 重定向到 `/data` 对应的编码路由（`/L2RhdGE`），避免误访问 API 路径触发 400
 - Bin：退出/关停流程改为幂等 shutdown（信号/错误路径不再直接 `process.exit()`；改用 `process.exitCode` + 超时兜底）
+- Telemetry：`TELEMETRY_ENABLED=false` 时不启动 OpenTelemetry SDK/Exporter，确保彻底关闭遥测
 
 ### Changed
 

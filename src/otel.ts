@@ -40,6 +40,9 @@ export function startOtel(input: { defaultServiceName: string }): void {
   }
 
   const config = getConfig();
+  if (!config.TELEMETRY_ENABLED) {
+    return;
+  }
   const serviceName =
     process.env.OTEL_SERVICE_NAME?.trim() || input.defaultServiceName;
   const serviceNamespace = process.env.OTEL_SERVICE_NAMESPACE?.trim();

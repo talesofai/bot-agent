@@ -109,6 +109,7 @@
 - Worker：不再 spawn opencode 子进程；通过 opencode server 调用，避免将宿主进程 `process.env` 透传给 agent 执行环境
 - Opencode：对疑似“读取 env/文件系统/密钥”输入追加安全审计提示，并要求仅输出安全 JSON（不执行工具/命令）
 - SSRF：统一拦截私网/loopback/link-local/metadata URL，并限制重定向；allowlist 预留但默认不启用（Discord 外链图片抓取 + `url-access-check` 等链路生效）
+- SSRF：allowlist hosts 支持 URL/端口/`*.example.com` 写法，并对条目去重
 
 ## [0.0.28] - 2026-01-16
 

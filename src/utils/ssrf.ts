@@ -168,35 +168,50 @@ function parseAllowlistHosts(value: string | undefined): string[] {
   if (!value) {
     return [];
   }
-  const parts = value
-    .split(/[,\n]/g)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => entry.toLowerCase());
 
   const normalized: string[] = [];
   const seen = new Set<string>();
-  for (const part of parts) {
-    const cleaned = part
-      .replace(/^https?:\/\//, "")
-      .replace(/\/.*$/, "")
-      .trim();
-    if (!cleaned) {
+  for (const rawEntry of value.split(/[,\n]/g)) {
+    const entry = rawEntry.trim().toLowerCase();
+    if (!entry) {
       continue;
     }
-    const host = cleaned.startsWith("*.")
-      ? cleaned.slice(1)
-      : normalizeHostname(cleaned);
-    if (!host) {
-      continue;
-    }
-    if (seen.has(host)) {
+    const host = parseAllowlistHostEntry(entry);
+    if (!host || seen.has(host)) {
       continue;
     }
     seen.add(host);
     normalized.push(host);
   }
   return normalized;
+}
+
+function parseAllowlistHostEntry(entry: string): string | null {
+  if (entry.startsWith("*.") || entry.startsWith(".")) {
+    const withoutScheme = entry.replace(/^https?:\/\//, "");
+    const beforePath = withoutScheme.split("/")[0]?.trim() ?? "";
+    const withoutCredentials = beforePath.includes("@")
+      ? (beforePath.split("@").pop() ?? "")
+      : beforePath;
+
+    const wildcardNormalized = withoutCredentials.startsWith("*.")
+      ? withoutCredentials.slice(1)
+      : withoutCredentials;
+
+    const withoutPort = wildcardNormalized.replace(/:\d+$/, "");
+    const suffix = normalizeHostname(withoutPort.slice(1));
+    return suffix ? `.${suffix}` : null;
+  }
+
+  try {
+    const url = entry.includes("://")
+      ? new URL(entry)
+      : new URL(`http://${entry}`);
+    const hostname = normalizeHostname(url.hostname);
+    return hostname ? hostname : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeHostname(value: string): string {

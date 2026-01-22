@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { checkSsrfUrl, fetchWithSsrfProtection } from "../ssrf";
+import {
+  checkSsrfUrl,
+  createSsrfPolicy,
+  fetchWithSsrfProtection,
+} from "../ssrf";
 
 const policy = {
   maxRedirects: 3,
@@ -46,5 +50,15 @@ describe("ssrf", () => {
       fetchWithSsrfProtection(new URL("http://1.1.1.1/a"), {}, policy, fetchFn),
     ).rejects.toThrow(/SSRF blocked/);
     expect(calls).toHaveLength(1);
+  });
+
+  test("parses allowlist hosts from urls and strips ports", () => {
+    const policy = createSsrfPolicy({
+      SSRF_MAX_REDIRECTS: 3,
+      SSRF_ALLOWLIST_ENABLED: true,
+      SSRF_ALLOWLIST_HOSTS:
+        "https://example.com:8443/path,example.com:8080,*.Example.com,.example.com:443",
+    });
+    expect(policy.allowlistHosts).toEqual(["example.com", ".example.com"]);
   });
 });

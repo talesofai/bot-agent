@@ -125,6 +125,8 @@ const envSchema = z.object({
   LOG_FORMAT: z.string().default("json"),
   MCP_TALESOFAI_URL: z.string().url().optional(),
   REDIS_URL: z.string().default("redis://localhost:6379"),
+  /** Optional BullMQ key prefix (must match producer/consumer). */
+  BULLMQ_PREFIX: z.string().optional(),
   DATABASE_URL: z.string().optional(),
   BOT_ID_ALIASES: z.string().optional(),
   HISTORY_MAX_ENTRIES: z.coerce.number().int().positive().optional(),

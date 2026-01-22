@@ -23,6 +23,7 @@ export interface SessionJob {
 export interface BullmqSessionQueueOptions {
   redisUrl: string;
   queueName: string;
+  prefix?: string;
   defaultJobOptions?: JobsOptions;
 }
 
@@ -37,6 +38,7 @@ export class BullmqSessionQueue {
 
     this.queue = new Queue(options.queueName, {
       connection: this.connection,
+      prefix: options.prefix,
       defaultJobOptions: {
         attempts: 3,
         backoff: {

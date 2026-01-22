@@ -137,6 +137,7 @@ async function main(): Promise<void> {
   sessionQueue = new BullmqSessionQueue({
     redisUrl: config.REDIS_URL,
     queueName: "session-jobs",
+    prefix: config.BULLMQ_PREFIX,
   });
 
   bufferStore = new SessionBufferStore({ redisUrl: config.REDIS_URL });

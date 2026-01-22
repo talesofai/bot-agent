@@ -101,6 +101,7 @@ describe("session worker integration", () => {
     const logger = pino({ level: "silent" });
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-test-${Date.now()}`;
+    const prefix = `session-prefix-${Date.now()}`;
     const adapter = new MemoryAdapter();
     const historyStore = new InMemoryHistoryStore();
     const worker = new SessionWorker({
@@ -114,6 +115,7 @@ describe("session worker integration", () => {
       },
       queue: {
         name: queueName,
+        prefix,
       },
       runner: new FakeRunner(),
       logger,
@@ -121,6 +123,7 @@ describe("session worker integration", () => {
     const sessionQueue = new BullmqSessionQueue({
       redisUrl,
       queueName,
+      prefix,
     });
     const bufferStore = new SessionBufferStore({ redisUrl });
 
@@ -189,6 +192,7 @@ describe("session worker integration", () => {
     const logger = pino({ level: "silent" });
     const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
     const queueName = `session-empty-test-${Date.now()}`;
+    const prefix = `session-prefix-${Date.now()}`;
     const adapter = new MemoryAdapter();
     const historyStore = new InMemoryHistoryStore();
     const worker = new SessionWorker({
@@ -202,6 +206,7 @@ describe("session worker integration", () => {
       },
       queue: {
         name: queueName,
+        prefix,
       },
       runner: new FakeRunner(),
       logger,
@@ -209,6 +214,7 @@ describe("session worker integration", () => {
     const sessionQueue = new BullmqSessionQueue({
       redisUrl,
       queueName,
+      prefix,
     });
     const bufferStore = new SessionBufferStore({ redisUrl });
 

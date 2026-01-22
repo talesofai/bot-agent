@@ -119,6 +119,7 @@ async function main(): Promise<void> {
     },
     queue: {
       name: sessionQueueName,
+      prefix: config.BULLMQ_PREFIX,
     },
     limits: {
       groupWindowEntries: config.HISTORY_GROUP_WINDOW_MAX_ENTRIES,

@@ -3,7 +3,7 @@ import { assertSafePathSegment, isSafePathSegment } from "./path";
 
 export function resolveCanonicalBotId(botId: string): string {
   assertSafePathSegment(botId, "botId");
-  const mapped = BOT_ID_ALIASES.get(botId);
+  const mapped = getAliases().get(botId);
   return mapped ?? botId;
 }
 
@@ -22,7 +22,7 @@ export function buildBotFsId(platform: string, botId: string): string {
 }
 
 export function getBotIdAliasMap(): Map<string, string> {
-  return new Map(BOT_ID_ALIASES);
+  return new Map(getAliases());
 }
 
 export function parseBotIdAliases(raw?: string): Map<string, string> {
@@ -35,7 +35,13 @@ export function parseBotIdAliases(raw?: string): Map<string, string> {
     if (!trimmed) {
       continue;
     }
-    const [alias, canonical] = trimmed.split(":");
+    const parts = trimmed.split(":");
+    if (parts.length !== 2) {
+      throw new Error(
+        "Invalid BOT_ID_ALIASES entry, expected exactly one ':' (alias:canonical)",
+      );
+    }
+    const [alias, canonical] = parts;
     if (!alias || !canonical) {
       throw new Error("Invalid BOT_ID_ALIASES entry, expected alias:canonical");
     }
@@ -45,9 +51,23 @@ export function parseBotIdAliases(raw?: string): Map<string, string> {
     if (alias === canonical) {
       throw new Error("BOT_ID_ALIASES entry must map alias to a different id");
     }
+    if (map.has(alias)) {
+      throw new Error(`Duplicate BOT_ID_ALIASES alias: ${alias}`);
+    }
     map.set(alias, canonical);
   }
   return map;
 }
 
-const BOT_ID_ALIASES = parseBotIdAliases(getConfig().BOT_ID_ALIASES);
+let cachedAliases: Map<string, string> | null = null;
+let cachedAliasesRaw: string | undefined;
+
+function getAliases(): Map<string, string> {
+  const raw = getConfig().BOT_ID_ALIASES;
+  if (cachedAliases && raw === cachedAliasesRaw) {
+    return cachedAliases;
+  }
+  cachedAliasesRaw = raw;
+  cachedAliases = parseBotIdAliases(raw);
+  return cachedAliases;
+}

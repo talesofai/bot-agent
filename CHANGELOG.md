@@ -52,6 +52,7 @@
 - Opencode：system prompt 永远追加 URL 可用性校验硬性规则（`url-access-check`），避免模型编造/输出不可用链接
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
 - Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败
+- Config：`BOT_ID_ALIASES` 解析改为严格校验（拒绝重复 alias 与 `a:b:c` 等非法项）
 - K8s：`bot-data` 改为 NAS RWX（`alibabacloud-cnfs-nas`），避免 adapter/worker 分布到不同节点时触发 Multi-Attach
 - K8s：worker 注入 `DISCORD_TOKEN`，确保 Discord 消息可由 worker 正常回复
 - 文档：README 补充历史/记录存放位置并修正 data 目录结构说明（移除 `history.sqlite` 描述，历史仅写入 Postgres）

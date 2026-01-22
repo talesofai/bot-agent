@@ -13,8 +13,16 @@ describe("parseBotIdAliases", () => {
     expect(() => parseBotIdAliases("bad-entry")).toThrow();
   });
 
+  test("throws on extra colon", () => {
+    expect(() => parseBotIdAliases("a:b:c")).toThrow();
+  });
+
   test("throws on self mapping", () => {
     expect(() => parseBotIdAliases("123:123")).toThrow();
+  });
+
+  test("throws on duplicate alias", () => {
+    expect(() => parseBotIdAliases("a:b,a:c")).toThrow();
   });
 });
 

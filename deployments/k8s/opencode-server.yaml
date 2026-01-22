@@ -18,6 +18,8 @@ metadata:
   namespace: bot
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: opencode-server
@@ -34,12 +36,25 @@ spec:
             - |
               set -euo pipefail
 
+              missing_packages=()
               if ! command -v git >/dev/null 2>&1; then
-                echo "git not found; installing..." >&2
+                missing_packages+=(git)
+              fi
+              if ! command -v rg >/dev/null 2>&1; then
+                missing_packages+=(ripgrep)
+              fi
+              if ! command -v fd >/dev/null 2>&1 && ! command -v fdfind >/dev/null 2>&1; then
+                missing_packages+=(fd-find)
+              fi
+              if [ "${#missing_packages[@]}" -gt 0 ]; then
+                echo "Installing required tools: ${missing_packages[*]}" >&2
                 export DEBIAN_FRONTEND=noninteractive
                 apt-get update
-                apt-get install -y --no-install-recommends git
+                apt-get install -y --no-install-recommends "${missing_packages[@]}"
                 rm -rf /var/lib/apt/lists/*
+              fi
+              if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+                ln -sf "$(command -v fdfind)" /usr/local/bin/fd
               fi
 
               # Opencode's Web UI resolves the current project via git, then lists sessions by `project.worktree`.
@@ -48,12 +63,13 @@ spec:
                 git init /data
               fi
 
-              if [ ! -f /data/.gitignore ]; then
-                cat > /data/.gitignore <<'EOF'
-              *
-              !.gitignore
+              cat > /data/.gitignore <<'EOF'
+              # Keep /data a lightweight git project for Opencode Web UI, without hiding bot data directories.
+              opencode-home/
+              **/node_modules/
+              **/.bun/
+              **/dist/
               EOF
-              fi
 
               git -C /data config user.email "opencode@local"
               git -C /data config user.name "opencode"
@@ -62,9 +78,16 @@ spec:
               if ! git -C /data rev-parse HEAD >/dev/null 2>&1; then
                 git -C /data add -f .gitignore
                 git -C /data commit -m "init"
+              else
+                if ! git -C /data diff --quiet -- .gitignore; then
+                  git -C /data add -f .gitignore
+                  git -C /data commit -m "update .gitignore"
+                fi
               fi
 
-              OPENCODE_PROJECT_ID="$(git -C /data rev-parse HEAD)"
+              # Opencode identifies a git project by its root commit hash (stable across new commits),
+              # not by HEAD. Keep this in sync with opencode's `project/current` resolution.
+              OPENCODE_PROJECT_ID="$(git -C /data rev-list --max-parents=0 HEAD)"
               export OPENCODE_PROJECT_ID
 
               mkdir -p "${HOME}/.local/share/opencode" "${HOME}/.config/opencode"
@@ -174,8 +197,62 @@ spec:
 
               rm -f "${HOME}/.local/share/opencode/storage/project/data.json" || true
 
+              # Opencode may keep multiple project entries pointing at the same worktree (e.g. `/data`).
+              # If stale ones remain, `project/current` can resolve to the wrong id and hide sessions.
+              cat > /tmp/opencode-project-prune.mjs <<'EOF'
+              import * as fs from "node:fs/promises";
+              import * as path from "node:path";
+
+              const homeDir = process.env.HOME ?? "/data/opencode-home";
+              const targetProjectID = (process.env.OPENCODE_PROJECT_ID ?? "").trim();
+              if (!targetProjectID) {
+                throw new Error("Missing OPENCODE_PROJECT_ID");
+              }
+
+              const projectDir = path.join(
+                homeDir,
+                ".local",
+                "share",
+                "opencode",
+                "storage",
+                "project",
+              );
+
+              let entries = [];
+              try {
+                entries = await fs.readdir(projectDir, { withFileTypes: true });
+              } catch {
+                // nothing to prune
+              }
+
+              for (const entry of entries) {
+                if (!entry.isFile() || !entry.name.endsWith(".json")) {
+                  continue;
+                }
+                if (entry.name === "global.json") {
+                  continue;
+                }
+                if (entry.name === `${targetProjectID}.json`) {
+                  continue;
+                }
+                const filePath = path.join(projectDir, entry.name);
+                let parsed;
+                try {
+                  parsed = JSON.parse(await fs.readFile(filePath, "utf8"));
+                } catch {
+                  continue;
+                }
+                if (parsed?.worktree === "/data") {
+                  await fs.unlink(filePath).catch(() => {});
+                }
+              }
+              EOF
+
+              bun /tmp/opencode-project-prune.mjs || true
+              rm -f /tmp/opencode-project-prune.mjs
+
               # Migrate existing session records so the Web UI can list them under a single directory.
-              # Opencode stores sessions under `storage/session/<projectID>/` where projectID is `git rev-parse HEAD`.
+              # Opencode stores sessions under `storage/session/<projectID>/` where projectID is the git root commit.
               # We rewrite all `/data/...` sessions into the `/data` git project and normalize `directory=/data`.
               cat > /tmp/opencode-session-dir-migrate.mjs <<'EOF'
               import * as fs from "node:fs/promises";
@@ -365,33 +442,134 @@ spec:
                 return value.replace(/\/+$/, "");
               }
 
-              Bun.serve({
-                port: 4096,
-                async fetch(req) {
-                  const url = new URL(req.url);
-                  const directory = url.searchParams.get("directory");
-                  const normalizedDirectory = normalizeDirectory(directory);
-                  if (normalizedDirectory && normalizedDirectory !== directory) {
-                    url.searchParams.set("directory", normalizedDirectory);
-                  }
+              const excludedWebSocketHeaders = new Set([
+                "connection",
+                "host",
+                "sec-websocket-accept",
+                "sec-websocket-extensions",
+                "sec-websocket-key",
+                "sec-websocket-version",
+                "upgrade",
+              ]);
 
-                  const headers = new Headers(req.headers);
-                  const headerDirectory = headers.get("x-opencode-directory");
-                  const normalizedHeaderDirectory = normalizeDirectory(headerDirectory);
-                  if (
-                    normalizedHeaderDirectory &&
-                    normalizedHeaderDirectory !== headerDirectory
-                  ) {
-                    headers.set("x-opencode-directory", normalizedHeaderDirectory);
+              function normalizeUrlAndHeaders(req) {
+                const url = new URL(req.url);
+                const directory = url.searchParams.get("directory");
+                const normalizedDirectory = normalizeDirectory(directory);
+                if (normalizedDirectory && normalizedDirectory !== directory) {
+                  url.searchParams.set("directory", normalizedDirectory);
+                }
+
+                const headers = new Headers(req.headers);
+                const headerDirectory = headers.get("x-opencode-directory");
+                const normalizedHeaderDirectory = normalizeDirectory(headerDirectory);
+                if (
+                  normalizedHeaderDirectory &&
+                  normalizedHeaderDirectory !== headerDirectory
+                ) {
+                  headers.set("x-opencode-directory", normalizedHeaderDirectory);
+                }
+
+                return { url, headers };
+              }
+
+              let server;
+              server = Bun.serve({
+                port: 4096,
+                idleTimeout: 0,
+                fetch(req) {
+                  const { url, headers } = normalizeUrlAndHeaders(req);
+                  const upgrade = headers.get("upgrade")?.toLowerCase() ?? "";
+                  if (upgrade === "websocket") {
+                    const upstreamUrl = new URL(url.pathname + url.search, upstream);
+                    upstreamUrl.protocol = upstreamUrl.protocol === "https:" ? "wss:" : "ws:";
+
+                    const forwardHeaders = {};
+                    for (const [key, value] of headers.entries()) {
+                      const lower = key.toLowerCase();
+                      if (excludedWebSocketHeaders.has(lower)) {
+                        continue;
+                      }
+                      forwardHeaders[key] = value;
+                    }
+
+                    const ok = server.upgrade(req, {
+                      data: {
+                        upstreamUrl: upstreamUrl.toString(),
+                        headers: forwardHeaders,
+                        protocols: headers.get("sec-websocket-protocol") ?? "",
+                      },
+                    });
+                    if (ok) {
+                      return;
+                    }
+                    return new Response("WebSocket upgrade failed", { status: 400 });
                   }
 
                   const upstreamUrl = new URL(url.pathname + url.search, upstream);
-                  return await fetch(upstreamUrl, {
+                  return fetch(upstreamUrl, {
                     method: req.method,
                     headers,
                     body: req.body,
                     redirect: "manual",
                   });
+                },
+                websocket: {
+                  open(ws) {
+                    const info = ws.data ?? {};
+                    const protocolsRaw =
+                      typeof info.protocols === "string" ? info.protocols : "";
+                    const protocols = protocolsRaw
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean);
+
+                    const upstreamSocket = new WebSocket(info.upstreamUrl, protocols, {
+                      headers:
+                        info.headers && typeof info.headers === "object" ? info.headers : {},
+                    });
+                    info.upstreamSocket = upstreamSocket;
+
+                    upstreamSocket.addEventListener("open", () => {
+                      info.queue = info.queue ?? [];
+                      for (const queued of info.queue) {
+                        upstreamSocket.send(queued);
+                      }
+                      info.queue = [];
+                    });
+                    upstreamSocket.addEventListener("message", (event) => {
+                      ws.send(event.data);
+                    });
+                    upstreamSocket.addEventListener("close", () => {
+                      try {
+                        ws.close();
+                      } catch {}
+                    });
+                    upstreamSocket.addEventListener("error", () => {
+                      try {
+                        ws.close();
+                      } catch {}
+                    });
+                  },
+                  message(ws, message) {
+                    const info = ws.data ?? {};
+                    const upstreamSocket = info.upstreamSocket;
+                    if (upstreamSocket && upstreamSocket.readyState === WebSocket.OPEN) {
+                      upstreamSocket.send(message);
+                      return;
+                    }
+                    info.queue = info.queue ?? [];
+                    info.queue.push(message);
+                  },
+                  close(ws) {
+                    const info = ws.data ?? {};
+                    const upstreamSocket = info.upstreamSocket;
+                    if (upstreamSocket) {
+                      try {
+                        upstreamSocket.close();
+                      } catch {}
+                    }
+                  },
                 },
               });
               EOF

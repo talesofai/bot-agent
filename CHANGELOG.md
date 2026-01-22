@@ -75,9 +75,10 @@
 - Discord：Slash Commands `/model` 不再硬编码模型 choices，允许输入任意模型名（仍由 `OPENCODE_MODELS` 白名单校验）
 - History：Postgres history 默认不再执行运行时 DDL（CREATE/ALTER/INDEX），避免受限账号/生产策略导致初始化失败并影响读写路径（使用迁移脚本创建/升级表结构）
 - Queue：BullMQ producer 支持 `prefix` 配置，确保与 worker 消费端一致
-- Opencode Web：K8s 启动时安装 git 并将 `/data` 初始化为轻量 git repo（仅提交 `.gitignore`），sessions 迁移到 `/data` 的 git project（`projectID=git HEAD`）并规范化为 `directory=/data`（含后台 watcher；必要时移动 session 文件并去重），避免 Web UI `project/current` 退回 global 导致 sessions 列表为空
-- Opencode Web：为兼容 Web UI 传入 `directory=/data/`（尾随斜杠）导致 session 列表精确匹配失败，K8s 增加轻量 proxy 统一将 `directory` 规范化为无尾随斜杠
+- Opencode Web：K8s 启动时安装 `git`/`rg`/`fd` 并将 `/data` 初始化为轻量 git repo，以 git root commit 作为 `projectID`，将 `/data/...` sessions 迁移到 `/data` project 并规范化为 `directory=/data`（含后台 watcher），避免 `project/current` 解析错导致 sessions 列表为空，同时恢复 `/find/file` 的目录搜索
+- Opencode Web：为兼容 Web UI 传入 `directory=/data/`（尾随斜杠）导致精确匹配失败，K8s 增加轻量 proxy 统一规范化 `directory`/`x-opencode-directory`；并关闭 Bun 默认 10s idle timeout（`idleTimeout=0`）+ 透传 WebSocket，修复 SSE/终端连接频繁断开
 - Opencode Web：新增 `/data` 与 `/session/data` 的 Ingress 重定向到 `/data` 对应的编码路由（`/L2RhdGE`），避免误访问 API 路径触发 400（并覆盖 `/data/`、`/session/data/` 等尾随斜杠）
+- K8s：opencode-server Deployment 策略改为 `Recreate`，避免集群 CPU 紧张时 RollingUpdate 无法调度第二个副本而卡死
 - Bin：退出/关停流程改为幂等 shutdown（信号/错误路径不再直接 `process.exit()`；改用 `process.exitCode` + 超时兜底）
 - Telemetry：`TELEMETRY_ENABLED=false` 时不启动 OpenTelemetry SDK/Exporter，确保彻底关闭遥测
 - Telemetry：统一采样来源（按 `traceId` 采样）：日志埋点与 OTEL spans 保持一致，避免“有日志没 trace / 有 trace 没日志”

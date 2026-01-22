@@ -16,8 +16,6 @@ export interface SessionWorkerPoolOptions {
   runner: OpencodeRunner;
   logger: Logger;
   prefix?: string;
-  historyMaxEntries?: number;
-  historyMaxBytes?: number;
   stalledIntervalMs?: number;
   maxStalledCount?: number;
 }
@@ -46,10 +44,6 @@ export class SessionWorkerPool {
       },
       runner: options.runner,
       logger: this.logger,
-      limits: {
-        historyEntries: options.historyMaxEntries,
-        historyBytes: options.historyMaxBytes,
-      },
     });
   }
 

@@ -45,13 +45,6 @@ export interface SessionProcessorOptions {
   runner: OpencodeRunner;
   activityIndex: SessionActivityIndex;
   bufferStore: SessionBuffer;
-  limits?: {
-    groupWindowEntries?: number;
-    userMemoryEntries?: number;
-    /** Deprecated: use groupWindowEntries/userMemoryEntries. */
-    historyEntries?: number;
-    historyBytes?: number;
-  };
 }
 
 export class SessionProcessor {
@@ -64,9 +57,6 @@ export class SessionProcessor {
   private runner: OpencodeRunner;
   private activityIndex: SessionActivityIndex;
   private bufferStore: SessionBuffer;
-  private groupWindowMaxEntries: number;
-  private userMemoryMaxEntries: number;
-  private historyMaxBytes?: number;
 
   constructor(options: SessionProcessorOptions) {
     this.logger = options.logger.child({ component: "session-processor" });
@@ -78,12 +68,6 @@ export class SessionProcessor {
     this.runner = options.runner;
     this.activityIndex = options.activityIndex;
     this.bufferStore = options.bufferStore;
-    const deprecatedHistoryEntries = options.limits?.historyEntries;
-    this.groupWindowMaxEntries =
-      options.limits?.groupWindowEntries ?? deprecatedHistoryEntries ?? 30;
-    this.userMemoryMaxEntries =
-      options.limits?.userMemoryEntries ?? deprecatedHistoryEntries ?? 20;
-    this.historyMaxBytes = options.limits?.historyBytes;
   }
 
   async process(
@@ -336,8 +320,6 @@ export class SessionProcessor {
                     const { history, request } = await this.buildPromptContext(
                       jobData.groupId,
                       sessionInfo!,
-                      mergedWithTrace,
-                      historyKey,
                       promptInput,
                       { traceId, jobId, logger: log, message: batchMessage },
                     );
@@ -462,8 +444,6 @@ export class SessionProcessor {
   private async buildPromptContext(
     groupId: string,
     sessionInfo: SessionInfo,
-    sessionInput: SessionEvent,
-    historyKey: HistoryKey | null,
     promptInput: string,
     telemetry?: {
       traceId: string;
@@ -498,53 +478,6 @@ export class SessionProcessor {
       );
     };
 
-    const history = historyKey
-      ? await span(
-          "history_read",
-          async () =>
-            this.historyStore.readGroupHistory(
-              {
-                botAccountId: historyKey.botAccountId,
-                groupId: sessionInfo.meta.groupId,
-                userId:
-                  sessionInfo.meta.groupId === "0"
-                    ? historyKey.userId
-                    : undefined,
-              },
-              {
-                maxEntries: this.groupWindowMaxEntries,
-                maxBytes: this.historyMaxBytes,
-              },
-            ),
-          {
-            maxEntries: this.groupWindowMaxEntries,
-            maxBytes: this.historyMaxBytes,
-          },
-        )
-      : [];
-    const userMemory = historyKey
-      ? await span(
-          "history_read_user",
-          async () =>
-            this.historyStore.readHistory(historyKey, {
-              maxEntries: this.userMemoryMaxEntries,
-              maxBytes: this.historyMaxBytes,
-            }),
-          {
-            maxEntries: this.userMemoryMaxEntries,
-            maxBytes: this.historyMaxBytes,
-          },
-        )
-      : [];
-    const visibleHistory = history
-      .filter((entry) => entry.includeInContext !== false)
-      .map((entry) => ({ ...entry, context: "group_window" }));
-    const visibleUserMemory = userMemory
-      .filter((entry) => entry.includeInContext !== false)
-      .filter((entry) => entry.groupId !== sessionInfo.meta.groupId)
-      .map((entry) => ({ ...entry, context: "user_memory" }));
-
-    const mergedHistory = [...visibleHistory, ...visibleUserMemory];
     const groupConfig = await span("load_group_config", async () =>
       this.getGroupConfig(groupId),
     );
@@ -567,7 +500,7 @@ export class SessionProcessor {
       : baseSystemPrompt;
     const system = buildOpencodeSystemContext({
       systemPrompt,
-      history: mergedHistory,
+      history: [],
     });
     const resolvedInput = resolveSessionInput(promptInput);
     const rawUserText = resolvedInput.trim();
@@ -610,7 +543,7 @@ export class SessionProcessor {
       },
     };
 
-    return { history: mergedHistory, request };
+    return { history: [], request };
   }
 
   private async ensureOpencodeSessionId(
@@ -651,11 +584,12 @@ export class SessionProcessor {
     }
 
     const now = new Date().toISOString();
-    await this.sessionRepository.updateMeta({
+    const updated = await this.sessionRepository.updateMeta({
       ...sessionInfo.meta,
       opencodeSessionId: createdId,
       updatedAt: now,
     });
+    sessionInfo.meta = updated.meta;
     return createdId;
   }
 

@@ -16,7 +16,6 @@
 - 测试：新增 RouterStore 默认配置与 bot 配置落盘用例
 - History：将 opencode 事件流中间态写入 Postgres（`includeInContext=false`），便于追踪但默认不进上下文
 - History：`history_entries` 新增 `session_id` 列，并补齐按群读取所需索引（`bot_account_id + group_id + id`）
-- Config：新增 `HISTORY_GROUP_WINDOW_MAX_ENTRIES` / `HISTORY_USER_MEMORY_MAX_ENTRIES`，将上下文拆分为“群窗口 + 跨群记忆”
 - Telemetry：新增全链路 `traceId`/`span` 结构化埋点（`event=telemetry.span`），可在阿里云日志/SLS 侧按 `traceId` 查看每一步触发时间与耗时
 - Opencode：外部模式（LiteLLM）请求自动附带 `traceparent` 与 `x-opencode-trace-id`，便于把 opencode 内部网络请求与上游网关/ARMS 链路追踪串联
 - Telemetry：支持将 `telemetry.span` 同步导出为 OpenTelemetry traces（OTLP），可上报到 ARMS 并与 LiteLLM spans 在同一 workspace 内聚合
@@ -58,6 +57,7 @@
 - 文档：README 补充历史/记录存放位置并修正 data 目录结构说明（移除 `history.sqlite` 描述，历史仅写入 Postgres）
 - 文档：统一 sessions 路径描述并修正 bot-data PVC 说明，避免按旧目录查找导致“没生成会话目录”的误判
 - Session：处理缓冲消息失败时回滚并 `requeueFront`；发送失败会让 job 失败以触发 BullMQ 重试，避免消息丢失/静默失败
+- Session：修复 `opencodeSessionId` 在后续 meta 更新时丢失，导致重复创建 opencode `ses_...`
 - 图片：`url-access-check` 对图片默认增加最小分辨率校验（短边 ≥ 768px）并拒绝 Google 缩略图域名，避免“小图/糊图”
 - K8s：opencode-web 增加 `/` → `/data` 会话页重定向，避免默认进入 `global(worktree=/)` 导致历史 sessions 列表为空
 - K8s：opencode-server 会话目录迁移脚本覆盖所有 project 目录，确保非 `global` 下的 sessions 也能在 Web UI 里按 `/data` 查看
@@ -98,12 +98,13 @@
 - 配置/部署：移除 `configs/secrets/.env`，统一使用单一 `configs/.env`（Compose/脚本/K8s/文档同步）
 - 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）
 - K8s：opencode-bot-agent 默认镜像改为阿里云仓库（`registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest`）
-- Session：`sessionId` 改为系统生成（不再使用 `{userId}-{key}`），并将 History 上下文过滤收敛到同一 `groupId + sessionId`
+- Session：`sessionId` 改为系统生成（不再使用 `{userId}-{key}`），并持续复用 opencode session（`ses_...`）作为对话记忆
 - Trigger：keyword 触发改为“前缀匹配”，并支持唤醒词前缀剥离（例如 `奈塔 ...`）
 - Router：全局默认唤醒词设置为 `奈塔`/`小捏`，并将默认 `echoRate` 调整为 0（默认不复读）
 - MessageDispatcher：dispatch 主流程拆分为“解析/鉴权/路由/入队”四段纯函数 + 薄 orchestrator，降低分支复杂度
 - Dev：git pre-commit hook 强制要求每次提交都包含已暂存的 `CHANGELOG.md` 更新
 - Config：抽出 env boolean 解析 helper，统一 `SSRF_ALLOWLIST_ENABLED`/`OPENCODE_YOLO`/`TELEMETRY_ENABLED` 语义
+- Config：移除 `HISTORY_MAX_ENTRIES`/`HISTORY_MAX_BYTES`/`HISTORY_GROUP_WINDOW_MAX_ENTRIES`/`HISTORY_USER_MEMORY_MAX_ENTRIES`（不再用于 prompt 组装）
 
 ### Security
 

@@ -121,11 +121,6 @@ async function main(): Promise<void> {
       name: sessionQueueName,
       prefix: config.BULLMQ_PREFIX,
     },
-    limits: {
-      groupWindowEntries: config.HISTORY_GROUP_WINDOW_MAX_ENTRIES,
-      userMemoryEntries: config.HISTORY_USER_MEMORY_MAX_ENTRIES,
-      historyBytes: config.HISTORY_MAX_BYTES,
-    },
     runner: new OpencodeServerRunner(opencodeClient),
     logger,
   });

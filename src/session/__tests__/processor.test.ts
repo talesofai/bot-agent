@@ -30,8 +30,8 @@ function makeTempDir(): string {
 }
 
 class FakeOpencodeClient implements OpencodeClient {
-  private sessions = new Set<string>();
-  private counter = 0;
+  sessions = new Set<string>();
+  createCalls = 0;
 
   async createSession(input: {
     directory: string;
@@ -43,8 +43,8 @@ class FakeOpencodeClient implements OpencodeClient {
     void input.title;
     void input.parentID;
     void input.signal;
-    this.counter += 1;
-    const id = `ses_test_${this.counter}`;
+    this.createCalls += 1;
+    const id = `ses_test_${this.createCalls}`;
     this.sessions.add(id);
     return { id };
   }
@@ -236,7 +236,7 @@ function encodeKey(key: SessionBufferKey): string {
 }
 
 describe("SessionProcessor", () => {
-  test("stores stream events but excludes them from prompt history", async () => {
+  test("stores stream events but does not inject stored history into opencode prompt", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });
     const groupRepository = new GroupFileRepository({
@@ -317,7 +317,6 @@ describe("SessionProcessor", () => {
       runner,
       activityIndex,
       bufferStore,
-      limits: { historyEntries: 50, historyBytes: 50_000 },
     });
 
     try {
@@ -343,9 +342,7 @@ describe("SessionProcessor", () => {
 
       await processor.process({ id: 0, data: jobData }, jobData);
 
-      expect(runner.lastHistory.map((entry) => entry.content)).toEqual([
-        "visible",
-      ]);
+      expect(runner.lastHistory).toEqual([]);
       expect(adapter.messages).toEqual(["ok-1"]);
 
       const stored = await historyStore.readHistory(historyKey, {
@@ -370,9 +367,7 @@ describe("SessionProcessor", () => {
       expect(acquiredAgain).toBe(jobData.gateToken);
 
       await processor.process({ id: 1, data: jobData }, jobData);
-      expect(
-        runner.lastHistory.some((entry) => entry.includeInContext === false),
-      ).toBe(false);
+      expect(runner.lastHistory).toEqual([]);
       expect(adapter.messages).toEqual(["ok-1", "ok-2"]);
     } finally {
       await processor.close();
@@ -380,7 +375,7 @@ describe("SessionProcessor", () => {
     }
   });
 
-  test("builds context with group window plus cross-group user memory", async () => {
+  test("reuses opencode session id across batches", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });
     const groupRepository = new GroupFileRepository({
@@ -411,48 +406,11 @@ describe("SessionProcessor", () => {
       sessionId: jobData.sessionId,
     };
 
-    const botAccountId = buildBotAccountId("qq", "123");
-    const now = Date.now();
-    const t1 = new Date(now - 30_000).toISOString();
-    const t2 = new Date(now - 20_000).toISOString();
-    const t3 = new Date(now - 10_000).toISOString();
-
-    await historyStore.appendHistory(
-      { botAccountId, userId: "user-2" },
-      {
-        role: "user",
-        content: "u2 in group-1",
-        createdAt: t1,
-        groupId: "group-1",
-        sessionId: "user-2-0",
-      },
-    );
-    await historyStore.appendHistory(
-      { botAccountId, userId: "user-1" },
-      {
-        role: "user",
-        content: "u1 in group-2",
-        createdAt: t2,
-        groupId: "group-2",
-        sessionId: "user-1-0",
-      },
-    );
-    await historyStore.appendHistory(
-      { botAccountId, userId: "user-1" },
-      {
-        role: "assistant",
-        content: "u1 in group-1 (old)",
-        createdAt: t3,
-        groupId: "group-1",
-        sessionId: "user-1-0",
-      },
-    );
-
     class CapturingRunner implements OpencodeRunner {
-      lastHistory: OpencodeRunInput["history"] = [];
+      sessionIds: string[] = [];
 
       async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
-        this.lastHistory = input.history;
+        this.sessionIds.push(input.request.sessionId);
         return { output: "ok" };
       }
     }
@@ -468,11 +426,6 @@ describe("SessionProcessor", () => {
       runner,
       activityIndex,
       bufferStore,
-      limits: {
-        groupWindowEntries: 30,
-        userMemoryEntries: 20,
-        historyBytes: 50_000,
-      },
     });
 
     try {
@@ -498,22 +451,37 @@ describe("SessionProcessor", () => {
 
       await processor.process({ id: 0, data: jobData }, jobData);
 
-      const groupWindow = runner.lastHistory.filter(
-        (entry) => entry.context === "group_window",
-      );
-      const userMemory = runner.lastHistory.filter(
-        (entry) => entry.context === "user_memory",
-      );
+      expect(opencodeClient.createCalls).toBe(1);
+      expect(runner.sessionIds.length).toBe(1);
+      expect(runner.sessionIds[0]?.startsWith("ses_")).toBe(true);
 
-      expect(
-        groupWindow.some((entry) => entry.content === "u2 in group-1"),
-      ).toBe(true);
-      expect(
-        userMemory.some((entry) => entry.content === "u1 in group-2"),
-      ).toBe(true);
-      expect(
-        userMemory.some((entry) => entry.content === "u1 in group-1 (old)"),
-      ).toBe(false);
+      const storedSession = await sessionRepository.loadSession(
+        jobData.botId,
+        jobData.groupId,
+        jobData.userId,
+        jobData.sessionId,
+      );
+      expect(storedSession?.meta.opencodeSessionId).toBe(runner.sessionIds[0]);
+
+      const second: SessionEvent = {
+        ...first,
+        messageId: "msg-2",
+        content: "next",
+        elements: [{ type: "text", text: "next" }],
+        timestamp: Date.now(),
+      };
+      const acquiredAgain = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        second,
+        jobData.gateToken,
+      );
+      expect(acquiredAgain).toBe(jobData.gateToken);
+
+      await processor.process({ id: 1, data: jobData }, jobData);
+
+      expect(opencodeClient.createCalls).toBe(1);
+      expect(runner.sessionIds).toHaveLength(2);
+      expect(runner.sessionIds[1]).toBe(runner.sessionIds[0]);
     } finally {
       await processor.close();
       rmSync(tempDir, { recursive: true, force: true });
@@ -593,7 +561,6 @@ describe("SessionProcessor", () => {
       runner,
       activityIndex,
       bufferStore,
-      limits: { historyEntries: 10, historyBytes: 10_000 },
     });
 
     try {
@@ -681,7 +648,6 @@ describe("SessionProcessor", () => {
       runner,
       activityIndex,
       bufferStore,
-      limits: { historyEntries: 10, historyBytes: 10_000 },
     });
 
     try {
@@ -739,7 +705,6 @@ describe("SessionProcessor", () => {
       runner,
       activityIndex,
       bufferStore,
-      limits: { historyEntries: 10, historyBytes: 10_000 },
     });
 
     try {
@@ -834,7 +799,6 @@ describe("SessionProcessor", () => {
       runner,
       activityIndex,
       bufferStore,
-      limits: { historyEntries: 10, historyBytes: 10_000 },
     });
 
     try {
@@ -961,7 +925,6 @@ describe("SessionProcessor", () => {
       runner,
       activityIndex,
       bufferStore,
-      limits: { historyEntries: 10, historyBytes: 10_000 },
     });
 
     try {

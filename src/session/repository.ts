@@ -340,6 +340,7 @@ const sessionMetaSchema = z
     status: z.enum(["idle", "running"]),
     active: z.boolean().optional(),
     archivedAt: z.string().optional(),
+    opencodeSessionId: z.string().optional(),
     nietaToken: z.string().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),

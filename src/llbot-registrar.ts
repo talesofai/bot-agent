@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { logger } from "./logger";
 import { LlbotRegistrar } from "./registry/llbot-registrar";
+import { createGracefulShutdown } from "./utils/graceful-shutdown";
 
 const envSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
@@ -24,14 +25,23 @@ const registrar = new LlbotRegistrar({
   refreshIntervalSec: config.LLBOT_REGISTRY_REFRESH_SEC,
 });
 
-const shutdown = async () => {
-  logger.info("Shutting down llbot registrar...");
-  await registrar.stop();
-  process.exit(0);
-};
+const shutdownController = createGracefulShutdown({
+  logger,
+  name: "llbot-registrar",
+  onShutdown: async () => {
+    try {
+      await registrar.stop();
+    } catch (err) {
+      logger.error({ err }, "Failed to stop llbot registrar");
+    }
+  },
+});
+shutdownController.installSignalHandlers();
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
-
-await registrar.start();
-logger.info("llbot registrar started");
+try {
+  await registrar.start();
+  logger.info("llbot registrar started");
+} catch (err) {
+  logger.error({ err }, "Failed to start llbot registrar");
+  await shutdownController.shutdown({ exitCode: 1, reason: err });
+}

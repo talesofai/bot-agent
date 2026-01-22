@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   } finally {
     await cleaner.close();
   }
-  process.exit(exitCode);
+  process.exitCode = exitCode;
 }
 
 await main();

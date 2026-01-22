@@ -8,6 +8,7 @@ import type { Bot } from "../types/platform";
 import { getBotIdAliasMap } from "../utils/bot-id";
 import { shutdownOtel, startOtel } from "../otel";
 import { BotMessageStore } from "../store/bot-message-store";
+import { createGracefulShutdown } from "../utils/graceful-shutdown";
 
 const config = getConfig();
 
@@ -18,13 +19,47 @@ async function main(): Promise<void> {
     logger.warn({ err }, "Failed to start OpenTelemetry");
   }
 
+  let httpServer: HttpServer | null = null;
+  let botMessageStore: BotMessageStore | null = null;
+  let worker: SessionWorker | null = null;
+  let adapter: MultiAdapter | null = null;
+  let bot: Bot | null = null;
+
+  const shutdownController = createGracefulShutdown({
+    logger,
+    name: "session-worker",
+    onShutdown: async () => {
+      try {
+        await worker?.stop();
+        if (httpServer) {
+          httpServer.stop();
+        }
+        await botMessageStore?.close();
+        if (adapter && bot) {
+          await adapter.disconnect(bot);
+        }
+      } catch (err) {
+        logger.error({ err }, "Error during shutdown");
+      }
+      try {
+        await shutdownOtel();
+      } catch (err) {
+        logger.warn({ err }, "Failed to shutdown OpenTelemetry");
+      }
+    },
+  });
+  shutdownController.installSignalHandlers();
+
   if (!config.DATABASE_URL) {
     logger.error("DATABASE_URL is required for session worker");
-    process.exit(1);
+    await shutdownController.shutdown({
+      exitCode: 1,
+      reason: "missing DATABASE_URL",
+    });
     return;
   }
 
-  const botMessageStore = new BotMessageStore({
+  botMessageStore = new BotMessageStore({
     redisUrl: config.REDIS_URL,
     logger,
   });
@@ -47,10 +82,11 @@ async function main(): Promise<void> {
   }
 
   const sessionQueueName = "session-jobs";
-  const adapter = new MultiAdapter({
+  const multiAdapter = new MultiAdapter({
     adapters: platformAdapters,
     logger,
   });
+  adapter = multiAdapter;
 
   const opencodeClient = new OpencodeServerClient({
     baseUrl: config.OPENCODE_SERVER_URL,
@@ -59,8 +95,8 @@ async function main(): Promise<void> {
     timeoutMs: config.OPENCODE_SERVER_TIMEOUT_MS,
   });
 
-  const bot: Bot = {
-    platform: adapter.platform,
+  const botInstance: Bot = {
+    platform: multiAdapter.platform,
     selfId: "",
     status: "disconnected",
     capabilities: {
@@ -68,13 +104,14 @@ async function main(): Promise<void> {
       canDeleteMessage: false,
       canSendRichContent: false,
     },
-    adapter,
+    adapter: multiAdapter,
   };
+  bot = botInstance;
 
-  const worker = new SessionWorker({
+  worker = new SessionWorker({
     id: "worker-1",
     dataDir: config.GROUPS_DATA_DIR,
-    adapter,
+    adapter: multiAdapter,
     databaseUrl: config.DATABASE_URL,
     opencodeClient,
     redis: {
@@ -92,44 +129,21 @@ async function main(): Promise<void> {
     logger,
   });
 
-  let httpServer: HttpServer | null = null;
-
-  const shutdown = async (exitCode = 0) => {
-    logger.info("Shutting down...");
-    try {
-      await worker.stop();
-      if (httpServer) {
-        httpServer.stop();
-      }
-      await botMessageStore.close();
-      await adapter.disconnect(bot);
-    } catch (err) {
-      logger.error({ err }, "Error during disconnect");
-    }
-    try {
-      await shutdownOtel();
-    } catch (err) {
-      logger.warn({ err }, "Failed to shutdown OpenTelemetry");
-    }
-    process.exit(exitCode);
-  };
-
-  process.on("SIGINT", () => {
-    void shutdown(0);
-  });
-  process.on("SIGTERM", () => {
-    void shutdown(0);
-  });
-
   try {
-    await adapter.connect(bot);
+    await multiAdapter.connect(botInstance);
   } catch (err) {
     logger.error({ err }, "Adapter connection failed");
-    await shutdown(1);
+    await shutdownController.shutdown({ exitCode: 1, reason: err });
     return;
   }
 
-  await worker.start();
+  try {
+    await worker.start();
+  } catch (err) {
+    logger.error({ err }, "Session worker failed to start");
+    await shutdownController.shutdown({ exitCode: 1, reason: err });
+    return;
+  }
 
   startHttpServer({ logger, port: config.WORKER_HTTP_PORT })
     .then((server) => {

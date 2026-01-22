@@ -17,6 +17,7 @@ import { shutdownOtel, startOtel } from "../otel";
 import { BotMessageStore } from "../store/bot-message-store";
 import { GroupRouteStore } from "../store/group-route-store";
 import { GroupHotPushScheduler } from "../push/scheduler";
+import { createGracefulShutdown } from "../utils/graceful-shutdown";
 
 const config = getConfig();
 
@@ -27,18 +28,57 @@ async function main(): Promise<void> {
     logger.warn({ err }, "Failed to start OpenTelemetry");
   }
 
-  const botMessageStore = new BotMessageStore({
+  let httpServer: HttpServer | null = null;
+  let botMessageStore: BotMessageStore | null = null;
+  let groupRouteStore: GroupRouteStore | null = null;
+  let sessionQueue: BullmqSessionQueue | null = null;
+  let bufferStore: SessionBufferStore | null = null;
+  let echoTracker: EchoTracker | null = null;
+  let adapter: MultiAdapter | null = null;
+  let bot: Bot | null = null;
+  let pushScheduler: GroupHotPushScheduler | null = null;
+
+  const shutdownController = createGracefulShutdown({
+    logger,
+    name: "bot-adapter",
+    onShutdown: async () => {
+      try {
+        if (httpServer) {
+          httpServer.stop();
+        }
+        pushScheduler?.stop();
+        await bufferStore?.close();
+        await echoTracker?.close();
+        await sessionQueue?.close();
+        await botMessageStore?.close();
+        await groupRouteStore?.close();
+        if (adapter && bot) {
+          await adapter.disconnect(bot);
+        }
+      } catch (err) {
+        logger.error({ err }, "Error during shutdown");
+      }
+      try {
+        await shutdownOtel();
+      } catch (err) {
+        logger.warn({ err }, "Failed to shutdown OpenTelemetry");
+      }
+    },
+  });
+  shutdownController.installSignalHandlers();
+
+  botMessageStore = new BotMessageStore({
     redisUrl: config.REDIS_URL,
     logger,
   });
-  const groupRouteStore = new GroupRouteStore({
+  groupRouteStore = new GroupRouteStore({
     redisUrl: config.REDIS_URL,
     logger,
   });
   const platformAdapters = createPlatformAdapters(config, { botMessageStore });
-  for (const adapter of platformAdapters) {
-    if (adapter instanceof DiscordAdapter) {
-      adapter.enableSlashCommands();
+  for (const platformAdapter of platformAdapters) {
+    if (platformAdapter instanceof DiscordAdapter) {
+      platformAdapter.enableSlashCommands();
     }
   }
   logger.info(
@@ -58,12 +98,13 @@ async function main(): Promise<void> {
     );
   }
 
-  const adapter = new MultiAdapter({
+  const multiAdapter = new MultiAdapter({
     adapters: platformAdapters,
     logger,
   });
-  const bot: Bot = {
-    platform: adapter.platform,
+  adapter = multiAdapter;
+  const botInstance: Bot = {
+    platform: multiAdapter.platform,
     selfId: "",
     status: "disconnected",
     capabilities: {
@@ -71,15 +112,16 @@ async function main(): Promise<void> {
       canDeleteMessage: false,
       canSendRichContent: false,
     },
-    adapter,
+    adapter: multiAdapter,
   };
+  bot = botInstance;
 
   const groupStore = new GroupStore();
   try {
     await groupStore.init();
   } catch (err) {
     logger.error({ err }, "Failed to initialize GroupStore");
-    process.exit(1);
+    await shutdownController.shutdown({ exitCode: 1, reason: err });
     return;
   }
   const dataRoot = config.DATA_DIR ?? path.dirname(config.GROUPS_DATA_DIR);
@@ -88,22 +130,21 @@ async function main(): Promise<void> {
     await routerStore.init();
   } catch (err) {
     logger.error({ err, dataRoot }, "Failed to initialize RouterStore");
-    process.exit(1);
+    await shutdownController.shutdown({ exitCode: 1, reason: err });
     return;
   }
 
-  const sessionQueue = new BullmqSessionQueue({
+  sessionQueue = new BullmqSessionQueue({
     redisUrl: config.REDIS_URL,
     queueName: "session-jobs",
   });
 
-  const bufferStore = new SessionBufferStore({ redisUrl: config.REDIS_URL });
+  bufferStore = new SessionBufferStore({ redisUrl: config.REDIS_URL });
   const sessionRepository = new SessionRepository({
     dataDir: config.GROUPS_DATA_DIR,
     logger,
   });
 
-  let httpServer: HttpServer | null = null;
   startHttpServer({
     logger,
     onReloadGroup: async (groupId) =>
@@ -116,12 +157,12 @@ async function main(): Promise<void> {
       logger.error({ err }, "Failed to start HTTP server");
     });
 
-  const echoTracker = new EchoTracker({
+  echoTracker = new EchoTracker({
     redisUrl: config.REDIS_URL,
     logger,
   });
   const dispatcher = new MessageDispatcher({
-    adapter,
+    adapter: multiAdapter,
     groupStore,
     routerStore,
     sessionRepository,
@@ -133,11 +174,11 @@ async function main(): Promise<void> {
     logger,
     forceGroupId: config.FORCE_GROUP_ID,
   });
-  adapter.onEvent((message) => {
+  multiAdapter.onEvent((message) => {
     void dispatcher.dispatch(message);
   });
 
-  const pushScheduler = new GroupHotPushScheduler({
+  pushScheduler = new GroupHotPushScheduler({
     groupsDataDir: config.GROUPS_DATA_DIR,
     dispatcher,
     groupRouteStore,
@@ -145,42 +186,11 @@ async function main(): Promise<void> {
   });
   pushScheduler.start();
 
-  const shutdown = async (exitCode = 0) => {
-    logger.info("Shutting down...");
-    try {
-      if (httpServer) {
-        httpServer.stop();
-      }
-      pushScheduler.stop();
-      await bufferStore.close();
-      await echoTracker.close();
-      await sessionQueue.close();
-      await botMessageStore.close();
-      await groupRouteStore.close();
-      await adapter.disconnect(bot);
-    } catch (err) {
-      logger.error({ err }, "Error during disconnect");
-    }
-    try {
-      await shutdownOtel();
-    } catch (err) {
-      logger.warn({ err }, "Failed to shutdown OpenTelemetry");
-    }
-    process.exit(exitCode);
-  };
-
-  process.on("SIGINT", () => {
-    void shutdown(0);
-  });
-  process.on("SIGTERM", () => {
-    void shutdown(0);
-  });
-
   try {
-    await adapter.connect(bot);
+    await multiAdapter.connect(botInstance);
   } catch (err) {
     logger.error({ err }, "Adapter connection failed");
-    await shutdown(1);
+    await shutdownController.shutdown({ exitCode: 1, reason: err });
   }
 }
 

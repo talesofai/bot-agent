@@ -663,7 +663,7 @@ describe("SessionProcessor", () => {
     expect(bufferStore.bufferLength(bufferKey)).toBe(0);
   });
 
-  test("handles rename-only messages without calling opencode", async () => {
+  test("records preferred name from model profile_update", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });
     const groupRepository = new GroupFileRepository({
@@ -679,7 +679,23 @@ describe("SessionProcessor", () => {
     const activityIndex = new MemoryActivityIndex();
     const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
     const opencodeClient = new FakeOpencodeClient();
-    const runner = new CountingRunner();
+
+    class ProfileUpdateRunner implements OpencodeRunner {
+      runs = 0;
+
+      async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
+        this.runs += 1;
+        const text = input.request.body.parts[0]?.text ?? "";
+        if (typeof text === "string" && text.includes("叫我小明")) {
+          return {
+            output:
+              '好的，以后叫你小明。\n<profile_update>{"preferredName":"小明"}</profile_update>',
+          };
+        }
+        return { output: "ok" };
+      }
+    }
+    const runner = new ProfileUpdateRunner();
 
     const jobData: SessionJobData = {
       botId: "qq-123",
@@ -730,7 +746,7 @@ describe("SessionProcessor", () => {
 
       await processor.process({ id: 0, data: jobData }, jobData);
 
-      expect(runner.runs).toBe(0);
+      expect(runner.runs).toBe(1);
       expect(adapter.messages).toEqual(["好的，以后叫你小明。"]);
 
       const storedSession = await sessionRepository.loadSession(
@@ -740,6 +756,101 @@ describe("SessionProcessor", () => {
         jobData.sessionId,
       );
       expect(storedSession?.meta.preferredName).toBe("小明");
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not treat identity questions as rename", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const opencodeClient = new FakeOpencodeClient();
+
+    class SystemCapturingRunner implements OpencodeRunner {
+      runs = 0;
+      lastSystem: string | null = null;
+
+      async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
+        this.runs += 1;
+        this.lastSystem = input.request.body.system ?? null;
+        return { output: "ok" };
+      }
+    }
+    const runner = new SystemCapturingRunner();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+    });
+
+    try {
+      const message: SessionEvent = {
+        type: "message",
+        platform: "qq",
+        selfId: "123",
+        userId: jobData.userId,
+        guildId: jobData.groupId,
+        channelId: jobData.groupId,
+        messageId: "msg-1",
+        content: "我是谁？",
+        elements: [{ type: "text", text: "我是谁？" }],
+        timestamp: Date.now(),
+        extras: { sender: { nickname: "Alice" } },
+      };
+      const acquired = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        message,
+        jobData.gateToken,
+      );
+      expect(acquired).toBe(jobData.gateToken);
+
+      await processor.process({ id: 0, data: jobData }, jobData);
+
+      expect(runner.runs).toBe(1);
+      expect(runner.lastSystem).toContain("平台用户名：Alice");
+      expect(adapter.messages).toEqual(["ok"]);
+
+      const storedSession = await sessionRepository.loadSession(
+        jobData.botId,
+        jobData.groupId,
+        jobData.userId,
+        jobData.sessionId,
+      );
+      expect(storedSession?.meta.preferredName).toBeUndefined();
     } finally {
       await processor.close();
       rmSync(tempDir, { recursive: true, force: true });
@@ -770,6 +881,13 @@ describe("SessionProcessor", () => {
       async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
         this.runs += 1;
         this.lastSystem = input.request.body.system ?? null;
+        const text = input.request.body.parts[0]?.text ?? "";
+        if (typeof text === "string" && text.includes("叫我小明")) {
+          return {
+            output:
+              '好的，以后叫你小明。\n<profile_update>{"preferredName":"小明"}</profile_update>',
+          };
+        }
         return { output: "ok" };
       }
     }
@@ -838,7 +956,7 @@ describe("SessionProcessor", () => {
       expect(acquiredAgain).toBe(jobData.gateToken);
       await processor.process({ id: 1, data: jobData }, jobData);
 
-      expect(runner.runs).toBe(1);
+      expect(runner.runs).toBe(2);
       expect(runner.lastSystem).toContain("用户希望的称呼：小明");
       expect(runner.lastSystem).toContain("平台用户名：Alice");
       expect(adapter.messages).toEqual(["好的，以后叫你小明。", "ok"]);

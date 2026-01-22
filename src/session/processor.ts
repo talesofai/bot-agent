@@ -30,6 +30,18 @@ import {
   withTelemetrySpan,
 } from "../telemetry";
 
+const USER_APPELLATION_PROTOCOL_PROMPT = [
+  "用户称呼存取协议：",
+  "1) System 里可能会提供“用户信息”块：",
+  "   - 用户希望的称呼：系统已记录的 preferredName（若存在）。",
+  "   - 平台用户名：平台侧昵称/名片（若存在）。",
+  "2) 你称呼用户时：优先使用“用户希望的称呼”，否则使用“平台用户名”。",
+  "3) 当用户明确表达希望你以后如何称呼他（例如：叫我X/请叫我X/我叫X/我是X/把我叫做X 等）：",
+  "   - 先在正常回复中确认（例如：好的，以后叫你X）。",
+  '   - 然后在回复末尾追加一行：<profile_update>{"preferredName":"X"}</profile_update>',
+  "4) 当用户在问“我是谁/我叫什么/你怎么叫我”等问题时：这是询问，不要当作改名指令，不要输出 profile_update。",
+].join("\n");
+
 export interface SessionJobContext {
   id?: string | number | null;
   data: SessionJobData;
@@ -280,7 +292,7 @@ export class SessionProcessor {
 
                   const historyKey = resolveHistoryKey(mergedWithTrace);
 
-                  const profileResult = await batchSpan(
+                  sessionInfo = await batchSpan(
                     "update_user_profile",
                     async () =>
                       this.updateUserProfileFromMessages(
@@ -290,30 +302,6 @@ export class SessionProcessor {
                       ),
                     { bufferedCount: buffered.length },
                   );
-                  sessionInfo = profileResult.sessionInfo;
-
-                  if (profileResult.quickReply) {
-                    const auditedOutput = redactSensitiveText(
-                      profileResult.quickReply,
-                    );
-                    await batchSpan("send_response", async () =>
-                      this.sendResponse(mergedWithTrace, auditedOutput),
-                    );
-                    await batchSpan("append_history", async () =>
-                      this.appendHistoryFromJob(
-                        sessionInfo!,
-                        mergedWithTrace,
-                        historyKey,
-                        undefined,
-                        undefined,
-                        auditedOutput,
-                      ),
-                    );
-                    await batchSpan("record_activity", async () =>
-                      this.recordActivity(sessionInfo!, log),
-                    );
-                    return;
-                  }
 
                   const stopTyping = this.startTyping(mergedWithTrace, log);
                   try {
@@ -363,8 +351,35 @@ export class SessionProcessor {
                       return;
                     }
                     const output = resolveOutput(result.output);
-                    const auditedOutput = output
-                      ? redactSensitiveText(output)
+                    const extractedUpdate = output
+                      ? extractPreferredNameUpdate(output)
+                      : null;
+                    const preferredName = extractedUpdate?.preferredName;
+                    const cleanedOutput =
+                      extractedUpdate?.output ??
+                      (preferredName
+                        ? `好的，以后叫你${preferredName}。`
+                        : output);
+
+                    if (preferredName) {
+                      const existingPreferred =
+                        sessionInfo!.meta.preferredName?.trim() ?? "";
+                      if (preferredName !== existingPreferred) {
+                        sessionInfo = await batchSpan(
+                          "update_preferred_name",
+                          async () =>
+                            this.sessionRepository.updateMeta({
+                              ...sessionInfo!.meta,
+                              preferredName,
+                              updatedAt: new Date().toISOString(),
+                            }),
+                          { hasExisting: Boolean(existingPreferred) },
+                        );
+                      }
+                    }
+
+                    const auditedOutput = cleanedOutput
+                      ? redactSensitiveText(cleanedOutput)
                       : undefined;
 
                     await batchSpan("send_response", async () =>
@@ -375,7 +390,9 @@ export class SessionProcessor {
                         sessionInfo!,
                         mergedWithTrace,
                         historyKey,
-                        result.historyEntries,
+                        result.historyEntries?.filter(
+                          (entry) => entry.role !== "assistant",
+                        ),
                         result.streamEvents,
                         auditedOutput,
                         { stdout: result.rawStdout, stderr: result.rawStderr },
@@ -494,10 +511,14 @@ export class SessionProcessor {
     );
 
     const baseSystemPrompt = buildSystemPrompt(agentPrompt);
+    const protocolPrompt = baseSystemPrompt.includes(PROFILE_UPDATE_OPEN_TAG)
+      ? null
+      : USER_APPELLATION_PROTOCOL_PROMPT;
     const userProfilePrompt = buildUserProfilePrompt(sessionInfo.meta);
-    const systemPrompt = userProfilePrompt
-      ? `${baseSystemPrompt}\n\n${userProfilePrompt}`
-      : baseSystemPrompt;
+    const systemPrompt = [baseSystemPrompt, protocolPrompt]
+      .filter((entry): entry is string => Boolean(entry))
+      .concat(userProfilePrompt ? [userProfilePrompt] : [])
+      .join("\n\n");
     const system = buildOpencodeSystemContext({
       systemPrompt,
       history: [],
@@ -637,60 +658,24 @@ export class SessionProcessor {
 
   private async updateUserProfileFromMessages(
     sessionInfo: SessionInfo,
-    buffered: ReadonlyArray<SessionEvent>,
+    _buffered: ReadonlyArray<SessionEvent>,
     latest: SessionEvent,
-  ): Promise<{ sessionInfo: SessionInfo; quickReply?: string }> {
+  ): Promise<SessionInfo> {
     const currentOwnerName = sessionInfo.meta.ownerName?.trim() ?? "";
-    const currentPreferredName = sessionInfo.meta.preferredName?.trim() ?? "";
     const observedOwnerName = resolveUserDisplayName(latest);
-
-    let observedPreferredName: string | null = null;
-    let renameInstructionCount = 0;
-    for (const message of buffered) {
-      const candidate = extractPreferredNameInstruction(message.content);
-      if (!candidate) {
-        continue;
-      }
-      renameInstructionCount += 1;
-      observedPreferredName = candidate;
-    }
 
     const shouldUpdateOwnerName =
       Boolean(observedOwnerName) && observedOwnerName !== currentOwnerName;
-    const shouldUpdatePreferredName =
-      Boolean(observedPreferredName) &&
-      observedPreferredName !== currentPreferredName;
-
-    let updatedSessionInfo = sessionInfo;
-    if (shouldUpdateOwnerName || shouldUpdatePreferredName) {
-      const updatedAt = new Date().toISOString();
-      updatedSessionInfo = await this.sessionRepository.updateMeta({
-        ...sessionInfo.meta,
-        ownerName: shouldUpdateOwnerName
-          ? (observedOwnerName ?? undefined)
-          : sessionInfo.meta.ownerName,
-        preferredName: shouldUpdatePreferredName
-          ? (observedPreferredName ?? undefined)
-          : sessionInfo.meta.preferredName,
-        updatedAt,
-      });
+    if (!shouldUpdateOwnerName) {
+      return sessionInfo;
     }
 
-    if (renameInstructionCount === 0 || !observedPreferredName) {
-      return { sessionInfo: updatedSessionInfo };
-    }
-
-    const isRenameOnlyBatch = buffered.every(
-      (message) => extractPreferredNameInstruction(message.content) !== null,
-    );
-    if (!isRenameOnlyBatch) {
-      return { sessionInfo: updatedSessionInfo };
-    }
-
-    return {
-      sessionInfo: updatedSessionInfo,
-      quickReply: `好的，以后叫你${observedPreferredName}。`,
-    };
+    const updatedAt = new Date().toISOString();
+    return this.sessionRepository.updateMeta({
+      ...sessionInfo.meta,
+      ownerName: observedOwnerName ?? undefined,
+      updatedAt,
+    });
   }
 
   private async getGroupConfig(groupId: string) {
@@ -1015,45 +1000,6 @@ function resolveUserDisplayName(session: SessionEvent): string | null {
   return null;
 }
 
-function extractPreferredNameInstruction(content: string): string | null {
-  const normalized = normalizeRenameText(content);
-  if (!normalized) {
-    return null;
-  }
-
-  const patterns: RegExp[] = [
-    /^(?:以后|今后|从现在起|从现在开始|以后请|请|麻烦|以后麻烦)?(?:都)?(?:叫我|称呼我|喊我)\s*([^，。,.!?\n]{1,32})[，。,.!?]*$/u,
-    /^(?:我叫|我是)\s*([^，。,.!?\n]{1,32})[，。,.!?]*$/u,
-    /^(?:把我叫做|把我称呼为|把我称作)\s*([^，。,.!?\n]{1,32})[，。,.!?]*$/u,
-  ];
-  for (const pattern of patterns) {
-    const match = normalized.match(pattern);
-    if (!match) {
-      continue;
-    }
-    const name = normalizePreferredName(match[1] ?? "");
-    if (!name) {
-      return null;
-    }
-    if (name.length > 32) {
-      return null;
-    }
-    return name;
-  }
-
-  return null;
-}
-
-function normalizeRenameText(content: string): string {
-  let text = content.trim();
-  if (!text) {
-    return "";
-  }
-  text = text.replace(/^#\d+\s*/u, "");
-  text = text.replace(/^(?:奈塔|小捏)(?:[,，:：\s]+|$)/u, "");
-  return text.trim();
-}
-
 function normalizePreferredName(value: string): string {
   let name = value.trim();
   if (!name) {
@@ -1078,6 +1024,88 @@ function normalizePreferredName(value: string): string {
   }
 
   return name;
+}
+
+const PROFILE_UPDATE_OPEN_TAG = "<profile_update>";
+const PROFILE_UPDATE_CLOSE_TAG = "</profile_update>";
+
+function extractPreferredNameUpdate(output: string): {
+  preferredName: string | null;
+  output: string | undefined;
+} {
+  let preferredName: string | null = null;
+  let remaining = output;
+
+  for (;;) {
+    const start = remaining.indexOf(PROFILE_UPDATE_OPEN_TAG);
+    if (start < 0) {
+      break;
+    }
+    const end = remaining.indexOf(PROFILE_UPDATE_CLOSE_TAG, start);
+    if (end < 0) {
+      break;
+    }
+
+    const jsonRaw = remaining
+      .slice(start + PROFILE_UPDATE_OPEN_TAG.length, end)
+      .trim();
+    const parsed = parseJsonObject(jsonRaw);
+    const extracted = extractPreferredNameFromJson(parsed);
+    if (extracted) {
+      preferredName = extracted;
+    }
+
+    remaining =
+      remaining.slice(0, start) +
+      remaining.slice(end + PROFILE_UPDATE_CLOSE_TAG.length);
+  }
+
+  const cleaned = remaining.trim();
+  return { preferredName, output: cleaned ? cleaned : undefined };
+}
+
+function parseJsonObject(raw: string): unknown | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    // Fallthrough for accidental wrappers, e.g. extra text or code fences.
+  }
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end <= start) {
+    return null;
+  }
+  const sliced = trimmed.slice(start, end + 1);
+  try {
+    return JSON.parse(sliced) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function extractPreferredNameFromJson(parsed: unknown): string | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const preferredName = (parsed as Record<string, unknown>)["preferredName"];
+  if (typeof preferredName !== "string") {
+    return null;
+  }
+  const normalized = normalizePreferredName(preferredName);
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.length > 32) {
+    return null;
+  }
+  if (/[\r\n]/u.test(normalized)) {
+    return null;
+  }
+  return normalized;
 }
 
 const YOLO_TOOLS: Record<string, boolean> = {

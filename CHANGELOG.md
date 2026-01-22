@@ -28,7 +28,7 @@
 - K8s：新增 opencode-web Ingress（`bot-opencode-web.talesofai.com` → `opencode-server:4096`，Basic Auth + TLS）
 - Push：新增群定时热点推送（管理员 `/push` 配置；默认不启用）
 - Session：新增 `/login`/`/logout`（token 存在当前会话 meta，用于 MCP 调用）
-- Session：会话 meta 记录用户昵称/称呼（`ownerName`/`preferredName`），并支持自然语言“叫我X/我是X”更新；system context 注入称呼信息
+- Session：会话 meta 记录用户昵称/称呼（`ownerName`/`preferredName`），并通过模型显式输出 `<profile_update>{"preferredName":"X"}</profile_update>` 更新；system context 注入称呼信息
 - Session：新增会话映射 `sessions/{botId}/{groupId}/{userId}/index.json`（`key -> sessionId`），支持创建新会话并封存旧会话
 - Session：新增管理指令 `/reset`（自己/指定用户/全群）用于创建新会话；旧会话仅允许通过 API 复用
 - GroupConfig：新增管理员指令 `/model` 切换群模型（仅外部模式生效且受 `OPENCODE_MODELS` 白名单约束）；支持 `/model default` 清除覆盖
@@ -50,6 +50,7 @@
 - Opencode：外部模式使用自定义 chat agent，避免在无交互环境卡在权限询问/工具执行
 - Opencode：system prompt 永远追加 URL 可用性校验硬性规则（`url-access-check`），避免模型编造/输出不可用链接
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
+- Session：称呼写入改为模型显式 `<profile_update>` 指令，避免将“我是谁/我叫什么”等询问误判为改名
 - Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败
 - Config：`BOT_ID_ALIASES` 解析改为严格校验（拒绝重复 alias 与 `a:b:c` 等非法项）
 - K8s：`bot-data` 改为 NAS RWX（`alibabacloud-cnfs-nas`），避免 adapter/worker 分布到不同节点时触发 Multi-Attach

@@ -124,14 +124,15 @@ spec:
               }
               EOF
 
-              # Migrate existing session records so the Web UI can list them under a single directory.
-              # opencode Web uses `GET /session?directory=<worktree>` which matches sessions by exact directory.
+              # Migrate existing session records so the Web UI can list them under a single directory/project.
+              # opencode Web lists sessions via `GET /session?directory=<worktree>` (exact match) and also groups by `projectID`.
               cat > /tmp/opencode-session-dir-migrate.mjs <<'EOF'
               import * as fs from "node:fs/promises";
               import * as path from "node:path";
 
               const homeDir = process.env.HOME ?? "/data/opencode-home";
               const targetDirectory = "/data";
+              const targetProjectID = "data";
               const sessionRoot = path.join(
                 homeDir,
                 ".local",
@@ -140,6 +141,82 @@ spec:
                 "storage",
                 "session",
               );
+
+              function shouldMigrateDirectory(directory) {
+                if (typeof directory !== "string") {
+                  return false;
+                }
+                return (
+                  directory === targetDirectory || directory.startsWith(`${targetDirectory}/`)
+                );
+              }
+
+              function getUpdatedTime(parsed) {
+                const updated = parsed?.time?.updated;
+                return typeof updated === "number" && Number.isFinite(updated) ? updated : 0;
+              }
+
+              async function readSessionJson(filePath) {
+                try {
+                  const raw = await fs.readFile(filePath, "utf8");
+                  return JSON.parse(raw);
+                } catch {
+                  return null;
+                }
+              }
+
+              async function writeSessionJsonAtomic(filePath, parsed) {
+                const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+                const content = `${JSON.stringify(parsed, null, 2)}\n`;
+                await fs.writeFile(tmpPath, content, "utf8");
+                await fs.rename(tmpPath, filePath);
+              }
+
+              async function normalizeAndMoveSession(input) {
+                const sourcePath = input.sourcePath;
+                const filename = input.filename;
+                const parsed = input.parsed;
+
+                if (!shouldMigrateDirectory(parsed.directory)) {
+                  return;
+                }
+
+                const destDir = path.join(sessionRoot, targetProjectID);
+                const destPath = path.join(destDir, filename);
+                if (
+                  sourcePath === destPath &&
+                  parsed.directory === targetDirectory &&
+                  parsed.projectID === targetProjectID
+                ) {
+                  return;
+                }
+
+                parsed.directory = targetDirectory;
+                parsed.projectID = targetProjectID;
+
+                await fs.mkdir(destDir, { recursive: true });
+
+                if (sourcePath !== destPath) {
+                  const existing = await readSessionJson(destPath);
+                  if (existing && typeof existing === "object") {
+                    const existingUpdated = getUpdatedTime(existing);
+                    const sourceUpdated = getUpdatedTime(parsed);
+                    const winner = existingUpdated >= sourceUpdated ? existing : parsed;
+                    if (winner && typeof winner === "object") {
+                      winner.directory = targetDirectory;
+                      winner.projectID = targetProjectID;
+                      await writeSessionJsonAtomic(destPath, winner);
+                    }
+                    await fs.unlink(sourcePath).catch(() => {});
+                    return;
+                  }
+                }
+
+                await writeSessionJsonAtomic(destPath, parsed);
+                if (sourcePath !== destPath) {
+                  await fs.unlink(sourcePath).catch(() => {});
+                }
+              }
 
               async function migrateOnce() {
                 let projectEntries;
@@ -171,29 +248,16 @@ spec:
                       continue;
                     }
                     const filePath = path.join(projectRoot, name);
-                    let raw;
-                    try {
-                      raw = await fs.readFile(filePath, "utf8");
-                    } catch {
-                      continue;
-                    }
-                    let parsed;
-                    try {
-                      parsed = JSON.parse(raw);
-                    } catch {
-                      continue;
-                    }
+                    const parsed = await readSessionJson(filePath);
                     if (!parsed || typeof parsed !== "object") {
                       continue;
                     }
-                    if (parsed.directory === targetDirectory) {
-                      continue;
-                    }
-                    parsed.directory = targetDirectory;
-                    const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
-                    const content = `${JSON.stringify(parsed, null, 2)}\n`;
-                    await fs.writeFile(tmpPath, content, "utf8");
-                    await fs.rename(tmpPath, filePath);
+
+                    await normalizeAndMoveSession({
+                      filename: name,
+                      sourcePath: filePath,
+                      parsed,
+                    });
                   }
                 }
               }

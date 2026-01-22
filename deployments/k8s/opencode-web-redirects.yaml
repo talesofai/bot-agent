@@ -4,11 +4,17 @@ metadata:
   name: opencode-web-redirect-root
   namespace: bot
   annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: opencode-web-auth
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/permanent-redirect: https://bot-opencode-web.talesofai.com/L2RhdGE/session
     nginx.ingress.kubernetes.io/permanent-redirect-code: "302"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - bot-opencode-web.talesofai.com
+      secretName: ssl-bot-opencode-web.talesofai.com
   rules:
     - host: bot-opencode-web.talesofai.com
       http:
@@ -27,11 +33,17 @@ metadata:
   name: opencode-web-redirect-data
   namespace: bot
   annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: opencode-web-auth
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/permanent-redirect: https://bot-opencode-web.talesofai.com/L2RhdGE
     nginx.ingress.kubernetes.io/permanent-redirect-code: "302"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - bot-opencode-web.talesofai.com
+      secretName: ssl-bot-opencode-web.talesofai.com
   rules:
     - host: bot-opencode-web.talesofai.com
       http:
@@ -50,11 +62,17 @@ metadata:
   name: opencode-web-redirect-session-data
   namespace: bot
   annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: opencode-web-auth
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/permanent-redirect: https://bot-opencode-web.talesofai.com/L2RhdGE/session
     nginx.ingress.kubernetes.io/permanent-redirect-code: "302"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - bot-opencode-web.talesofai.com
+      secretName: ssl-bot-opencode-web.talesofai.com
   rules:
     - host: bot-opencode-web.talesofai.com
       http:

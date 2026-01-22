@@ -6,7 +6,7 @@
   "scripts": {
     "dev:adapter": "bun run --watch src/bin/bot-adapter.ts",
     "dev:worker": "bun run --watch src/bin/session-worker.ts",
-    "llbot:registrar": "bun run src/llbot-registrar.ts",
+    "llbot:registrar": "bun run src/bin/llbot-registrar.ts",
     "clean:sessions": "bun run src/bin/clean-sessions.ts",
     "build:adapter": "bun build ./src/bin/bot-adapter.ts --outdir ./dist --target node",
     "build:worker": "bun build ./src/bin/session-worker.ts --outdir ./dist --target node",

@@ -82,6 +82,7 @@
 ### Changed
 
 - Dev：版本号升级到 `0.0.30`
+- Bin：`llbot-registrar` 入口移动到 `src/bin/llbot-registrar.ts`，复用统一 `getConfig()`（移除自建 envSchema）
 - Opencode：默认强制使用 `opencode/glm-4.7-free`；仅在同时设置 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENCODE_MODELS` 时启用外部模式（litellm），并自动生成 `~/.config/opencode/opencode.json` 与 `~/.local/share/opencode/auth.json`
 - Opencode：默认使用 yolo chat agent（全工具/全权限 allow）；可通过 `OPENCODE_YOLO=false` 降低权限（将不再显式指定 agent）
 - Worker：opencode 执行方式从本地 `opencode run` 切换为 opencode server HTTP API（`OPENCODE_SERVER_URL`），并在会话 meta 持久化 `opencodeSessionId`

@@ -34,6 +34,39 @@ spec:
             - |
               set -euo pipefail
 
+              if ! command -v git >/dev/null 2>&1; then
+                echo "git not found; installing..." >&2
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update
+                apt-get install -y --no-install-recommends git
+                rm -rf /var/lib/apt/lists/*
+              fi
+
+              # Opencode's Web UI resolves the current project via git, then lists sessions by `project.worktree`.
+              # To make `/data` a real project (and thus show sessions under `/data`), we keep `/data` as a tiny git repo.
+              if [ ! -d /data/.git ]; then
+                git init /data
+              fi
+
+              if [ ! -f /data/.gitignore ]; then
+                cat > /data/.gitignore <<'EOF'
+              *
+              !.gitignore
+              EOF
+              fi
+
+              git -C /data config user.email "opencode@local"
+              git -C /data config user.name "opencode"
+              git -C /data config status.showUntrackedFiles no
+
+              if ! git -C /data rev-parse HEAD >/dev/null 2>&1; then
+                git -C /data add -f .gitignore
+                git -C /data commit -m "init"
+              fi
+
+              OPENCODE_PROJECT_ID="$(git -C /data rev-parse HEAD)"
+              export OPENCODE_PROJECT_ID
+
               mkdir -p "${HOME}/.local/share/opencode" "${HOME}/.config/opencode"
 
               if [ -n "${OPENAI_API_KEY:-}" ]; then
@@ -103,15 +136,57 @@ spec:
               bun run /tmp/opencode-config-gen.mjs
               rm -f /tmp/opencode-config-gen.mjs
 
+              # Ensure `/data` exists as a git project in storage so the Web UI can select it.
+              projectFile="${HOME}/.local/share/opencode/storage/project/${OPENCODE_PROJECT_ID}.json"
+              mkdir -p "$(dirname "$projectFile")"
+              now_ms="$(( $(date +%s) * 1000 ))"
+              cat > "$projectFile" <<EOF
+              {
+                "id": "${OPENCODE_PROJECT_ID}",
+                "worktree": "/data",
+                "vcs": "git",
+                "sandboxes": [],
+                "time": {
+                  "created": ${now_ms},
+                  "updated": ${now_ms}
+                },
+                "icon": {
+                  "color": "cyan"
+                }
+              }
+              EOF
+
+              globalProjectFile="${HOME}/.local/share/opencode/storage/project/global.json"
+              cat > "$globalProjectFile" <<EOF
+              {
+                "id": "global",
+                "worktree": "/",
+                "sandboxes": [],
+                "time": {
+                  "created": ${now_ms},
+                  "updated": ${now_ms}
+                },
+                "icon": {
+                  "color": "cyan"
+                }
+              }
+              EOF
+
+              rm -f "${HOME}/.local/share/opencode/storage/project/data.json" || true
+
               # Migrate existing session records so the Web UI can list them under a single directory.
-              # Note: opencode uses `projectID=global` for non-git directories, so sessions must remain under `storage/session/global/`.
+              # Opencode stores sessions under `storage/session/<projectID>/` where projectID is `git rev-parse HEAD`.
+              # We rewrite all `/data/...` sessions into the `/data` git project and normalize `directory=/data`.
               cat > /tmp/opencode-session-dir-migrate.mjs <<'EOF'
               import * as fs from "node:fs/promises";
               import * as path from "node:path";
 
               const homeDir = process.env.HOME ?? "/data/opencode-home";
               const targetDirectory = "/data";
-              const targetProjectID = "global";
+              const targetProjectID = (process.env.OPENCODE_PROJECT_ID ?? "").trim();
+              if (!targetProjectID) {
+                throw new Error("Missing OPENCODE_PROJECT_ID");
+              }
               const sessionRoot = path.join(
                 homeDir,
                 ".local",

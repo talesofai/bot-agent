@@ -75,7 +75,7 @@
 - Discord：Slash Commands `/model` 不再硬编码模型 choices，允许输入任意模型名（仍由 `OPENCODE_MODELS` 白名单校验）
 - History：Postgres history 默认不再执行运行时 DDL（CREATE/ALTER/INDEX），避免受限账号/生产策略导致初始化失败并影响读写路径（使用迁移脚本创建/升级表结构）
 - Queue：BullMQ producer 支持 `prefix` 配置，确保与 worker 消费端一致
-- Opencode Web：K8s 启动时将 sessions 统一迁移为 `projectID=global` + `directory=/data`（含后台 watcher；必要时移动 session 文件并去重），避免 Web UI 过滤/精确匹配导致 sessions 列表为空
+- Opencode Web：K8s 启动时安装 git 并将 `/data` 初始化为轻量 git repo（仅提交 `.gitignore`），sessions 迁移到 `/data` 的 git project（`projectID=git HEAD`）并规范化为 `directory=/data`（含后台 watcher；必要时移动 session 文件并去重），避免 Web UI `project/current` 退回 global 导致 sessions 列表为空
 - Opencode Web：新增 `/data` 与 `/session/data` 的 Ingress 重定向到 `/data` 对应的编码路由（`/L2RhdGE`），避免误访问 API 路径触发 400（并覆盖 `/data/`、`/session/data/` 等尾随斜杠）
 - Bin：退出/关停流程改为幂等 shutdown（信号/错误路径不再直接 `process.exit()`；改用 `process.exitCode` + 超时兜底）
 - Telemetry：`TELEMETRY_ENABLED=false` 时不启动 OpenTelemetry SDK/Exporter，确保彻底关闭遥测

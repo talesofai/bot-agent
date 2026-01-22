@@ -10,11 +10,7 @@ import {
   resourceFromAttributes,
 } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import {
-  AlwaysOnSampler,
-  ParentBasedSampler,
-  TraceIdRatioBasedSampler,
-} from "@opentelemetry/sdk-trace-base";
+import { AlwaysOnSampler } from "@opentelemetry/sdk-trace-base";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 import { getConfig } from "./config";
 
@@ -51,13 +47,7 @@ export function startOtel(input: { defaultServiceName: string }): void {
     process.env.npm_package_version?.trim() ||
     undefined;
 
-  const sampleRate = Math.max(0, Math.min(1, config.TELEMETRY_SAMPLE_RATE));
-  const sampler =
-    sampleRate >= 1
-      ? new AlwaysOnSampler()
-      : new ParentBasedSampler({
-          root: new TraceIdRatioBasedSampler(sampleRate),
-        });
+  const sampler = new AlwaysOnSampler();
 
   const resource = defaultResource().merge(
     resourceFromAttributes({

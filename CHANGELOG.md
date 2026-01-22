@@ -76,7 +76,7 @@
 - History：Postgres history 默认不再执行运行时 DDL（CREATE/ALTER/INDEX），避免受限账号/生产策略导致初始化失败并影响读写路径（使用迁移脚本创建/升级表结构）
 - Queue：BullMQ producer 支持 `prefix` 配置，确保与 worker 消费端一致
 - Opencode Web：K8s 启动时写入 `/data` project 并将 sessions 目录统一迁移为 `directory=/data`（含后台 watcher），避免 Web UI 通过 `GET /session?directory=...` 精确匹配导致 sessions 列表为空
-- Opencode Web：新增 `/data` 与 `/session/data` 的 Ingress 重定向到 `/data` 对应的编码路由（`/L2RhdGE`），避免误访问 API 路径触发 400
+- Opencode Web：新增 `/data` 与 `/session/data` 的 Ingress 重定向到 `/data` 对应的编码路由（`/L2RhdGE`），避免误访问 API 路径触发 400（并覆盖 `/data/`、`/session/data/` 等尾随斜杠）
 - Bin：退出/关停流程改为幂等 shutdown（信号/错误路径不再直接 `process.exit()`；改用 `process.exitCode` + 超时兜底）
 - Telemetry：`TELEMETRY_ENABLED=false` 时不启动 OpenTelemetry SDK/Exporter，确保彻底关闭遥测
 - Telemetry：统一采样来源（按 `traceId` 采样）：日志埋点与 OTEL spans 保持一致，避免“有日志没 trace / 有 trace 没日志”

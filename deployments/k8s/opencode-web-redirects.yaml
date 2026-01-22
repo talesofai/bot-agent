@@ -37,7 +37,7 @@ spec:
       http:
         paths:
           - path: /data
-            pathType: Exact
+            pathType: Prefix
             backend:
               service:
                 name: opencode-server
@@ -60,7 +60,7 @@ spec:
       http:
         paths:
           - path: /session/data
-            pathType: Exact
+            pathType: Prefix
             backend:
               service:
                 name: opencode-server

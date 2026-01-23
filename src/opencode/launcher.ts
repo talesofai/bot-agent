@@ -7,6 +7,7 @@ import { getConfig } from "../config";
 import type { SessionInfo } from "../types/session";
 import { createTraceparent, shouldEmitTelemetry } from "../telemetry";
 import { ensureOpencodeSkills } from "./skills";
+import { parseOpencodeModelIdsCsv, selectOpencodeModelId } from "./model-ids";
 
 export interface OpencodeLaunchSpec {
   command: string;
@@ -168,15 +169,8 @@ Rules:
 `;
 
 async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
-  const allowedModels = parseModelsCsv(input.modelsCsv);
-  if (allowedModels.length === 0) {
-    throw new Error("OPENCODE_MODELS must include at least one model name");
-  }
-
-  const requested = sanitizeModelOverride(input.modelOverride);
-  const selected =
-    (requested && allowedModels.includes(requested) && requested) ||
-    allowedModels[0];
+  const allowedModels = parseOpencodeModelIdsCsv(input.modelsCsv);
+  const selected = selectOpencodeModelId(allowedModels, input.modelOverride);
 
   const authPath = path.join(
     input.homeDir,
@@ -204,21 +198,6 @@ async function prepareExternalMode(input: ExternalModeInput): Promise<string> {
   return `litellm/${selected}`;
 }
 
-function sanitizeModelOverride(value: string | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  // Models are bare names; provider is fixed to litellm.
-  if (trimmed.includes("/")) {
-    return null;
-  }
-  return trimmed;
-}
-
 async function prepareDefaultMode(
   env: Record<string, string | null>,
   mcpUrl: string,
@@ -236,15 +215,6 @@ async function prepareDefaultMode(
   await writeOpencodeMcpConfig(configPath, mcpUrl);
   env.OPENCODE_CONFIG = configPath;
   return "opencode/glm-4.7-free";
-}
-
-function parseModelsCsv(value: string): string[] {
-  const models = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-  return Array.from(new Set(models));
 }
 
 function resolveOpencodeCommand(override?: string): string {

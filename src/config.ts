@@ -26,7 +26,7 @@ const envSchema = z.object({
   // OpenAI compatible configuration (optional; only used when all three are provided)
   OPENAI_BASE_URL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
-  /** Comma-separated model IDs for litellm (slashes are allowed, e.g. ark/glm-4.7). */
+  /** Comma-separated model IDs for litellm (slashes are allowed, e.g. vol/glm-4.7). */
   OPENCODE_MODELS: z.string().optional(),
   /** Optional override for the opencode binary path. */
   OPENCODE_BIN: z.string().optional(),

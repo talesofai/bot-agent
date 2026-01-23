@@ -144,11 +144,6 @@ services:
               .filter(Boolean)
           : [];
         const unique = Array.from(new Set(models));
-        if (unique.some((model) => model.includes("/"))) {
-          throw new Error(
-            "OPENCODE_MODELS must be comma-separated bare model names (no provider prefix)",
-          );
-        }
 
         const config = {
           $schema: "https://opencode.ai/config.json",

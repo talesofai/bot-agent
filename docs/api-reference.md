@@ -96,7 +96,7 @@ GET /api/v1/groups/{group_id}
 }
 ```
 
-说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词；`echoRate` 为空时继承上一级复读概率；`model` 仅外部模式生效（裸模型名，必须在 `OPENCODE_MODELS` 白名单内）。
+说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词；`echoRate` 为空时继承上一级复读概率；`model` 仅外部模式生效（litellm 模型 ID，允许包含 `/`，且必须在 `OPENCODE_MODELS` 白名单内）。
 
 #### 更新群配置
 

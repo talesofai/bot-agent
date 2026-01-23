@@ -8,6 +8,7 @@ import type { RouterStore } from "../store/router";
 import type { BullmqSessionQueue } from "../queue";
 import type { SessionRepository } from "../session";
 import { getConfig } from "../config";
+import { parseOpencodeModelIdsCsv } from "../opencode/model-ids";
 import type { BotMessageStore } from "../store/bot-message-store";
 import type { GroupRouteStore } from "../store/group-route-store";
 import { EchoTracker } from "./echo";
@@ -956,11 +957,13 @@ export class MessageDispatcher {
     }
 
     const config = getConfig();
-    const allowedModels = parseModelsCsv(config.OPENCODE_MODELS?.trim() ?? "");
+    const allowedModels = parseOpencodeModelIdsCsv(
+      config.OPENCODE_MODELS?.trim() ?? "",
+    );
     if (allowedModels.length === 0) {
       await this.adapter.sendMessage(
         message,
-        "无法切换模型：请先配置 OPENCODE_MODELS（逗号分隔裸模型名）。",
+        "无法切换模型：请先配置 OPENCODE_MODELS（逗号分隔 litellm 模型 ID，允许包含 `/`，例如 `vol/glm-4.7`）。",
       );
       return;
     }
@@ -970,13 +973,6 @@ export class MessageDispatcher {
       await this.adapter.sendMessage(
         message,
         "模型名不能为空：用法 `/model <name>` 或 `/model default`。",
-      );
-      return;
-    }
-    if (requestedRaw !== null && requestedRaw.includes("/")) {
-      await this.adapter.sendMessage(
-        message,
-        "模型名必须是裸模型名（不要带 `litellm/` 之类的前缀）。",
       );
       return;
     }
@@ -1048,19 +1044,6 @@ export class MessageDispatcher {
     }
     return message;
   }
-}
-
-function parseModelsCsv(value: string): string[] {
-  const models = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-  if (models.some((model) => model.includes("/"))) {
-    return [];
-  }
-
-  return Array.from(new Set(models));
 }
 
 function resolveResetTargetUserId(message: SessionEvent): {

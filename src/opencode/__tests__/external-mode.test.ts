@@ -197,6 +197,62 @@ describe("OpencodeLauncher external mode", () => {
       rmSync(tempHome, { recursive: true, force: true });
     }
   });
+
+  test("supports slashed model IDs in OPENCODE_MODELS and override", async () => {
+    const tempHome = mkdtempSync(path.join(tmpdir(), "opencode-home-"));
+    const prevEnv = pickEnv([
+      "HOME",
+      "OPENAI_BASE_URL",
+      "OPENAI_API_KEY",
+      "OPENCODE_MODELS",
+    ]);
+    let generatedHome: string | undefined;
+
+    try {
+      process.env.HOME = tempHome;
+      process.env.OPENAI_BASE_URL = "http://127.0.0.1:8124/v1";
+      process.env.OPENAI_API_KEY = "sk-test";
+      process.env.OPENCODE_MODELS = "vol/glm-4.7,gpt-5.2";
+
+      resetConfig();
+      const launcher = new OpencodeLauncher();
+      const spec = await launcher.buildLaunchSpec(
+        makeSessionInfo(),
+        "hello",
+        "vol/glm-4.7",
+      );
+
+      expect(spec.args).toContain("litellm/vol/glm-4.7");
+      const resolvedHome = spec.env?.HOME;
+      if (!resolvedHome) {
+        throw new Error(
+          "Expected OpencodeLauncher to set HOME for external mode",
+        );
+      }
+      generatedHome = resolvedHome;
+
+      const configPath = path.join(
+        resolvedHome,
+        ".config",
+        "opencode",
+        "opencode.json",
+      );
+      const configJson = JSON.parse(
+        readFileSync(configPath, "utf8"),
+      ) as OpencodeConfig;
+      expect(Object.keys(configJson.provider.litellm.models)).toEqual([
+        "vol/glm-4.7",
+        "gpt-5.2",
+      ]);
+    } finally {
+      restoreEnv(prevEnv);
+      resetConfig();
+      if (generatedHome) {
+        rmSync(generatedHome, { recursive: true, force: true });
+      }
+      rmSync(tempHome, { recursive: true, force: true });
+    }
+  });
 });
 
 function makeSessionInfo(): SessionInfo {

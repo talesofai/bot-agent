@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
 
+import { resetConfig } from "../../config";
 import type { SessionEvent } from "../../types/platform";
 import type {
   Bot,
@@ -279,6 +280,64 @@ describe("MessageDispatcher management commands", () => {
 
       expect(adapter.messages).toEqual(["无权限：仅管理员可重置全群会话。"]);
     } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("allows /model with slashed model id when configured in OPENCODE_MODELS", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const adapter = new MemoryAdapter();
+    const groupStore = new GroupStore({ dataDir: tempDir, logger });
+    await groupStore.init();
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+
+    const prevModels = process.env.OPENCODE_MODELS;
+    process.env.OPENCODE_MODELS = "vol/glm-4.7,gpt-5.2";
+    resetConfig();
+
+    const dispatcher = new MessageDispatcher({
+      adapter,
+      groupStore,
+      routerStore: null,
+      sessionRepository,
+      sessionQueue: {} as unknown as BullmqSessionQueue,
+      bufferStore: new NoopSessionBuffer(),
+      echoTracker: new EchoTracker({ store: new MemoryEchoStore() }),
+      logger,
+    });
+
+    try {
+      await dispatcher.dispatch({
+        type: "message",
+        platform: "discord",
+        selfId: "123",
+        userId: "999",
+        guildId: "guild1",
+        channelId: "channel1",
+        messageId: "msg1",
+        content: "/model vol/glm-4.7",
+        elements: [
+          { type: "mention", userId: "123" },
+          { type: "text", text: "/model vol/glm-4.7" },
+        ],
+        timestamp: Date.now(),
+        extras: { isGuildOwner: true },
+      });
+
+      expect(adapter.messages).toEqual([
+        "已切换模型：vol/glm-4.7（实际使用：vol/glm-4.7）",
+      ]);
+    } finally {
+      if (prevModels === undefined) {
+        delete process.env.OPENCODE_MODELS;
+      } else {
+        process.env.OPENCODE_MODELS = prevModels;
+      }
+      resetConfig();
       rmSync(tempDir, { recursive: true, force: true });
     }
   });

@@ -25,6 +25,10 @@ import { appendInputAuditIfSuspicious } from "../opencode/input-audit";
 import { ensureOpencodeSkills } from "../opencode/skills";
 import { getConfig } from "../config";
 import {
+  parseOpencodeModelIdsCsv,
+  selectOpencodeModelId,
+} from "../opencode/model-ids";
+import {
   type TelemetrySpanInput,
   resolveTraceId,
   setTraceIdOnExtras,
@@ -855,33 +859,9 @@ function resolveModelRef(
     return { providerID: "opencode", modelID: "glm-4.7-free" };
   }
 
-  const allowed = parseModelsCsv(modelsCsv!);
-  if (allowed.length === 0) {
-    throw new Error("OPENCODE_MODELS must include at least one model name");
-  }
-  const requested = sanitizeModelOverride(input.groupOverride);
-  const selected =
-    (requested && allowed.includes(requested) && requested) || allowed[0];
+  const allowed = parseOpencodeModelIdsCsv(modelsCsv!);
+  const selected = selectOpencodeModelId(allowed, input.groupOverride);
   return { providerID: "litellm", modelID: selected };
-}
-
-function parseModelsCsv(value: string): string[] {
-  const models = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return Array.from(new Set(models));
-}
-
-function sanitizeModelOverride(value: string | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed;
 }
 
 function buildOpencodeSessionTitle(sessionInfo: SessionInfo): string {

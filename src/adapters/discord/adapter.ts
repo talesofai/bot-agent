@@ -205,7 +205,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (commandName === "help") {
       await safeReply(
         interaction,
-        "可用指令：\n- /reset [key:<会话槽位>] [user:<用户>]\n- /resetall [key:<会话槽位>]（管理员）\n- /model name:<模型名>\n- /ping\n- /help",
+        "可用指令：\n- /reset [key:<会话槽位>] [user:<用户>]\n- /resetall [key:<会话槽位>]（管理员）\n- /model name:<模型 ID>\n- /ping\n- /help",
         { ephemeral: true },
       );
       return;
@@ -469,7 +469,7 @@ function buildSlashCommands() {
         option
           .setName("name")
           .setDescription(
-            "模型名（OPENCODE_MODELS 白名单内的裸模型名，default 清除覆盖）",
+            "模型 ID（必须在 OPENCODE_MODELS 白名单内；允许包含 `/`；default 清除覆盖）",
           )
           .setRequired(true),
       )

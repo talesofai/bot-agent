@@ -14,11 +14,6 @@ import { EchoTracker } from "./echo";
 import { isSafePathSegment } from "../utils/path";
 import type { SessionBuffer } from "../session/buffer";
 import {
-  formatOpencodeModelsCsvError,
-  isBareOpencodeModelId,
-  parseOpencodeModelsCsv,
-} from "../opencode/model-id";
-import {
   type TelemetrySpanInput,
   createTraceId,
   getTraceIdFromExtras,
@@ -961,15 +956,14 @@ export class MessageDispatcher {
     }
 
     const config = getConfig();
-    const parsedModels = parseOpencodeModelsCsv(config.OPENCODE_MODELS);
-    if (!parsedModels.ok) {
+    const allowedModels = parseModelsCsv(config.OPENCODE_MODELS?.trim() ?? "");
+    if (allowedModels.length === 0) {
       await this.adapter.sendMessage(
         message,
-        `无法切换模型：${formatOpencodeModelsCsvError(parsedModels.error)}`,
+        "无法切换模型：请先配置 OPENCODE_MODELS（逗号分隔裸模型名）。",
       );
       return;
     }
-    const allowedModels = parsedModels.models;
 
     const requestedRaw = model === null ? null : model.trim();
     if (requestedRaw !== null && !requestedRaw) {
@@ -979,10 +973,10 @@ export class MessageDispatcher {
       );
       return;
     }
-    if (requestedRaw !== null && !isBareOpencodeModelId(requestedRaw)) {
+    if (requestedRaw !== null && requestedRaw.includes("/")) {
       await this.adapter.sendMessage(
         message,
-        "模型名必须是“裸模型名”（不要带 `litellm/` 前缀；不要包含 `/`）。",
+        "模型名必须是裸模型名（不要带 `litellm/` 之类的前缀）。",
       );
       return;
     }
@@ -1054,6 +1048,19 @@ export class MessageDispatcher {
     }
     return message;
   }
+}
+
+function parseModelsCsv(value: string): string[] {
+  const models = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (models.some((model) => model.includes("/"))) {
+    return [];
+  }
+
+  return Array.from(new Set(models));
 }
 
 function resolveResetTargetUserId(message: SessionEvent): {

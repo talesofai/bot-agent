@@ -48,7 +48,6 @@
 - Opencode：支持解析 `--format json` 的事件流输出（text chunks），确保能提取最终回复
 - Opencode：外部模式使用自定义 chat agent，避免在无交互环境卡在权限询问/工具执行
 - Opencode：system prompt 永远追加 URL 可用性校验硬性规则（`url-access-check`），避免模型编造/输出不可用链接
-- Opencode：统一 `OPENCODE_MODELS`/群配置 `model` 覆盖的模型名规范（仅允许“裸模型名”，不含 `/`），并复用统一解析函数
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
 - K8s：对使用 `:latest` 的 Bot Agent 相关工作负载设置 `imagePullPolicy: Always`，确保重启后会拉取最新镜像
 - Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败

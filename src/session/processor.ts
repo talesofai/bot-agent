@@ -30,6 +30,11 @@ import {
   setTraceIdOnExtras,
   withTelemetrySpan,
 } from "../telemetry";
+import {
+  formatOpencodeModelsCsvError,
+  parseOpencodeModelsCsv,
+  sanitizeOpencodeModelId,
+} from "../opencode/model-id";
 
 export interface SessionJobContext {
   id?: string | number | null;
@@ -855,33 +860,16 @@ function resolveModelRef(
     return { providerID: "opencode", modelID: "glm-4.7-free" };
   }
 
-  const allowed = parseModelsCsv(modelsCsv!);
-  if (allowed.length === 0) {
-    throw new Error("OPENCODE_MODELS must include at least one model name");
+  const parsedModels = parseOpencodeModelsCsv(modelsCsv);
+  if (!parsedModels.ok) {
+    throw new Error(formatOpencodeModelsCsvError(parsedModels.error));
   }
-  const requested = sanitizeModelOverride(input.groupOverride);
+  const allowed = parsedModels.models;
+
+  const requested = sanitizeOpencodeModelId(input.groupOverride);
   const selected =
     (requested && allowed.includes(requested) && requested) || allowed[0];
   return { providerID: "litellm", modelID: selected };
-}
-
-function parseModelsCsv(value: string): string[] {
-  const models = value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return Array.from(new Set(models));
-}
-
-function sanitizeModelOverride(value: string | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed;
 }
 
 function buildOpencodeSessionTitle(sessionInfo: SessionInfo): string {

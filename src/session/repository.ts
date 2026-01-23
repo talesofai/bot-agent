@@ -333,8 +333,6 @@ const sessionMetaSchema = z
     sessionId: z.string(),
     groupId: z.string(),
     ownerId: z.string(),
-    ownerName: z.string().optional(),
-    preferredName: z.string().optional(),
     botId: z.string(),
     key: z.number().int(),
     status: z.enum(["idle", "running"]),

@@ -28,7 +28,6 @@
 - K8s：新增 opencode-web Ingress（`bot-opencode-web.talesofai.com` → `opencode-server:4096`，Basic Auth + TLS）
 - Push：新增群定时热点推送（管理员 `/push` 配置；默认不启用）
 - Session：新增 `/login`/`/logout`（token 存在当前会话 meta，用于 MCP 调用）
-- Session：会话 meta 记录用户昵称/称呼（`ownerName`/`preferredName`），并通过模型显式输出 `<profile_update>{"preferredName":"X"}</profile_update>` 更新；system context 注入称呼信息
 - Session：新增会话映射 `sessions/{botId}/{groupId}/{userId}/index.json`（`key -> sessionId`），支持创建新会话并封存旧会话
 - Session：新增管理指令 `/reset`（自己/指定用户/全群）用于创建新会话；旧会话仅允许通过 API 复用
 - GroupConfig：新增管理员指令 `/model` 切换群模型（仅外部模式生效且受 `OPENCODE_MODELS` 白名单约束）；支持 `/model default` 清除覆盖
@@ -50,7 +49,6 @@
 - Opencode：外部模式使用自定义 chat agent，避免在无交互环境卡在权限询问/工具执行
 - Opencode：system prompt 永远追加 URL 可用性校验硬性规则（`url-access-check`），避免模型编造/输出不可用链接
 - Session：会话目录按 `{botId}/{groupId}/{userId}/{sessionId}` 分桶，消除跨群复用导致的 workspace 竞争与 `groupId` 不一致补丁逻辑
-- Session：称呼写入改为模型显式 `<profile_update>` 指令，避免将“我是谁/我叫什么”等询问误判为改名
 - K8s：对使用 `:latest` 的 Bot Agent 相关工作负载设置 `imagePullPolicy: Always`，确保重启后会拉取最新镜像
 - Config：加载 `.env` 时忽略空字符串配置，避免 optional 数值项被 `"" -> 0` 误解析触发校验失败
 - Config：`BOT_ID_ALIASES` 解析改为严格校验（拒绝重复 alias 与 `a:b:c` 等非法项）
@@ -102,6 +100,7 @@
 - 配置：`DEFAULT_GROUP_ID` 更名为 `FORCE_GROUP_ID`，避免误解为“默认值”（示例配置默认注释并补充说明）
 - K8s：opencode-bot-agent 默认镜像改为阿里云仓库（`registry.cn-shanghai.aliyuncs.com/talesofai/opencode-bot-agent:latest`）
 - Session：`sessionId` 改为系统生成（不再使用 `{userId}-{key}`），并持续复用 opencode session（`ses_...`）作为对话记忆
+- Session：移除用户称呼落盘与 `<profile_update>` 协议；称呼偏好完全由模型在 opencode 会话上下文中自行记忆
 - Trigger：keyword 触发改为“前缀匹配”，并支持唤醒词前缀剥离（例如 `奈塔 ...`）
 - Router：全局默认唤醒词设置为 `奈塔`/`小捏`，并将默认 `echoRate` 调整为 0（默认不复读）
 - MessageDispatcher：dispatch 主流程拆分为“解析/鉴权/路由/入队”四段纯函数 + 薄 orchestrator，降低分支复杂度

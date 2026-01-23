@@ -30,18 +30,6 @@ import {
   withTelemetrySpan,
 } from "../telemetry";
 
-const USER_APPELLATION_PROTOCOL_PROMPT = [
-  "用户称呼存取协议：",
-  "1) System 里可能会提供“用户信息”块：",
-  "   - 用户希望的称呼：系统已记录的 preferredName（若存在）。",
-  "   - 平台用户名：平台侧昵称/名片（若存在）。",
-  "2) 你称呼用户时：优先使用“用户希望的称呼”，否则使用“平台用户名”。",
-  "3) 当用户明确表达希望你以后如何称呼他（例如：叫我X/请叫我X/我叫X/我是X/把我叫做X 等）：",
-  "   - 先在正常回复中确认（例如：好的，以后叫你X）。",
-  '   - 然后在回复末尾追加一行：<profile_update>{"preferredName":"X"}</profile_update>',
-  "4) 当用户在问“我是谁/我叫什么/你怎么叫我”等问题时：这是询问，不要当作改名指令，不要输出 profile_update。",
-].join("\n");
-
 export interface SessionJobContext {
   id?: string | number | null;
   data: SessionJobData;
@@ -291,18 +279,6 @@ export class SessionProcessor {
                     );
 
                   const historyKey = resolveHistoryKey(mergedWithTrace);
-
-                  sessionInfo = await batchSpan(
-                    "update_user_profile",
-                    async () =>
-                      this.updateUserProfileFromMessages(
-                        sessionInfo!,
-                        buffered,
-                        mergedWithTrace,
-                      ),
-                    { bufferedCount: buffered.length },
-                  );
-
                   const stopTyping = this.startTyping(mergedWithTrace, log);
                   try {
                     const { history, request } = await this.buildPromptContext(
@@ -351,35 +327,8 @@ export class SessionProcessor {
                       return;
                     }
                     const output = resolveOutput(result.output);
-                    const extractedUpdate = output
-                      ? extractPreferredNameUpdate(output)
-                      : null;
-                    const preferredName = extractedUpdate?.preferredName;
-                    const cleanedOutput =
-                      extractedUpdate?.output ??
-                      (preferredName
-                        ? `好的，以后叫你${preferredName}。`
-                        : output);
-
-                    if (preferredName) {
-                      const existingPreferred =
-                        sessionInfo!.meta.preferredName?.trim() ?? "";
-                      if (preferredName !== existingPreferred) {
-                        sessionInfo = await batchSpan(
-                          "update_preferred_name",
-                          async () =>
-                            this.sessionRepository.updateMeta({
-                              ...sessionInfo!.meta,
-                              preferredName,
-                              updatedAt: new Date().toISOString(),
-                            }),
-                          { hasExisting: Boolean(existingPreferred) },
-                        );
-                      }
-                    }
-
-                    const auditedOutput = cleanedOutput
-                      ? redactSensitiveText(cleanedOutput)
+                    const auditedOutput = output
+                      ? redactSensitiveText(output)
                       : undefined;
 
                     await batchSpan("send_response", async () =>
@@ -509,16 +458,7 @@ export class SessionProcessor {
         botId: sessionInfo.meta.botId,
       }),
     );
-
-    const baseSystemPrompt = buildSystemPrompt(agentPrompt);
-    const protocolPrompt = baseSystemPrompt.includes(PROFILE_UPDATE_OPEN_TAG)
-      ? null
-      : USER_APPELLATION_PROTOCOL_PROMPT;
-    const userProfilePrompt = buildUserProfilePrompt(sessionInfo.meta);
-    const systemPrompt = [baseSystemPrompt, protocolPrompt]
-      .filter((entry): entry is string => Boolean(entry))
-      .concat(userProfilePrompt ? [userProfilePrompt] : [])
-      .join("\n\n");
+    const systemPrompt = buildSystemPrompt(agentPrompt);
     const system = buildOpencodeSystemContext({
       systemPrompt,
       history: [],
@@ -654,28 +594,6 @@ export class SessionProcessor {
       updatedAt: new Date().toISOString(),
     };
     return this.sessionRepository.updateMeta(updated);
-  }
-
-  private async updateUserProfileFromMessages(
-    sessionInfo: SessionInfo,
-    _buffered: ReadonlyArray<SessionEvent>,
-    latest: SessionEvent,
-  ): Promise<SessionInfo> {
-    const currentOwnerName = sessionInfo.meta.ownerName?.trim() ?? "";
-    const observedOwnerName = resolveUserDisplayName(latest);
-
-    const shouldUpdateOwnerName =
-      Boolean(observedOwnerName) && observedOwnerName !== currentOwnerName;
-    if (!shouldUpdateOwnerName) {
-      return sessionInfo;
-    }
-
-    const updatedAt = new Date().toISOString();
-    return this.sessionRepository.updateMeta({
-      ...sessionInfo.meta,
-      ownerName: observedOwnerName ?? undefined,
-      updatedAt,
-    });
   }
 
   private async getGroupConfig(groupId: string) {
@@ -940,174 +858,6 @@ function toBufferKey(jobData: SessionJobData): SessionBufferKey {
     sessionId: jobData.sessionId,
   };
 }
-
-function buildUserProfilePrompt(meta: SessionInfo["meta"]): string | null {
-  const preferredName = meta.preferredName?.trim();
-  const ownerName = meta.ownerName?.trim();
-  if (!preferredName && !ownerName) {
-    return null;
-  }
-
-  const lines = ["用户信息："];
-  if (preferredName) {
-    lines.push(`- 用户希望的称呼：${preferredName}`);
-  }
-  if (ownerName) {
-    lines.push(`- 平台用户名：${ownerName}`);
-  }
-
-  const effectiveName = preferredName ?? ownerName;
-  if (effectiveName) {
-    lines.push(`称呼用户时优先使用“${effectiveName}”。`);
-  }
-  return lines.join("\n");
-}
-
-function resolveUserDisplayName(session: SessionEvent): string | null {
-  if (session.platform === "discord") {
-    if (!session.extras || typeof session.extras !== "object") {
-      return null;
-    }
-    const extras = session.extras as Record<string, unknown>;
-    const authorName = extras["authorName"];
-    if (typeof authorName === "string" && authorName.trim()) {
-      return authorName.trim();
-    }
-    return null;
-  }
-
-  if (session.platform === "qq") {
-    if (!session.extras || typeof session.extras !== "object") {
-      return null;
-    }
-    const extras = session.extras as Record<string, unknown>;
-    const sender = extras["sender"];
-    if (!sender || typeof sender !== "object") {
-      return null;
-    }
-    const senderRecord = sender as Record<string, unknown>;
-    const card = senderRecord["card"];
-    if (typeof card === "string" && card.trim()) {
-      return card.trim();
-    }
-    const nickname = senderRecord["nickname"];
-    if (typeof nickname === "string" && nickname.trim()) {
-      return nickname.trim();
-    }
-    return null;
-  }
-
-  return null;
-}
-
-function normalizePreferredName(value: string): string {
-  let name = value.trim();
-  if (!name) {
-    return "";
-  }
-
-  const wrappers: Array<[string, string]> = [
-    ["“", "”"],
-    ["‘", "’"],
-    ["「", "」"],
-    ["『", "』"],
-    ["【", "】"],
-    ['"', '"'],
-    ["'", "'"],
-    ["（", "）"],
-    ["(", ")"],
-  ];
-  for (const [open, close] of wrappers) {
-    if (name.startsWith(open) && name.endsWith(close) && name.length > 1) {
-      name = name.slice(open.length, name.length - close.length).trim();
-    }
-  }
-
-  return name;
-}
-
-const PROFILE_UPDATE_OPEN_TAG = "<profile_update>";
-const PROFILE_UPDATE_CLOSE_TAG = "</profile_update>";
-
-function extractPreferredNameUpdate(output: string): {
-  preferredName: string | null;
-  output: string | undefined;
-} {
-  let preferredName: string | null = null;
-  let remaining = output;
-
-  for (;;) {
-    const start = remaining.indexOf(PROFILE_UPDATE_OPEN_TAG);
-    if (start < 0) {
-      break;
-    }
-    const end = remaining.indexOf(PROFILE_UPDATE_CLOSE_TAG, start);
-    if (end < 0) {
-      break;
-    }
-
-    const jsonRaw = remaining
-      .slice(start + PROFILE_UPDATE_OPEN_TAG.length, end)
-      .trim();
-    const parsed = parseJsonObject(jsonRaw);
-    const extracted = extractPreferredNameFromJson(parsed);
-    if (extracted) {
-      preferredName = extracted;
-    }
-
-    remaining =
-      remaining.slice(0, start) +
-      remaining.slice(end + PROFILE_UPDATE_CLOSE_TAG.length);
-  }
-
-  const cleaned = remaining.trim();
-  return { preferredName, output: cleaned ? cleaned : undefined };
-}
-
-function parseJsonObject(raw: string): unknown | null {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return null;
-  }
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    // Fallthrough for accidental wrappers, e.g. extra text or code fences.
-  }
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start < 0 || end <= start) {
-    return null;
-  }
-  const sliced = trimmed.slice(start, end + 1);
-  try {
-    return JSON.parse(sliced) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-function extractPreferredNameFromJson(parsed: unknown): string | null {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return null;
-  }
-  const preferredName = (parsed as Record<string, unknown>)["preferredName"];
-  if (typeof preferredName !== "string") {
-    return null;
-  }
-  const normalized = normalizePreferredName(preferredName);
-  if (!normalized) {
-    return null;
-  }
-  if (normalized.length > 32) {
-    return null;
-  }
-  if (/[\r\n]/u.test(normalized)) {
-    return null;
-  }
-  return normalized;
-}
-
 const YOLO_TOOLS: Record<string, boolean> = {
   bash: true,
   read: true,

@@ -92,6 +92,7 @@
 - Opencode：默认强制使用 `opencode/glm-4.7-free`；仅在同时设置 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENCODE_MODELS` 时启用外部模式（litellm），并自动生成 `~/.config/opencode/opencode.json` 与 `~/.local/share/opencode/auth.json`
 - Opencode：默认使用 yolo chat agent（全工具/全权限 allow）；可通过 `OPENCODE_YOLO=false` 降低权限（将不再显式指定 agent）
 - Worker：opencode 执行方式从本地 `opencode run` 切换为 opencode server HTTP API（`OPENCODE_SERVER_URL`），并在会话 meta 持久化 `opencodeSessionId`
+- Session：按数据流拆分 `MessageDispatcher.dispatch` / `SessionProcessor.process`（解析/鉴权/路由、gate/缓冲、opencode 调用、落库/回包），降低维护风险
 - Opencode：system prompt 兜底改为更通用的默认提示词；私聊（groupId=0）默认也使用 `configs/default-agent.md`（如果存在）
 - Opencode：system prompt 硬性规则前置，并强制“找图/给图”只输出已验证的图片直链（禁止搜索页/集合页链接）
 - Opencode：找图默认优先使用 `bing-image-search`，避免 Wikimedia 图片域名被 429 限流导致无图

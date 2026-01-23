@@ -1,33 +1,36 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Logger } from "pino";
-import type { SessionEvent, SessionElement } from "../types/platform";
+import type { SessionEvent } from "../types/platform";
 import type { PlatformAdapter } from "../types/platform";
 import type { GroupConfig } from "../types/group";
 import type { GroupStore } from "../store";
 import type { RouterStore } from "../store/router";
 import type { BullmqSessionQueue } from "../queue";
-import type { SessionJobData } from "../queue";
 import type { SessionRepository } from "../session";
 import { getConfig } from "../config";
 import type { BotMessageStore } from "../store/bot-message-store";
 import type { GroupRouteStore } from "../store/group-route-store";
-import {
-  extractSessionKey,
-  resolveTriggerRule,
-  stripKeywordPrefix,
-  shouldEnqueue,
-} from "./trigger";
 import { EchoTracker } from "./echo";
-import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
 import type { SessionBuffer } from "../session/buffer";
-import { buildBotFsId, resolveCanonicalBotId } from "../utils/bot-id";
 import {
+  type TelemetrySpanInput,
   createTraceId,
   getTraceIdFromExtras,
   setTraceIdOnExtras,
   withTelemetrySpan,
 } from "../telemetry";
+import {
+  authorizeDispatch,
+  type DispatchEnvelope,
+  parseDispatchEnvelope,
+  planEnqueue,
+  routeDispatch,
+  type DispatchRoutingPlan,
+  type ManagementCommand,
+} from "./dispatch-plan";
+
+export { resolveDispatchGroupId } from "./dispatch-plan";
 
 export interface MessageDispatcherOptions {
   adapter: PlatformAdapter;
@@ -42,6 +45,24 @@ export interface MessageDispatcherOptions {
   logger: Logger;
   forceGroupId?: string;
 }
+
+type MessageDispatchSpan = <T>(
+  step: string,
+  input: {
+    message: NonNullable<TelemetrySpanInput["message"]>;
+    attrs?: Record<string, unknown>;
+  },
+  fn: () => Promise<T>,
+) => Promise<T>;
+
+type MessageDispatchRuntime = {
+  traceId: string;
+  traceStartedAt: number;
+  message: SessionEvent;
+  log: Logger;
+  baseSpanMessage: NonNullable<TelemetrySpanInput["message"]>;
+  span: MessageDispatchSpan;
+};
 
 export class MessageDispatcher {
   private adapter: PlatformAdapter;
@@ -72,361 +93,420 @@ export class MessageDispatcher {
   }
 
   async dispatch(message: SessionEvent): Promise<void> {
+    const runtime = await this.createDispatchRuntime(message);
+    try {
+      await withTelemetrySpan(
+        runtime.log,
+        {
+          traceId: runtime.traceId,
+          phase: "adapter",
+          step: "dispatch",
+          component: "message-dispatcher",
+          message: runtime.baseSpanMessage,
+        },
+        async () => this.dispatchRuntime(runtime),
+      );
+    } catch (err) {
+      runtime.log.error(
+        { err, messageId: runtime.message.messageId },
+        "Message dispatch failed",
+      );
+    }
+  }
+
+  private async createDispatchRuntime(
+    message: SessionEvent,
+  ): Promise<MessageDispatchRuntime> {
     const traceStartedAt = Date.now();
     const traceId = getTraceIdFromExtras(message.extras) ?? createTraceId();
+
     let tracedMessage: SessionEvent = {
       ...message,
       extras: setTraceIdOnExtras(message.extras, traceId),
     };
     tracedMessage = await this.augmentReplyMention(tracedMessage);
+
     const log = this.logger.child({ traceId });
-    const baseSpanMessage = {
+    const baseSpanMessage: NonNullable<TelemetrySpanInput["message"]> = {
       platform: tracedMessage.platform,
       userId: tracedMessage.userId,
       channelId: tracedMessage.channelId,
       messageId: tracedMessage.messageId,
     };
 
-    try {
-      await withTelemetrySpan(
+    const span: MessageDispatchSpan = async (step, input, fn) =>
+      withTelemetrySpan(
         log,
         {
           traceId,
           phase: "adapter",
-          step: "dispatch",
+          step,
           component: "message-dispatcher",
-          message: baseSpanMessage,
+          message: input.message,
+          attrs: input.attrs,
+        },
+        fn,
+      );
+
+    return {
+      traceId,
+      traceStartedAt,
+      message: tracedMessage,
+      log,
+      baseSpanMessage,
+      span,
+    };
+  }
+
+  private async dispatchRuntime(
+    runtime: MessageDispatchRuntime,
+  ): Promise<void> {
+    const parsed = parseDispatchEnvelope({
+      message: runtime.message,
+      forceGroupId: this.forceGroupId,
+    });
+    if (!parsed.ok) {
+      runtime.log.error(
+        { ...parsed.error },
+        "Invalid identifiers for message dispatch",
+      );
+      return;
+    }
+
+    const envelope = parsed.value;
+    const { groupId, rawBotId, canonicalBotId, botId } = envelope;
+
+    if (canonicalBotId !== rawBotId) {
+      runtime.log.info(
+        { botId: rawBotId, canonicalBotId },
+        "Resolved botId alias",
+      );
+    }
+
+    if (runtime.message.guildId) {
+      await this.groupRouteStore?.recordRoute({
+        groupId,
+        platform: runtime.message.platform,
+        selfId: rawBotId,
+        channelId: runtime.message.channelId,
+      });
+    }
+
+    await runtime.span(
+      "ensure_bot_config",
+      { message: { ...runtime.baseSpanMessage, botId, groupId } },
+      async () => {
+        await this.routerStore?.ensureBotConfig(botId);
+      },
+    );
+
+    const group = await runtime.span(
+      "load_group",
+      { message: { ...runtime.baseSpanMessage, botId, groupId } },
+      async () => {
+        let loaded = await this.groupStore.getGroup(groupId);
+        if (!loaded) {
+          await this.groupStore.ensureGroupDir(groupId);
+          loaded = await this.groupStore.getGroup(groupId);
+        }
+        return loaded;
+      },
+    );
+
+    const auth = authorizeDispatch({ groupConfig: group?.config });
+    if (!auth.allowed) {
+      return;
+    }
+
+    const routerSnapshot = await runtime.span(
+      "load_router_snapshot",
+      { message: { ...runtime.baseSpanMessage, botId, groupId } },
+      async () => this.routerStore?.getSnapshot(),
+    );
+
+    const routing = routeDispatch({
+      message: runtime.message,
+      groupConfig: auth.groupConfig,
+      routerSnapshot,
+      botId,
+    });
+
+    await this.handleDispatchRouting({
+      runtime,
+      envelope,
+      groupConfig: auth.groupConfig,
+      routing,
+    });
+  }
+
+  private async handleDispatchRouting(input: {
+    runtime: MessageDispatchRuntime;
+    envelope: DispatchEnvelope;
+    groupConfig: GroupConfig;
+    routing: DispatchRoutingPlan;
+  }): Promise<void> {
+    switch (input.routing.kind) {
+      case "passive": {
+        await this.handlePassiveRouting({
+          runtime: input.runtime,
+          envelope: input.envelope,
+          echoRate: input.routing.echoRate,
+        });
+        return;
+      }
+      case "drop": {
+        this.handleDropRouting({
+          runtime: input.runtime,
+          envelope: input.envelope,
+          routing: input.routing,
+        });
+        return;
+      }
+      case "command": {
+        await this.handleCommandRouting({
+          runtime: input.runtime,
+          envelope: input.envelope,
+          groupConfig: input.groupConfig,
+          routing: input.routing,
+        });
+        return;
+      }
+      case "enqueue": {
+        await this.handleEnqueueRouting({
+          runtime: input.runtime,
+          envelope: input.envelope,
+          routing: input.routing,
+        });
+        return;
+      }
+    }
+  }
+
+  private async handlePassiveRouting(input: {
+    runtime: MessageDispatchRuntime;
+    envelope: DispatchEnvelope;
+    echoRate: number;
+  }): Promise<void> {
+    const shouldEchoNow = await input.runtime.span(
+      "echo_check",
+      {
+        message: {
+          ...input.runtime.baseSpanMessage,
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+        },
+      },
+      async () =>
+        this.echoTracker.shouldEcho(input.runtime.message, input.echoRate),
+    );
+    if (!shouldEchoNow) {
+      return;
+    }
+    await input.runtime.span(
+      "echo_send",
+      {
+        message: {
+          ...input.runtime.baseSpanMessage,
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+        },
+      },
+      async () => {
+        await this.adapter.sendMessage(
+          input.runtime.message,
+          input.runtime.message.content,
+          {
+            elements: input.runtime.message.elements,
+          },
+        );
+      },
+    );
+  }
+
+  private handleDropRouting(input: {
+    runtime: MessageDispatchRuntime;
+    envelope: DispatchEnvelope;
+    routing: Extract<DispatchRoutingPlan, { kind: "drop" }>;
+  }): void {
+    if (input.routing.reason === "session_key_exceeds_max_sessions") {
+      input.runtime.log.warn(
+        {
+          groupId: input.envelope.groupId,
+          userId: input.runtime.message.userId,
+          key: input.routing.key,
+          maxSessions: input.routing.maxSessions,
+        },
+        "Session key exceeds maxSessions, dropping message",
+      );
+    }
+  }
+
+  private async handleCommandRouting(input: {
+    runtime: MessageDispatchRuntime;
+    envelope: DispatchEnvelope;
+    groupConfig: GroupConfig;
+    routing: Extract<DispatchRoutingPlan, { kind: "command" }>;
+  }): Promise<void> {
+    input.runtime.log.info(
+      {
+        id: input.runtime.message.messageId,
+        channelId: input.runtime.message.channelId,
+        userId: input.runtime.message.userId,
+        botId: input.envelope.botId,
+        selfId: input.envelope.rawBotId,
+        contentHash: input.routing.contentHash,
+        contentLength: input.routing.contentLength,
+      },
+      "Message received",
+    );
+
+    const scope =
+      input.routing.command.type === "reset"
+        ? input.routing.command.scope
+        : undefined;
+    await input.runtime.span(
+      "management_command",
+      {
+        message: {
+          ...input.runtime.baseSpanMessage,
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+          key: input.routing.key,
+        },
+        attrs: {
+          command: input.routing.command.type,
+          scope: scope ?? "n/a",
+        },
+      },
+      async () => {
+        await this.handleManagementCommand({
+          message: input.runtime.message,
+          groupId: input.envelope.groupId,
+          botId: input.envelope.botId,
+          key: input.routing.key,
+          groupConfig: input.groupConfig,
+          command: input.routing.command,
+        });
+      },
+    );
+  }
+
+  private async handleEnqueueRouting(input: {
+    runtime: MessageDispatchRuntime;
+    envelope: DispatchEnvelope;
+    routing: Extract<DispatchRoutingPlan, { kind: "enqueue" }>;
+  }): Promise<void> {
+    input.runtime.log.info(
+      {
+        id: input.runtime.message.messageId,
+        channelId: input.runtime.message.channelId,
+        userId: input.runtime.message.userId,
+        botId: input.envelope.botId,
+        selfId: input.envelope.rawBotId,
+        contentHash: input.routing.contentHash,
+        contentLength: input.routing.contentLength,
+      },
+      "Message received",
+    );
+
+    const sessionId = await input.runtime.span(
+      "resolve_session",
+      {
+        message: {
+          ...input.runtime.baseSpanMessage,
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+          key: input.routing.key,
+        },
+      },
+      async () =>
+        this.sessionRepository.resolveActiveSessionId(
+          input.envelope.botId,
+          input.envelope.groupId,
+          input.runtime.message.userId,
+          input.routing.key,
+        ),
+    );
+
+    await input.runtime.span(
+      "ensure_session_files",
+      {
+        message: {
+          ...input.runtime.baseSpanMessage,
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+          key: input.routing.key,
+          sessionId,
+        },
+      },
+      async () => {
+        await this.ensureSessionFiles({
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+          userId: input.runtime.message.userId,
+          key: input.routing.key,
+          sessionId,
+        });
+      },
+    );
+
+    const gateToken = randomBytes(12).toString("hex");
+    const enqueuePlan = planEnqueue({
+      envelope: input.envelope,
+      sessionId,
+      key: input.routing.key,
+      gateToken,
+      traceId: input.runtime.traceId,
+      traceStartedAt: input.runtime.traceStartedAt,
+    });
+
+    const acquiredToken = await input.runtime.span(
+      "buffer_append_and_request_job",
+      {
+        message: {
+          ...input.runtime.baseSpanMessage,
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+          key: input.routing.key,
+          sessionId,
+        },
+      },
+      async () =>
+        this.bufferStore.appendAndRequestJob(
+          enqueuePlan.bufferKey,
+          input.routing.session,
+          gateToken,
+        ),
+    );
+    if (!acquiredToken) {
+      return;
+    }
+
+    const enqueuedAt = Date.now();
+    try {
+      await input.runtime.span(
+        "queue_enqueue",
+        {
+          message: {
+            ...input.runtime.baseSpanMessage,
+            botId: input.envelope.botId,
+            groupId: input.envelope.groupId,
+            key: input.routing.key,
+            sessionId,
+          },
+          attrs: { traceStartedAt: input.runtime.traceStartedAt, enqueuedAt },
         },
         async () => {
-          const parsed = parseDispatchEnvelope({
-            message: tracedMessage,
-            forceGroupId: this.forceGroupId,
+          await this.sessionQueue.enqueue({
+            ...enqueuePlan.jobData,
+            gateToken: acquiredToken,
+            enqueuedAt,
           });
-          if (!parsed.ok) {
-            log.error(
-              { ...parsed.error },
-              "Invalid identifiers for message dispatch",
-            );
-            return;
-          }
-          const envelope = parsed.value;
-          const { groupId, rawBotId, canonicalBotId, botId } = envelope;
-
-          if (canonicalBotId !== rawBotId) {
-            log.info(
-              { botId: rawBotId, canonicalBotId },
-              "Resolved botId alias",
-            );
-          }
-
-          if (tracedMessage.guildId) {
-            await this.groupRouteStore?.recordRoute({
-              groupId,
-              platform: tracedMessage.platform,
-              selfId: rawBotId,
-              channelId: tracedMessage.channelId,
-            });
-          }
-
-          await withTelemetrySpan(
-            log,
-            {
-              traceId,
-              phase: "adapter",
-              step: "ensure_bot_config",
-              component: "message-dispatcher",
-              message: { ...baseSpanMessage, botId, groupId },
-            },
-            async () => {
-              await this.routerStore?.ensureBotConfig(botId);
-            },
-          );
-
-          const group = await withTelemetrySpan(
-            log,
-            {
-              traceId,
-              phase: "adapter",
-              step: "load_group",
-              component: "message-dispatcher",
-              message: { ...baseSpanMessage, botId, groupId },
-            },
-            async () => {
-              let loaded = await this.groupStore.getGroup(groupId);
-              if (!loaded) {
-                await this.groupStore.ensureGroupDir(groupId);
-                loaded = await this.groupStore.getGroup(groupId);
-              }
-              return loaded;
-            },
-          );
-
-          const auth = authorizeDispatch({ groupConfig: group?.config });
-          if (!auth.allowed) {
-            return;
-          }
-
-          const routerSnapshot = await withTelemetrySpan(
-            log,
-            {
-              traceId,
-              phase: "adapter",
-              step: "load_router_snapshot",
-              component: "message-dispatcher",
-              message: { ...baseSpanMessage, botId, groupId },
-            },
-            async () => {
-              return this.routerStore?.getSnapshot();
-            },
-          );
-
-          const routing = routeDispatch({
-            message: tracedMessage,
-            groupConfig: auth.groupConfig,
-            routerSnapshot,
-            botId,
-          });
-
-          switch (routing.kind) {
-            case "passive": {
-              const shouldEchoNow = await withTelemetrySpan(
-                log,
-                {
-                  traceId,
-                  phase: "adapter",
-                  step: "echo_check",
-                  component: "message-dispatcher",
-                  message: { ...baseSpanMessage, botId, groupId },
-                },
-                async () =>
-                  this.echoTracker.shouldEcho(tracedMessage, routing.echoRate),
-              );
-              if (!shouldEchoNow) {
-                return;
-              }
-              await withTelemetrySpan(
-                log,
-                {
-                  traceId,
-                  phase: "adapter",
-                  step: "echo_send",
-                  component: "message-dispatcher",
-                  message: { ...baseSpanMessage, botId, groupId },
-                },
-                async () => {
-                  await this.adapter.sendMessage(
-                    tracedMessage,
-                    tracedMessage.content,
-                    {
-                      elements: tracedMessage.elements,
-                    },
-                  );
-                },
-              );
-              return;
-            }
-            case "drop": {
-              if (routing.reason === "session_key_exceeds_max_sessions") {
-                log.warn(
-                  {
-                    groupId,
-                    userId: tracedMessage.userId,
-                    key: routing.key,
-                    maxSessions: routing.maxSessions,
-                  },
-                  "Session key exceeds maxSessions, dropping message",
-                );
-              }
-              return;
-            }
-            case "command": {
-              log.info(
-                {
-                  id: tracedMessage.messageId,
-                  channelId: tracedMessage.channelId,
-                  userId: tracedMessage.userId,
-                  botId,
-                  selfId: rawBotId,
-                  contentHash: routing.contentHash,
-                  contentLength: routing.contentLength,
-                },
-                "Message received",
-              );
-              const scope =
-                routing.command.type === "reset"
-                  ? routing.command.scope
-                  : undefined;
-              await withTelemetrySpan(
-                log,
-                {
-                  traceId,
-                  phase: "adapter",
-                  step: "management_command",
-                  component: "message-dispatcher",
-                  message: {
-                    ...baseSpanMessage,
-                    botId,
-                    groupId,
-                    key: routing.key,
-                  },
-                  attrs: {
-                    command: routing.command.type,
-                    scope: scope ?? "n/a",
-                  },
-                },
-                async () => {
-                  await this.handleManagementCommand({
-                    message: tracedMessage,
-                    groupId,
-                    botId,
-                    key: routing.key,
-                    groupConfig: auth.groupConfig,
-                    command: routing.command,
-                  });
-                },
-              );
-              return;
-            }
-            case "enqueue": {
-              log.info(
-                {
-                  id: tracedMessage.messageId,
-                  channelId: tracedMessage.channelId,
-                  userId: tracedMessage.userId,
-                  botId,
-                  selfId: rawBotId,
-                  contentHash: routing.contentHash,
-                  contentLength: routing.contentLength,
-                },
-                "Message received",
-              );
-              const sessionId = await withTelemetrySpan(
-                log,
-                {
-                  traceId,
-                  phase: "adapter",
-                  step: "resolve_session",
-                  component: "message-dispatcher",
-                  message: {
-                    ...baseSpanMessage,
-                    botId,
-                    groupId,
-                    key: routing.key,
-                  },
-                },
-                async () =>
-                  this.sessionRepository.resolveActiveSessionId(
-                    botId,
-                    groupId,
-                    tracedMessage.userId,
-                    routing.key,
-                  ),
-              );
-              await withTelemetrySpan(
-                log,
-                {
-                  traceId,
-                  phase: "adapter",
-                  step: "ensure_session_files",
-                  component: "message-dispatcher",
-                  message: {
-                    ...baseSpanMessage,
-                    botId,
-                    groupId,
-                    key: routing.key,
-                    sessionId,
-                  },
-                },
-                async () => {
-                  await this.ensureSessionFiles({
-                    botId,
-                    groupId,
-                    userId: tracedMessage.userId,
-                    key: routing.key,
-                    sessionId,
-                  });
-                },
-              );
-
-              const gateToken = randomBytes(12).toString("hex");
-              const enqueuePlan = planEnqueue({
-                envelope,
-                sessionId,
-                key: routing.key,
-                gateToken,
-                traceId,
-                traceStartedAt,
-              });
-
-              const acquiredToken = await withTelemetrySpan(
-                log,
-                {
-                  traceId,
-                  phase: "adapter",
-                  step: "buffer_append_and_request_job",
-                  component: "message-dispatcher",
-                  message: {
-                    ...baseSpanMessage,
-                    botId,
-                    groupId,
-                    key: routing.key,
-                    sessionId,
-                  },
-                },
-                async () =>
-                  this.bufferStore.appendAndRequestJob(
-                    enqueuePlan.bufferKey,
-                    routing.session,
-                    gateToken,
-                  ),
-              );
-              if (!acquiredToken) {
-                return;
-              }
-
-              const enqueuedAt = Date.now();
-              try {
-                await withTelemetrySpan(
-                  log,
-                  {
-                    traceId,
-                    phase: "adapter",
-                    step: "queue_enqueue",
-                    component: "message-dispatcher",
-                    message: {
-                      ...baseSpanMessage,
-                      botId,
-                      groupId,
-                      key: routing.key,
-                      sessionId,
-                    },
-                    attrs: { traceStartedAt, enqueuedAt },
-                  },
-                  async () => {
-                    await this.sessionQueue.enqueue({
-                      ...enqueuePlan.jobData,
-                      gateToken: acquiredToken,
-                      enqueuedAt,
-                    });
-                  },
-                );
-              } catch (err) {
-                await this.bufferStore.releaseGate(
-                  enqueuePlan.bufferKey,
-                  acquiredToken,
-                );
-                throw err;
-              }
-              return;
-            }
-          }
         },
       );
     } catch (err) {
-      log.error(
-        { err, messageId: tracedMessage.messageId },
-        "Message dispatch failed",
-      );
+      await this.bufferStore.releaseGate(enqueuePlan.bufferKey, acquiredToken);
+      throw err;
     }
   }
 
@@ -968,391 +1048,6 @@ export class MessageDispatcher {
     }
     return message;
   }
-}
-
-type DispatchEnvelope = {
-  groupId: string;
-  rawBotId: string;
-  canonicalBotId: string;
-  botId: string;
-  userId: string;
-};
-
-type DispatchParseError =
-  | { kind: "invalid_group_id"; groupId: string | null }
-  | { kind: "invalid_bot_id"; botId: string | null }
-  | { kind: "invalid_user_id"; userId: string };
-
-type DispatchParseResult =
-  | { ok: true; value: DispatchEnvelope }
-  | { ok: false; error: DispatchParseError };
-
-function parseDispatchEnvelope(input: {
-  message: SessionEvent;
-  forceGroupId?: string;
-}): DispatchParseResult {
-  const groupId = resolveDispatchGroupId(input.message, input.forceGroupId);
-  if (!groupId || !isSafePathSegment(groupId)) {
-    return { ok: false, error: { kind: "invalid_group_id", groupId } };
-  }
-
-  const rawBotId = input.message.selfId?.trim() ?? "";
-  if (!rawBotId || !isSafePathSegment(rawBotId)) {
-    return { ok: false, error: { kind: "invalid_bot_id", botId: rawBotId } };
-  }
-
-  const userId = input.message.userId?.trim() ?? "";
-  if (!userId || !isSafePathSegment(userId)) {
-    return { ok: false, error: { kind: "invalid_user_id", userId } };
-  }
-
-  return {
-    ok: true,
-    value: {
-      groupId,
-      rawBotId,
-      canonicalBotId: resolveCanonicalBotId(rawBotId),
-      botId: buildBotFsId(input.message.platform, rawBotId),
-      userId,
-    },
-  };
-}
-
-type DispatchAuthResult =
-  | { allowed: true; groupConfig: GroupConfig }
-  | { allowed: false };
-
-function authorizeDispatch(input: {
-  groupConfig: GroupConfig | null | undefined;
-}): DispatchAuthResult {
-  const groupConfig = input.groupConfig;
-  if (!groupConfig || !groupConfig.enabled) {
-    return { allowed: false };
-  }
-  return { allowed: true, groupConfig };
-}
-
-type DispatchRoutingPlan =
-  | { kind: "passive"; echoRate: number }
-  | {
-      kind: "drop";
-      reason: "session_key_exceeds_max_sessions";
-      key: number;
-      maxSessions: number;
-    }
-  | {
-      kind: "command";
-      key: number;
-      command: ManagementCommand;
-      contentHash: string;
-      contentLength: number;
-    }
-  | {
-      kind: "enqueue";
-      key: number;
-      session: SessionEvent;
-      contentHash: string;
-      contentLength: number;
-    };
-
-type RouterSnapshot = Awaited<ReturnType<RouterStore["getSnapshot"]>>;
-
-function routeDispatch(input: {
-  message: SessionEvent;
-  groupConfig: GroupConfig;
-  routerSnapshot: RouterSnapshot | null | undefined;
-  botId: string;
-}): DispatchRoutingPlan {
-  const globalKeywords = input.routerSnapshot?.globalKeywords ?? [];
-  const globalEchoRate = input.routerSnapshot?.globalEchoRate ?? 30;
-  const botConfigs = input.routerSnapshot?.botConfigs ?? new Map();
-  const botConfig = botConfigs.get(input.botId);
-  const triggerRule = resolveTriggerRule({
-    groupConfig: input.groupConfig,
-    globalKeywords,
-    botConfig,
-  });
-  const effectiveEchoRate = resolveEchoRate(
-    botConfig?.echoRate,
-    input.groupConfig.echoRate,
-    globalEchoRate,
-  );
-
-  if (!shouldEnqueue({ message: input.message, rule: triggerRule })) {
-    return { kind: "passive", echoRate: effectiveEchoRate };
-  }
-
-  const normalized = normalizeDispatchMessage({
-    message: input.message,
-    keywords: triggerRule.keywords,
-  });
-
-  if (normalized.key >= input.groupConfig.maxSessions) {
-    return {
-      kind: "drop",
-      reason: "session_key_exceeds_max_sessions",
-      key: normalized.key,
-      maxSessions: input.groupConfig.maxSessions,
-    };
-  }
-
-  const contentHash = createHash("sha256")
-    .update(normalized.trimmedContent)
-    .digest("hex")
-    .slice(0, 12);
-
-  const command = parseManagementCommand(normalized.trimmedContent);
-  if (command) {
-    return {
-      kind: "command",
-      key: normalized.key,
-      command,
-      contentHash,
-      contentLength: normalized.trimmedContent.length,
-    };
-  }
-
-  return {
-    kind: "enqueue",
-    key: normalized.key,
-    session: normalized.session,
-    contentHash,
-    contentLength: normalized.trimmedContent.length,
-  };
-}
-
-function normalizeDispatchMessage(input: {
-  message: SessionEvent;
-  keywords: string[];
-}): { key: number; trimmedContent: string; session: SessionEvent } {
-  let normalizedMessage = input.message;
-
-  const wakePrefixFirst = stripKeywordPrefix(
-    normalizedMessage.content,
-    input.keywords,
-  );
-  normalizedMessage = applySessionKey(
-    normalizedMessage,
-    wakePrefixFirst.content,
-    wakePrefixFirst.prefixLength,
-  );
-
-  const { key, content, prefixLength } = extractSessionKey(
-    normalizedMessage.content,
-  );
-  normalizedMessage = applySessionKey(normalizedMessage, content, prefixLength);
-
-  const wakePrefixSecond = stripKeywordPrefix(
-    normalizedMessage.content,
-    input.keywords,
-  );
-  normalizedMessage = applySessionKey(
-    normalizedMessage,
-    wakePrefixSecond.content,
-    wakePrefixSecond.prefixLength,
-  );
-
-  const trimmedContent = normalizedMessage.content.trim();
-  normalizedMessage = applySessionKey(normalizedMessage, trimmedContent, 0);
-
-  return { key, trimmedContent, session: normalizedMessage };
-}
-
-function planEnqueue(input: {
-  envelope: DispatchEnvelope;
-  sessionId: string;
-  key: number;
-  gateToken: string;
-  traceId: string;
-  traceStartedAt: number;
-}): {
-  bufferKey: { botId: string; groupId: string; sessionId: string };
-  jobData: SessionJobData;
-} {
-  return {
-    bufferKey: {
-      botId: input.envelope.botId,
-      groupId: input.envelope.groupId,
-      sessionId: input.sessionId,
-    },
-    jobData: {
-      botId: input.envelope.botId,
-      groupId: input.envelope.groupId,
-      userId: input.envelope.userId,
-      key: input.key,
-      sessionId: input.sessionId,
-      gateToken: input.gateToken,
-      traceId: input.traceId,
-      traceStartedAt: input.traceStartedAt,
-    },
-  };
-}
-
-export function resolveDispatchGroupId(
-  message: SessionEvent,
-  forceGroupId?: string,
-): string | null {
-  if (!message.guildId) {
-    return "0";
-  }
-  if (forceGroupId) {
-    return forceGroupId;
-  }
-  return message.guildId;
-}
-
-function applySessionKey(
-  message: SessionEvent,
-  content: string,
-  prefixLength: number,
-): SessionEvent {
-  if (content === message.content) {
-    return message;
-  }
-  const elements = stripPrefixFromElements(message.elements, prefixLength);
-  return { ...message, content, elements };
-}
-
-function stripPrefixFromElements(
-  elements: ReadonlyArray<SessionElement>,
-  prefixLength: number,
-): ReadonlyArray<SessionElement> {
-  if (prefixLength <= 0) {
-    return elements;
-  }
-  let remaining = prefixLength;
-  const updated: SessionElement[] = [];
-  for (const element of elements) {
-    if (element.type !== "text") {
-      updated.push(element);
-      continue;
-    }
-    if (remaining <= 0) {
-      updated.push(element);
-      continue;
-    }
-    if (element.text.length <= remaining) {
-      remaining -= element.text.length;
-      continue;
-    }
-    const sliced = element.text.slice(remaining);
-    remaining = 0;
-    if (sliced) {
-      updated.push({ ...element, text: sliced });
-    }
-  }
-  return updated;
-}
-
-type ManagementCommand =
-  | { type: "reset"; scope: "self" | "all" }
-  | { type: "model"; model: string | null }
-  | {
-      type: "push";
-      action: "status" | "enable" | "disable" | "time";
-      time?: string;
-    }
-  | { type: "login"; token: string | null }
-  | { type: "logout" };
-
-function parseManagementCommand(input: string): ManagementCommand | null {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (trimmed.match(/^(?:\/resetall|resetall)$/i) || trimmed === "重置全群") {
-    return { type: "reset", scope: "all" };
-  }
-
-  const resetMatch =
-    trimmed.match(/^(?:\/reset|reset)(?:\s+(.+))?$/i) ??
-    trimmed.match(/^(?:\/重置|重置)(?:\s+(.+))?$/);
-  if (resetMatch) {
-    const arg = resetMatch[1]?.trim() ?? "";
-    if (!arg) {
-      return { type: "reset", scope: "self" };
-    }
-    const loweredArg = arg.toLowerCase();
-    if (
-      loweredArg === "all" ||
-      loweredArg === "everyone" ||
-      arg === "所有人" ||
-      arg === "全群"
-    ) {
-      return { type: "reset", scope: "all" };
-    }
-    return null;
-  }
-
-  const modelMatch =
-    trimmed.match(/^(?:\/model|model)(?:\s+|$)(.*)$/i) ??
-    trimmed.match(/^(?:\/模型|模型)(?:\s+|$)(.*)$/);
-  if (modelMatch) {
-    const rawArg = modelMatch[1]?.trim() ?? "";
-    if (!rawArg) {
-      return { type: "model", model: "" };
-    }
-    if (
-      ["default", "clear", "none", "off", "reset", "默认"].includes(
-        rawArg.toLowerCase(),
-      )
-    ) {
-      return { type: "model", model: null };
-    }
-    return { type: "model", model: rawArg };
-  }
-
-  const pushMatch =
-    trimmed.match(/^(?:\/push|push)(?:\s+(.+))?$/i) ??
-    trimmed.match(/^(?:\/推送|推送)(?:\s+(.+))?$/);
-  if (pushMatch) {
-    const arg = pushMatch[1]?.trim() ?? "";
-    if (!arg) {
-      return { type: "push", action: "status" };
-    }
-    const lowered = arg.toLowerCase();
-    if (
-      ["on", "enable", "enabled", "1", "true", "开", "开启", "启用"].includes(
-        lowered,
-      )
-    ) {
-      return { type: "push", action: "enable" };
-    }
-    if (
-      [
-        "off",
-        "disable",
-        "disabled",
-        "0",
-        "false",
-        "关",
-        "关闭",
-        "停用",
-      ].includes(lowered)
-    ) {
-      return { type: "push", action: "disable" };
-    }
-    const timeMatch =
-      arg.match(/^(?:time|at|时间)\s+(\d{1,2}:\d{2})$/i) ??
-      arg.match(/^(\d{1,2}:\d{2})$/);
-    if (timeMatch) {
-      return { type: "push", action: "time", time: timeMatch[1] };
-    }
-    return { type: "push", action: "status" };
-  }
-
-  const loginMatch = trimmed.match(/^(?:\/login|login)(?:\s+(.+))?$/i);
-  if (loginMatch) {
-    const token = loginMatch[1]?.trim() ?? "";
-    return { type: "login", token: token ? token : null };
-  }
-
-  if (trimmed.match(/^(?:\/logout|logout)$/i)) {
-    return { type: "logout" };
-  }
-
-  return null;
 }
 
 function parseModelsCsv(value: string): string[] {

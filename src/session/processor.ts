@@ -16,6 +16,7 @@ import type { OpencodeStreamEvent } from "../opencode/output";
 import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
+import { runSessionGateLoop } from "./gate-loop";
 import { buildBotAccountId } from "../utils/bot-id";
 import { extractOutputElements } from "./output-elements";
 import { redactSensitiveText } from "../utils/redact";
@@ -46,6 +47,24 @@ export interface SessionProcessorOptions {
   activityIndex: SessionActivityIndex;
   bufferStore: SessionBuffer;
 }
+
+type SessionProcessorSpan = <T>(
+  step: string,
+  fn: () => Promise<T>,
+  attrs?: Record<string, unknown>,
+) => Promise<T>;
+
+type SessionProcessorRuntime = {
+  job: SessionJobContext;
+  jobData: SessionJobData;
+  traceId: string;
+  jobId: string;
+  log: Logger;
+  spanMessage: NonNullable<TelemetrySpanInput["message"]>;
+  span: SessionProcessorSpan;
+  bufferKey: SessionBufferKey;
+  gateToken: string;
+};
 
 export class SessionProcessor {
   private logger: Logger;
@@ -111,19 +130,6 @@ export class SessionProcessor {
         fn,
       );
 
-    let statusUpdated = false;
-    let sessionInfo: SessionInfo | null = null;
-    let shouldSetIdle = true;
-    let gateHeartbeat: ReturnType<typeof setInterval> | null = null;
-    let gateRefreshInFlight = false;
-
-    const stopGateHeartbeat = () => {
-      if (gateHeartbeat) {
-        clearInterval(gateHeartbeat);
-        gateHeartbeat = null;
-      }
-    };
-
     const now = Date.now();
     const queueDelayMs =
       typeof jobData.enqueuedAt === "number" &&
@@ -136,269 +142,228 @@ export class SessionProcessor {
         ? Math.max(0, now - jobData.traceStartedAt)
         : undefined;
 
-    await span(
-      "job_process",
-      async () => {
-        try {
-          const bufferKey = toBufferKey(jobData);
-          const gateToken = jobData.gateToken;
-          const gateOk = await span("gate_claim_initial", async () =>
-            this.bufferStore.claimGate(bufferKey, gateToken),
-          );
-          if (!gateOk) {
-            log.debug(
-              { sessionId: jobData.sessionId, botId: jobData.botId },
-              "Skipping session job due to gate token mismatch",
-            );
-            return;
-          }
+    const runtime: SessionProcessorRuntime = {
+      job,
+      jobData,
+      traceId,
+      jobId,
+      log,
+      spanMessage,
+      span,
+      bufferKey: toBufferKey(jobData),
+      gateToken: jobData.gateToken,
+    };
 
-          const gateHeartbeatMs = Math.max(
-            1000,
-            Math.min(
-              30_000,
-              Math.floor((this.bufferStore.getGateTtlSeconds() * 1000) / 2),
-            ),
-          );
-          gateHeartbeat = setInterval(() => {
-            if (gateRefreshInFlight) {
-              return;
-            }
-            gateRefreshInFlight = true;
-            void this.bufferStore
-              .refreshGate(bufferKey, gateToken)
-              .then((ok) => {
-                if (!ok) {
-                  stopGateHeartbeat();
+    await span("job_process", async () => this.runJob(runtime), {
+      traceStartedAt: jobData.traceStartedAt,
+      enqueuedAt: jobData.enqueuedAt,
+      queueDelayMs,
+      e2eAgeMs,
+    });
+  }
+
+  private async runJob(runtime: SessionProcessorRuntime): Promise<void> {
+    let statusUpdated = false;
+    let sessionInfo: SessionInfo | null = null;
+    let shouldSetIdle = true;
+
+    try {
+      const gateOk = await runtime.span("gate_claim_initial", async () =>
+        this.bufferStore.claimGate(runtime.bufferKey, runtime.gateToken),
+      );
+      if (!gateOk) {
+        runtime.log.debug("Skipping session job due to gate token mismatch");
+        return;
+      }
+
+      const gateResult = await runSessionGateLoop({
+        bufferStore: this.bufferStore,
+        bufferKey: runtime.bufferKey,
+        gateToken: runtime.gateToken,
+        logger: runtime.log,
+        onBatch: async (buffered) => {
+          try {
+            return await withTelemetrySpan(
+              runtime.log,
+              {
+                traceId: runtime.traceId,
+                phase: "worker",
+                step: "process_batch",
+                component: "session-processor",
+                message: runtime.spanMessage,
+                job: { id: runtime.jobId },
+                attrs: { bufferedCount: buffered.length },
+              },
+              async () => {
+                if (!sessionInfo) {
+                  sessionInfo = await runtime.span("ensure_session", async () =>
+                    this.ensureSession(
+                      runtime.jobData.botId,
+                      runtime.jobData.groupId,
+                      runtime.jobData.userId,
+                      runtime.jobData.key,
+                      runtime.jobData.sessionId,
+                    ),
+                  );
+                  await runtime.span("record_activity", async () =>
+                    this.recordActivity(sessionInfo!, runtime.log),
+                  );
+                  sessionInfo = await runtime.span(
+                    "update_status_running",
+                    async () => this.updateStatus(sessionInfo!, "running"),
+                  );
+                  statusUpdated = true;
+                  await runtime.span("record_activity", async () =>
+                    this.recordActivity(sessionInfo!, runtime.log),
+                  );
                 }
-              })
-              .catch((err) => {
-                log.warn(
-                  { err, sessionId: jobData.sessionId },
-                  "Failed to refresh session gate",
-                );
-              })
-              .finally(() => {
-                gateRefreshInFlight = false;
-              });
-          }, gateHeartbeatMs);
 
-          let keepRunning = true;
-          while (keepRunning) {
-            const stillOwner = await this.bufferStore.claimGate(
-              bufferKey,
-              gateToken,
+                return this.handleBatch(runtime, sessionInfo!, buffered);
+              },
             );
-            if (!stillOwner) {
-              log.debug(
-                { sessionId: jobData.sessionId, botId: jobData.botId },
-                "Stopping session job due to gate token mismatch",
-              );
-              shouldSetIdle = false;
-              return;
-            }
-            const buffered = await this.bufferStore.drain(bufferKey);
-            if (buffered.length === 0) {
-              const shouldStop = await this.bufferStore.tryReleaseGate(
-                bufferKey,
-                gateToken,
-              );
-              if (shouldStop) {
-                keepRunning = false;
-                continue;
-              }
-              continue;
-            }
-
+          } catch (err) {
+            runtime.log.error(
+              { err },
+              "Failed to process buffered session messages; requeuing",
+            );
             try {
-              await withTelemetrySpan(
-                log,
-                {
-                  traceId,
-                  phase: "worker",
-                  step: "process_batch",
-                  component: "session-processor",
-                  message: spanMessage,
-                  job: { id: jobId },
-                  attrs: { bufferedCount: buffered.length },
-                },
-                async () => {
-                  if (!sessionInfo) {
-                    sessionInfo = await span("ensure_session", async () =>
-                      this.ensureSession(
-                        jobData.botId,
-                        jobData.groupId,
-                        jobData.userId,
-                        jobData.key,
-                        jobData.sessionId,
-                      ),
-                    );
-                    await span("record_activity", async () =>
-                      this.recordActivity(sessionInfo!, log),
-                    );
-
-                    sessionInfo = await span(
-                      "update_status_running",
-                      async () => this.updateStatus(sessionInfo!, "running"),
-                    );
-                    statusUpdated = true;
-                    await span("record_activity", async () =>
-                      this.recordActivity(sessionInfo!, log),
-                    );
-                  }
-
-                  const { mergedSession, promptInput } =
-                    buildBufferedInput(buffered);
-                  const mergedWithTrace: SessionEvent = {
-                    ...mergedSession,
-                    extras: setTraceIdOnExtras(mergedSession.extras, traceId),
-                  };
-                  const batchMessage = {
-                    ...spanMessage,
-                    platform: mergedWithTrace.platform,
-                    channelId: mergedWithTrace.channelId,
-                    messageId: mergedWithTrace.messageId,
-                  };
-                  const batchSpan = async <T>(
-                    step: string,
-                    fn: () => Promise<T>,
-                    attrs?: Record<string, unknown>,
-                  ): Promise<T> =>
-                    withTelemetrySpan(
-                      log,
-                      {
-                        traceId,
-                        phase: "worker",
-                        step,
-                        component: "session-processor",
-                        message: batchMessage,
-                        job: { id: jobId },
-                        attrs,
-                      },
-                      fn,
-                    );
-
-                  const historyKey = resolveHistoryKey(mergedWithTrace);
-                  const stopTyping = this.startTyping(mergedWithTrace, log);
-                  try {
-                    const { history, request } = await this.buildPromptContext(
-                      jobData.groupId,
-                      sessionInfo!,
-                      promptInput,
-                      { traceId, jobId, logger: log, message: batchMessage },
-                    );
-
-                    const result = await batchSpan(
-                      "opencode_run",
-                      async () =>
-                        this.runner.run({
-                          job: this.mapJob(job),
-                          session: sessionInfo!,
-                          history,
-                          request,
-                        }),
-                      { historyEntries: history.length },
-                    );
-                    const stillOwnerAfterRun = await this.bufferStore.claimGate(
-                      bufferKey,
-                      gateToken,
-                    );
-                    if (!stillOwnerAfterRun) {
-                      log.warn(
-                        { sessionId: jobData.sessionId, botId: jobData.botId },
-                        "Discarding session result due to gate token mismatch after run",
-                      );
-                      try {
-                        await this.bufferStore.requeueFront(
-                          bufferKey,
-                          buffered,
-                        );
-                      } catch (err) {
-                        log.error(
-                          {
-                            err,
-                            sessionId: jobData.sessionId,
-                            botId: jobData.botId,
-                          },
-                          "Failed to requeue buffered messages after gate loss",
-                        );
-                      }
-                      shouldSetIdle = false;
-                      return;
-                    }
-                    const output = resolveOutput(result.output);
-                    const auditedOutput = output
-                      ? redactSensitiveText(output)
-                      : undefined;
-
-                    await batchSpan("send_response", async () =>
-                      this.sendResponse(mergedWithTrace, auditedOutput),
-                    );
-                    await batchSpan("append_history", async () =>
-                      this.appendHistoryFromJob(
-                        sessionInfo!,
-                        mergedWithTrace,
-                        historyKey,
-                        result.historyEntries?.filter(
-                          (entry) => entry.role !== "assistant",
-                        ),
-                        result.streamEvents,
-                        auditedOutput,
-                        { stdout: result.rawStdout, stderr: result.rawStderr },
-                      ),
-                    );
-                    await batchSpan("record_activity", async () =>
-                      this.recordActivity(sessionInfo!, log),
-                    );
-                  } finally {
-                    stopTyping();
-                  }
-                },
+              await this.bufferStore.requeueFront(runtime.bufferKey, buffered);
+            } catch (requeueErr) {
+              runtime.log.error(
+                { err: requeueErr },
+                "Failed to requeue buffered messages after error",
               );
-            } catch (err) {
-              log.error(
-                { err, sessionId: jobData.sessionId, botId: jobData.botId },
-                "Failed to process buffered session messages; requeuing",
-              );
-              try {
-                await this.bufferStore.requeueFront(bufferKey, buffered);
-              } catch (requeueErr) {
-                log.error(
-                  {
-                    err: requeueErr,
-                    sessionId: jobData.sessionId,
-                    botId: jobData.botId,
-                  },
-                  "Failed to requeue buffered messages after error",
-                );
-              }
-              throw err;
             }
+            throw err;
           }
+        },
+      });
+
+      if (gateResult === "lost_gate") {
+        shouldSetIdle = false;
+      }
+    } catch (err) {
+      runtime.log.error({ err }, "Error processing session job");
+      throw err;
+    } finally {
+      if (statusUpdated && sessionInfo && shouldSetIdle) {
+        try {
+          await this.updateStatus(sessionInfo, "idle");
         } catch (err) {
-          log.error(
-            { err, sessionId: jobData.sessionId },
-            "Error processing session job",
-          );
-          throw err;
-        } finally {
-          stopGateHeartbeat();
-          if (statusUpdated && sessionInfo && shouldSetIdle) {
-            try {
-              await this.updateStatus(sessionInfo, "idle");
-            } catch (err) {
-              log.warn({ err }, "Failed to update session status to idle");
-            }
-          }
+          runtime.log.warn({ err }, "Failed to update session status to idle");
         }
-      },
-      {
-        traceStartedAt: jobData.traceStartedAt,
-        enqueuedAt: jobData.enqueuedAt,
-        queueDelayMs,
-        e2eAgeMs,
-      },
-    );
+      }
+    }
+  }
+
+  private async handleBatch(
+    runtime: SessionProcessorRuntime,
+    sessionInfo: SessionInfo,
+    buffered: SessionEvent[],
+  ): Promise<"continue" | "lost_gate"> {
+    const { mergedSession, promptInput } = buildBufferedInput(buffered);
+    const mergedWithTrace: SessionEvent = {
+      ...mergedSession,
+      extras: setTraceIdOnExtras(mergedSession.extras, runtime.traceId),
+    };
+
+    const batchMessage = {
+      ...runtime.spanMessage,
+      platform: mergedWithTrace.platform,
+      channelId: mergedWithTrace.channelId,
+      messageId: mergedWithTrace.messageId,
+    };
+
+    const batchSpan = async <T>(
+      step: string,
+      fn: () => Promise<T>,
+      attrs?: Record<string, unknown>,
+    ): Promise<T> =>
+      withTelemetrySpan(
+        runtime.log,
+        {
+          traceId: runtime.traceId,
+          phase: "worker",
+          step,
+          component: "session-processor",
+          message: batchMessage,
+          job: { id: runtime.jobId },
+          attrs,
+        },
+        fn,
+      );
+
+    const historyKey = resolveHistoryKey(mergedWithTrace);
+    const stopTyping = this.startTyping(mergedWithTrace, runtime.log);
+    try {
+      const { history, request } = await this.buildPromptContext(
+        runtime.jobData.groupId,
+        sessionInfo,
+        promptInput,
+        {
+          traceId: runtime.traceId,
+          jobId: runtime.jobId,
+          logger: runtime.log,
+          message: batchMessage,
+        },
+      );
+
+      const result = await batchSpan(
+        "opencode_run",
+        async () =>
+          this.runner.run({
+            job: this.mapJob(runtime.job),
+            session: sessionInfo,
+            history,
+            request,
+          }),
+        { historyEntries: history.length },
+      );
+
+      const stillOwnerAfterRun = await this.bufferStore.claimGate(
+        runtime.bufferKey,
+        runtime.gateToken,
+      );
+      if (!stillOwnerAfterRun) {
+        runtime.log.warn(
+          "Discarding session result due to gate token mismatch after run",
+        );
+        try {
+          await this.bufferStore.requeueFront(runtime.bufferKey, buffered);
+        } catch (err) {
+          runtime.log.error(
+            { err },
+            "Failed to requeue buffered messages after gate loss",
+          );
+        }
+        return "lost_gate";
+      }
+
+      const output = resolveOutput(result.output);
+      const auditedOutput = output ? redactSensitiveText(output) : undefined;
+
+      await batchSpan("send_response", async () =>
+        this.sendResponse(mergedWithTrace, auditedOutput),
+      );
+      await batchSpan("append_history", async () =>
+        this.appendHistoryFromJob(
+          sessionInfo,
+          mergedWithTrace,
+          historyKey,
+          result.historyEntries?.filter((entry) => entry.role !== "assistant"),
+          result.streamEvents,
+          auditedOutput,
+          { stdout: result.rawStdout, stderr: result.rawStderr },
+        ),
+      );
+      await batchSpan("record_activity", async () =>
+        this.recordActivity(sessionInfo, runtime.log),
+      );
+
+      return "continue";
+    } finally {
+      stopTyping();
+    }
   }
 
   async close(): Promise<void> {

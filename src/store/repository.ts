@@ -1,5 +1,12 @@
 import { constants } from "node:fs";
-import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import matter from "gray-matter";
@@ -131,7 +138,12 @@ export class GroupFileRepository {
     const configPath = join(groupPath, "config.yaml");
     const validated = GroupConfigSchema.parse(config);
     const payload = stringifyYaml(validated).trimEnd();
-    await writeFile(configPath, `${payload}\n`);
+    const tmpPath = join(
+      dirname(configPath),
+      `.${basename(configPath)}.${process.pid}.${Date.now()}.tmp`,
+    );
+    await writeFile(tmpPath, `${payload}\n`, "utf-8");
+    await rename(tmpPath, configPath);
   }
 
   async loadAgentPrompt(groupPath: string): Promise<AgentContent> {

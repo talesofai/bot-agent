@@ -23,6 +23,7 @@ export interface SessionWorkerOptions {
   databaseUrl?: string;
   historyStore?: HistoryStore;
   opencodeClient: OpencodeClient;
+  onFatalError?: (err: unknown) => void | Promise<void>;
   redis: {
     url: string;
   };
@@ -44,12 +45,17 @@ export class SessionWorker {
   private processor: SessionProcessor;
   private stalledIntervalMs: number;
   private maxStalledCount: number;
+  private startPromise: Promise<void> | null = null;
+  private runPromise: Promise<void> | null = null;
+  private fatalErrorHandled = false;
+  private onFatalError?: (err: unknown) => void | Promise<void>;
 
   constructor(options: SessionWorkerOptions) {
     this.logger = options.logger.child({
       component: "session-worker",
       workerId: options.id,
     });
+    this.onFatalError = options.onFatalError;
     const groupRepository = new GroupFileRepository({
       dataDir: options.dataDir,
       logger: this.logger,
@@ -112,15 +118,50 @@ export class SessionWorker {
   }
 
   async start(): Promise<void> {
-    this.worker.run().catch((err) => {
-      this.logger.error({ err }, "Worker run loop failed");
-    });
+    if (this.startPromise) {
+      return this.startPromise;
+    }
+
+    this.startPromise = (async () => {
+      if (!this.runPromise) {
+        this.runPromise = this.worker.run();
+        this.runPromise.catch((err) => {
+          this.logger.error({ err }, "Worker run loop failed");
+          this.handleFatalError(err);
+        });
+      }
+
+      await Promise.race([
+        this.worker.waitUntilReady().then(() => undefined),
+        this.runPromise.then(() => {
+          throw new Error("Worker exited before it was ready");
+        }),
+      ]);
+    })();
+
+    return this.startPromise;
   }
 
   async stop(): Promise<void> {
     await this.worker.close();
     await this.workerConnection.quit();
     await this.processor.close();
+  }
+
+  private handleFatalError(err: unknown): void {
+    if (this.fatalErrorHandled) {
+      return;
+    }
+    this.fatalErrorHandled = true;
+
+    if (this.onFatalError) {
+      void this.onFatalError(err);
+      return;
+    }
+
+    queueMicrotask(() => {
+      throw err;
+    });
   }
 
   private async processJob(job: Job<SessionJobData>): Promise<void> {

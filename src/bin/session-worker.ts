@@ -114,6 +114,10 @@ async function main(): Promise<void> {
     adapter: multiAdapter,
     databaseUrl: config.DATABASE_URL,
     opencodeClient,
+    onFatalError: async (err) => {
+      logger.error({ err }, "Session worker crashed");
+      await shutdownController.shutdown({ exitCode: 1, reason: err });
+    },
     redis: {
       url: config.REDIS_URL,
     },
@@ -141,13 +145,16 @@ async function main(): Promise<void> {
     return;
   }
 
-  startHttpServer({ logger, port: config.WORKER_HTTP_PORT })
-    .then((server) => {
-      httpServer = server;
-    })
-    .catch((err) => {
-      logger.error({ err }, "Failed to start HTTP server");
+  try {
+    httpServer = await startHttpServer({
+      logger,
+      port: config.WORKER_HTTP_PORT,
     });
+  } catch (err) {
+    logger.error({ err }, "Failed to start HTTP server");
+    await shutdownController.shutdown({ exitCode: 1, reason: err });
+    return;
+  }
 }
 
 await main();

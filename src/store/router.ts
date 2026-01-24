@@ -72,7 +72,6 @@ export class RouterStore {
   private cachedAt = 0;
   private initPromise: Promise<void> | null = null;
   private initialized = false;
-  private ensuredBots = new Set<string>();
 
   constructor(options: RouterStoreOptions) {
     this.dataDir = options.dataDir;
@@ -94,9 +93,6 @@ export class RouterStore {
 
   async ensureBotConfig(botId: string): Promise<void> {
     assertSafePathSegment(botId, "botId");
-    if (this.ensuredBots.has(botId)) {
-      return;
-    }
     await this.init();
 
     const botDir = join(this.dataDir, "bots", botId);
@@ -109,7 +105,6 @@ export class RouterStore {
     if (created) {
       this.invalidateCache();
     }
-    this.ensuredBots.add(botId);
   }
 
   async getSnapshot(): Promise<RouterSnapshot> {

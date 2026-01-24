@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
+- Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
+- Router：移除 `ensureBotConfig()` 的 `ensuredBots` 内存缓存，避免配置文件被删/重建后留下假状态
+- Opencode：`ensureOpencodeSkills()` 增加 workspace 同步哨兵，未变化时跳过全量 rm+cp，降低批处理 I/O
+
 ## [0.0.30] - 2026-01-24
 
 ### Added

@@ -228,7 +228,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (commandName === "help") {
       await safeReply(
         interaction,
-        "可用指令：\n- /reset [key:<会话槽位>] [user:<用户>]\n- /resetall [key:<会话槽位>]（管理员）\n- /model name:<模型 ID>\n- /world create|list|info|rules|join|stats\n- /character create|view|act\n- /ping\n- /help",
+        [
+          "可用指令：",
+          "- /world help",
+          "- /character help",
+          "- /reset [key:<会话槽位>] [user:<用户>]",
+          "- /resetall [key:<会话槽位>]（管理员）",
+          "- /model name:<模型 ID>",
+          "- /ping",
+          "- /help",
+        ].join("\n"),
         { ephemeral: true },
       );
       return;
@@ -427,6 +436,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.handleWorldCreate(interaction, flags);
       return;
     }
+    if (subcommand === "help") {
+      await this.handleWorldHelp(interaction);
+      return;
+    }
     if (subcommand === "list") {
       await this.handleWorldList(interaction);
       return;
@@ -610,6 +623,28 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     );
   }
 
+  private async handleWorldHelp(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<void> {
+    await safeReply(
+      interaction,
+      [
+        "世界系统指令：",
+        "- /world create name:<世界名称>（默认仅管理员；可配置 world.createPolicy）",
+        "- /world list [limit:<1-100>]",
+        "- /world info world_id:<世界ID>",
+        "- /world rules world_id:<世界ID>",
+        "- /world join world_id:<世界ID>（必须在入口服务器执行以赋予 World-<id> 角色）",
+        "- /world stats world_id:<世界ID>",
+        "",
+        "提示：",
+        "- 世界入口频道为 world-roleplay；加入后可在该频道直接对话",
+        "- 访客数=join 人数；角色数=该世界角色数（均持久化）",
+      ].join("\n"),
+      { ephemeral: true },
+    );
+  }
+
   private async handleWorldList(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
@@ -742,6 +777,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.handleCharacterCreate(interaction);
       return;
     }
+    if (subcommand === "help") {
+      await this.handleCharacterHelp(interaction);
+      return;
+    }
     if (subcommand === "view") {
       const characterId = interaction.options.getInteger("character_id", true);
       await this.handleCharacterView(interaction, characterId);
@@ -841,6 +880,26 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await safeReply(
       interaction,
       `角色已创建：C${characterId} ${name}（visibility=${visibility}）\n使用 /character act character_id:${characterId} 让 bot 扮演该角色。`,
+      { ephemeral: true },
+    );
+  }
+
+  private async handleCharacterHelp(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<void> {
+    await safeReply(
+      interaction,
+      [
+        "角色系统指令：",
+        "- /character create name:<角色名> [world_id:<世界ID>] [visibility:world|public|private] [description:<补充>]",
+        "  - 在世界入口频道（world-roleplay）内可省略 world_id",
+        "  - visibility 默认 world",
+        "- /character view character_id:<角色ID>（遵循 visibility 权限）",
+        "- /character act character_id:<角色ID>（让 bot 在该世界扮演此角色）",
+        "",
+        "提示：",
+        "- 需要先 /world join 才能创建/指定扮演角色",
+      ].join("\n"),
       { ephemeral: true },
     );
   }
@@ -1033,6 +1092,9 @@ function buildSlashCommands() {
           ),
       )
       .addSubcommand((sub) =>
+        sub.setName("help").setDescription("查看世界系统指令用法"),
+      )
+      .addSubcommand((sub) =>
         sub
           .setName("list")
           .setDescription("列出世界（全局）")
@@ -1128,6 +1190,9 @@ function buildSlashCommands() {
               .setDescription("补充描述（可选）")
               .setRequired(false),
           ),
+      )
+      .addSubcommand((sub) =>
+        sub.setName("help").setDescription("查看角色系统指令用法"),
       )
       .addSubcommand((sub) =>
         sub

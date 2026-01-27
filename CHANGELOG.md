@@ -10,6 +10,7 @@
 ### Added
 
 - Discord：新增世界系统（`/world create|list|info|rules|join|stats`），世界全局共享（单 `homeGuild`），通过 World Role 实现“能看到但不能进入/写”
+- Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
 - Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`），并可通过 `/character act` 让 bot 在世界入口频道扮演角色
 - World：新增 `channelId -> worldId` 路由与 world roleplay 频道 always-on（绕过 mention/keyword 触发），会话隔离为 `groupId=world_{worldId}` 并注入 `world/world-card.md`、`world/rules.md`、`world/active-character.md`
 - 持久化：Redis 维护自增 ID / meta / 成员与角色集合；`/data/worlds/{worldId}` 落地世界卡/规则/角色卡/事件流

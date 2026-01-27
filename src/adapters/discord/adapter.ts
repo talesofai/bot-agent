@@ -1101,15 +1101,15 @@ function buildSlashCommands() {
         sub
           .setName("create")
           .setDescription("创建角色卡（需已加入世界）")
+          .addStringOption((option) =>
+            option.setName("name").setDescription("角色名").setRequired(true),
+          )
           .addIntegerOption((option) =>
             option
               .setName("world_id")
               .setDescription("世界ID（在世界入口频道内可省略）")
               .setMinValue(1)
               .setRequired(false),
-          )
-          .addStringOption((option) =>
-            option.setName("name").setDescription("角色名").setRequired(true),
           )
           .addStringOption((option) =>
             option

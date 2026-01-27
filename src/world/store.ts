@@ -4,16 +4,26 @@ import { logger as defaultLogger } from "../logger";
 import { buildWorldGroupId, normalizeWorldId, type WorldId } from "./ids";
 import { assertSafePathSegment, isSafePathSegment } from "../utils/path";
 
-export type WorldStatus = "active" | "archived" | "failed";
+export type WorldStatus = "draft" | "active" | "archived" | "failed";
 
 export type CharacterVisibility = "world" | "public" | "private";
 
-export type WorldMeta = {
+export type WorldDraftMeta = {
   id: WorldId;
   homeGuildId: string;
   creatorId: string;
   name: string;
-  status: WorldStatus;
+  status: "draft";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorldActiveMeta = {
+  id: WorldId;
+  homeGuildId: string;
+  creatorId: string;
+  name: string;
+  status: Exclude<WorldStatus, "draft">;
   createdAt: string;
   updatedAt: string;
   roleId: string;
@@ -22,7 +32,10 @@ export type WorldMeta = {
   roleplayChannelId: string;
   proposalsChannelId: string;
   voiceChannelId: string;
+  buildChannelId?: string;
 };
+
+export type WorldMeta = WorldDraftMeta | WorldActiveMeta;
 
 export type CharacterMeta = {
   id: number;
@@ -87,7 +100,7 @@ export class WorldStore {
     return id;
   }
 
-  async createWorld(meta: WorldMeta): Promise<void> {
+  async createWorldDraft(meta: Omit<WorldDraftMeta, "status">): Promise<void> {
     normalizeWorldId(meta.id);
     if (!isSafePathSegment(meta.homeGuildId)) {
       throw new Error("homeGuildId must be a safe path segment");
@@ -102,7 +115,32 @@ export class WorldStore {
       homeGuildId: meta.homeGuildId,
       creatorId: meta.creatorId,
       name: meta.name,
-      status: meta.status,
+      status: "draft",
+      createdAt: meta.createdAt || now,
+      updatedAt: meta.updatedAt || now,
+    };
+
+    await this.redis.hset(this.worldMetaKey(meta.id), payload);
+  }
+
+  async publishWorld(
+    meta: Omit<WorldActiveMeta, "status"> & { status?: "active" },
+  ): Promise<void> {
+    normalizeWorldId(meta.id);
+    if (!isSafePathSegment(meta.homeGuildId)) {
+      throw new Error("homeGuildId must be a safe path segment");
+    }
+    if (!isSafePathSegment(meta.creatorId)) {
+      throw new Error("creatorId must be a safe path segment");
+    }
+
+    const now = new Date().toISOString();
+    const payload: Record<string, string> = {
+      id: String(meta.id),
+      homeGuildId: meta.homeGuildId,
+      creatorId: meta.creatorId,
+      name: meta.name,
+      status: "active",
       createdAt: meta.createdAt || now,
       updatedAt: meta.updatedAt || now,
       roleId: meta.roleId,
@@ -112,6 +150,10 @@ export class WorldStore {
       proposalsChannelId: meta.proposalsChannelId,
       voiceChannelId: meta.voiceChannelId,
     };
+    const buildChannelId = meta.buildChannelId?.trim();
+    if (buildChannelId) {
+      payload.buildChannelId = buildChannelId;
+    }
 
     const multi = this.redis.multi();
     multi.hset(this.worldMetaKey(meta.id), payload);
@@ -363,15 +405,41 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
     return null;
   }
   const status = raw.status as WorldStatus;
-  if (status !== "active" && status !== "archived" && status !== "failed") {
+  if (
+    status !== "draft" &&
+    status !== "active" &&
+    status !== "archived" &&
+    status !== "failed"
+  ) {
     return null;
   }
-  const required = [
+
+  const baseRequired = [
     "homeGuildId",
     "creatorId",
     "name",
     "createdAt",
     "updatedAt",
+  ] as const;
+  for (const key of baseRequired) {
+    if (!raw[key] || raw[key].trim() === "") {
+      return null;
+    }
+  }
+
+  if (status === "draft") {
+    return {
+      id,
+      homeGuildId: raw.homeGuildId,
+      creatorId: raw.creatorId,
+      name: raw.name,
+      status,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+    };
+  }
+
+  const channelRequired = [
     "roleId",
     "categoryId",
     "infoChannelId",
@@ -379,11 +447,14 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
     "proposalsChannelId",
     "voiceChannelId",
   ] as const;
-  for (const key of required) {
+  for (const key of channelRequired) {
     if (!raw[key] || raw[key].trim() === "") {
       return null;
     }
   }
+
+  const buildChannelId = raw.buildChannelId?.trim() || undefined;
+
   return {
     id,
     homeGuildId: raw.homeGuildId,
@@ -398,6 +469,7 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
     roleplayChannelId: raw.roleplayChannelId,
     proposalsChannelId: raw.proposalsChannelId,
     voiceChannelId: raw.voiceChannelId,
+    buildChannelId,
   };
 }
 

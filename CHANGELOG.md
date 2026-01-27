@@ -9,8 +9,10 @@
 
 ### Added
 
-- Discord：新增世界系统（`/world create|list|info|rules|join|stats`），世界全局共享（单 `homeGuild`），通过 World Role 实现“能看到但不能进入/写”
-- Discord：`/world create` 支持上传设定文档（Attachment），自动创建 `#world-build` 并启动多轮“世界构建”会话（`groupId=world_{id}_build`）；写回 `/data/worlds/{id}/world-card.md`、`rules.md` 与 `source.md`
+- Discord：新增世界系统（`/world create|list|search|canon|info|rules|stats|status|join|edit|close`），世界全局共享（单 `homeGuild`）
+- Discord：`/world create` 创建“世界草稿 + 子话题”，多轮补全后在子话题中执行 `/world close` 才会发布世界并创建子空间；世界构建会话 `groupId=world_{id}_build` 写回 `/data/worlds/{id}/world-card.md`、`rules.md` 与 `source.md`
+- Discord：`/world edit`（仅创作者）创建“世界编辑话题”，用于后续通过对话持续修改世界设定
+- Discord：世界子空间默认“未 join 不可见”：`world-roleplay/world-proposals/voice` 仅对 World Role 可见，`/world join` 后自动获得进入与发言权限
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
 - Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`），并可通过 `/character act` 让 bot 在世界入口频道扮演角色
 - Discord：`/character create` 自动创建“角色构建”话题（`groupId=world_{id}_character_{cid}_build`），并触发 kickoff 以多轮补全角色卡
@@ -23,6 +25,7 @@
 
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
+- World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
 - Discord：除 help 外，Slash Commands 回复默认公开（non-ephemeral）
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
 - K8s：`llbot`（QQ）StatefulSet 默认 `replicas=0`（默认不启用，需要时再手动 scale）

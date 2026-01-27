@@ -40,7 +40,8 @@
 ### 输入
 
 - 触发：slash command `/world create`
-- 允许附带：世界名、设定文档/描述（可选）
+- 必填：世界名、设定文档（Attachment，txt/md/json/yaml）
+- 说明：后续补全通过 `#world-build` 多轮对话完成
 
 ### 前置条件
 
@@ -59,19 +60,25 @@
 5. 创建频道：
    - `#world-info`（@everyone 可读；不可写/可写按需）
    - `#world-roleplay`（@everyone 只读；world role 可写）
+   - `#world-build`（仅创作者 + bot 可见/可写；用于世界卡/规则整理与补全）
    - `#world-proposals`（@everyone 只读；world role 可写）
    - `World Voice`（@everyone 可连/不可连按需；world role 可连）
 6. 写入 Redis `world:{worldId}:meta`（包含 `homeGuildId`、channelIds、roleId、creatorId、name、timestamps）。
-7. 写入路由映射 `channel:{channelId}:world = worldId`（至少包括 roleplay/proposals/info/voice）。
+7. 写入路由映射：
+   - `channel:{roleplayChannelId}:world = worldId`（兼容推断 worldId）
+   - `channel:{roleplayChannelId}:group = world_{worldId}`（roleplay always-on）
+   - `channel:{buildChannelId}:group = world_{worldId}_build`（构建会话 always-on）
 8. 自动加入创作者：
    - `SADD(world:{worldId}:members, creatorId)`
    - 给创作者赋予 world role
 9. 初始化文件：
    - `/data/worlds/{worldId}/world-card.md`
    - `/data/worlds/{worldId}/rules.md`
+   - `/data/worlds/{worldId}/source.md`（上传设定文档的最新版本；历史副本在 `sources/`）
    - `/data/worlds/{worldId}/events.jsonl`（append：world_created）
 10. 在 `#world-info` 发布世界入口信息（世界简介、规则链接、join 指令、统计入口）。
-11. 对执行者返回成功（优先 ephemeral，避免刷屏）。
+11. 在 `#world-build` 自动触发一次 kickoff：让 AI 读取 `world/source.md`，生成/更新世界卡与规则，并提出待补充问题。
+12. 对执行者返回成功（优先 ephemeral，避免刷屏）。
 
 ### 失败分支（必须明确）
 

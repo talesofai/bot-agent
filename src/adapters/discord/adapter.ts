@@ -27,9 +27,10 @@ import { MessageSender } from "./sender";
 import type { BotMessageStore } from "../../store/bot-message-store";
 import { WorldStore, type CharacterVisibility } from "../../world/store";
 import { WorldFileStore } from "../../world/file-store";
-import { buildWorldGroupId } from "../../world/ids";
+import { buildWorldBuildGroupId, buildWorldGroupId } from "../../world/ids";
 import { getConfig } from "../../config";
 import { GroupFileRepository } from "../../store/repository";
+import { fetchDiscordTextAttachment } from "./text-attachments";
 import path from "node:path";
 import { writeFile, mkdir, rename } from "node:fs/promises";
 
@@ -484,6 +485,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(interaction, "世界名称不能为空。", { ephemeral: true });
       return;
     }
+    const document = interaction.options.getAttachment("document", true);
 
     const groupPath = await this.groupRepository.ensureGroupDir(
       interaction.guildId,
@@ -512,10 +514,23 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     const guild = interaction.guild;
-    const nowIso = new Date().toISOString();
-
     await safeReply(interaction, "收到，正在创建世界…", { ephemeral: true });
 
+    let source: { filename: string; content: string };
+    try {
+      source = await fetchDiscordTextAttachment(document, {
+        logger: this.logger,
+      });
+    } catch (err) {
+      await safeReply(
+        interaction,
+        `设定文档读取失败：${err instanceof Error ? err.message : String(err)}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
     const worldId = await this.worldStore.nextWorldId();
     const role = await guild.roles.create({
       name: `World-${worldId}`,
@@ -547,6 +562,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: baseOverwrites.roleplay,
+      reason: `world create by ${interaction.user.id}`,
+    });
+    const buildChannel = await guild.channels.create({
+      name: "world-build",
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: buildWorldBuildOverwrites({
+        everyoneRoleId: guild.roles.everyone.id,
+        worldRoleId: role.id,
+        creatorUserId: interaction.user.id,
+        botUserId: botId,
+      }),
       reason: `world create by ${interaction.user.id}`,
     });
     const proposalsChannel = await guild.channels.create({
@@ -585,17 +612,33 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       worldName,
       creatorId: interaction.user.id,
     });
+    await this.worldFiles.writeSourceDocument(worldId, source);
     await this.worldFiles.appendEvent(worldId, {
       type: "world_created",
       worldId,
       guildId: interaction.guildId,
       userId: interaction.user.id,
     });
+    await this.worldFiles.appendEvent(worldId, {
+      type: "world_source_uploaded",
+      worldId,
+      guildId: interaction.guildId,
+      userId: interaction.user.id,
+      filename: source.filename,
+    });
 
     await this.ensureWorldGroupAgent({
       worldId,
       worldName,
     });
+    await this.ensureWorldBuildGroupAgent({
+      worldId,
+      worldName,
+    });
+    await this.worldStore.setChannelGroupId(
+      buildChannel.id,
+      buildWorldBuildGroupId(worldId),
+    );
 
     const member = await guild.members.fetch(interaction.user.id);
     await member.roles.add(role.id, "world creator auto-join");
@@ -606,6 +649,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       [
         `世界已创建：W${worldId} ${worldName}`,
         `入口：<#${roleplayChannel.id}>`,
+        `创作：<#${buildChannel.id}>`,
         `只读信息：<#${infoChannel.id}>`,
         `加入指令：/world join world_id:${worldId}`,
       ].join("\n"),
@@ -621,6 +665,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await (infoChannel as { send: (content: string) => Promise<unknown> }).send(
       intro,
     );
+
+    await this.emitSyntheticWorldBuildKickoff({
+      guildId: interaction.guildId,
+      channelId: buildChannel.id,
+      userId: interaction.user.id,
+      worldId,
+      worldName,
+    });
   }
 
   private async handleWorldHelp(
@@ -630,7 +682,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       interaction,
       [
         "世界系统指令：",
-        "- /world create name:<世界名称>（默认仅管理员；可配置 world.createPolicy）",
+        "- /world create name:<世界名称> document:<设定文档>（默认仅管理员；可配置 world.createPolicy）",
         "- /world list [limit:<1-100>]",
         "- /world info world_id:<世界ID>",
         "- /world rules world_id:<世界ID>",
@@ -979,6 +1031,68 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await atomicWrite(agentPath, content);
   }
 
+  private async ensureWorldBuildGroupAgent(input: {
+    worldId: number;
+    worldName: string;
+  }): Promise<void> {
+    const groupId = buildWorldBuildGroupId(input.worldId);
+    const groupPath = await this.groupRepository.ensureGroupDir(groupId);
+    const agentPath = path.join(groupPath, "agent.md");
+    const content = buildWorldBuildAgentPrompt(input);
+    await atomicWrite(agentPath, content);
+  }
+
+  private async emitSyntheticWorldBuildKickoff(input: {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    worldId: number;
+    worldName: string;
+  }): Promise<void> {
+    if (this.listenerCount("event") === 0) {
+      return;
+    }
+    const botId = this.botUserId?.trim() ?? "";
+    if (!botId) {
+      return;
+    }
+    const content = [
+      `你现在在世界构建模式。`,
+      `请先读取 world/source.md，然后用技能 world-design-card 规范化并更新：`,
+      `- world/world-card.md（世界卡）`,
+      `- world/rules.md（底层规则，如初始金额/装备等）`,
+      ``,
+      `要求：`,
+      `1) 必须通过工具写入/编辑文件，不能只在聊天里输出。`,
+      `2) 回复中总结“你更新了什么”，并列出 3-5 个需要创作者补充的问题（缺什么问什么）。`,
+      ``,
+      `世界：W${input.worldId} ${input.worldName}`,
+    ].join("\n");
+
+    const messageId = `synthetic-world-build-${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}`;
+    await this.emitEvent({
+      type: "message",
+      platform: "discord",
+      selfId: botId,
+      userId: input.userId,
+      guildId: input.guildId,
+      channelId: input.channelId,
+      messageId,
+      content,
+      elements: [{ type: "text", text: content }],
+      timestamp: Date.now(),
+      extras: {
+        interactionId: messageId,
+        commandName: "world.create.kickoff",
+        channelId: input.channelId,
+        guildId: input.guildId,
+        userId: input.userId,
+      },
+    } satisfies SessionEvent<DiscordInteractionExtras>);
+  }
+
   private async registerSlashCommands(): Promise<void> {
     const applicationId =
       this.applicationId ?? this.client.application?.id ?? null;
@@ -1089,6 +1203,12 @@ function buildSlashCommands() {
           .setDescription("创建世界（默认仅管理员）")
           .addStringOption((option) =>
             option.setName("name").setDescription("世界名称").setRequired(true),
+          )
+          .addAttachmentOption((option) =>
+            option
+              .setName("document")
+              .setDescription("设定文档（txt/md/json/yaml，建议 <= 1MB）")
+              .setRequired(true),
           ),
       )
       .addSubcommand((sub) =>
@@ -1269,6 +1389,29 @@ function buildWorldBaseOverwrites(input: {
   };
 }
 
+function buildWorldBuildOverwrites(input: {
+  everyoneRoleId: string;
+  worldRoleId: string;
+  creatorUserId: string;
+  botUserId: string;
+}): Array<{ id: string; allow?: bigint[]; deny?: bigint[] }> {
+  const view = PermissionFlagsBits.ViewChannel;
+  const readHistory = PermissionFlagsBits.ReadMessageHistory;
+  const send = PermissionFlagsBits.SendMessages;
+
+  const allowBot =
+    input.botUserId && input.botUserId.trim()
+      ? [{ id: input.botUserId, allow: [view, readHistory, send] }]
+      : [];
+
+  return [
+    { id: input.everyoneRoleId, deny: [view] },
+    { id: input.worldRoleId, deny: [view] },
+    { id: input.creatorUserId, allow: [view, readHistory, send] },
+    ...allowBot,
+  ];
+}
+
 function buildWorldAgentPrompt(input: {
   worldId: number;
   worldName: string;
@@ -1285,6 +1428,31 @@ function buildWorldAgentPrompt(input: {
     `1) 世界正典与规则在会话工作区的 \`world/world-card.md\` 与 \`world/rules.md\`。回答前必须读取它们；不确定就说不知道，禁止编造。`,
     `2) 如果 \`world/active-character.md\` 存在：你必须以其中角色口吻进行对话（用户通过 /character act 设置）。否则你作为旁白/世界系统。`,
     `3) 当用户请求修改世界设定/正典时：不要直接改写文件；应引导走 /submit 或鼓励世界创作者用 /chronicle add。`,
+    ``,
+  ].join("\n");
+}
+
+function buildWorldBuildAgentPrompt(input: {
+  worldId: number;
+  worldName: string;
+}): string {
+  return [
+    `---`,
+    `name: World-${input.worldId}-Build`,
+    `version: 1`,
+    `---`,
+    ``,
+    `你在 Discord 世界系统中工作，当前是“世界创作/整理”模式：W${input.worldId} ${input.worldName}。`,
+    ``,
+    `目标：把创作者上传的设定文档规范化为可用的“世界卡 + 世界规则”，并持续补全。`,
+    ``,
+    `硬性规则：`,
+    `1) 设定原文在会话工作区的 \`world/source.md\`。`,
+    `2) 规范化后的产物必须写入：\`world/world-card.md\` 与 \`world/rules.md\`。你必须使用工具写入/编辑文件，禁止只在回复里输出。`,
+    `3) 每次回复都包含：变更摘要 + 需要创作者补充的 3-5 个问题（缺什么问什么，别问废话）。`,
+    `4) 你不是来写小说的，不要 roleplay。`,
+    ``,
+    `提示：你可以使用技能 \`world-design-card\` 来统一模板与字段。`,
     ``,
   ].join("\n");
 }

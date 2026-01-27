@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { SessionJob, SessionJobData } from "../queue";
@@ -28,7 +28,7 @@ import { appendInputAuditIfSuspicious } from "../opencode/input-audit";
 import { ensureOpencodeSkills } from "../opencode/skills";
 import { getConfig } from "../config";
 import { WorldFileStore } from "../world/file-store";
-import { parseWorldGroupId } from "../world/ids";
+import { parseWorldGroup } from "../world/ids";
 import { WorldStore } from "../world/store";
 import {
   parseOpencodeModelIdsCsv,
@@ -361,8 +361,34 @@ export class SessionProcessor {
       const output = resolveOutput(result.output);
       const auditedOutput = output ? redactSensitiveText(output) : undefined;
 
+      let responseOutput = auditedOutput;
+      const syncResult = await batchSpan("sync_world_files", async () => {
+        try {
+          const changed =
+            await this.syncWorldBuildFilesFromWorkspace(sessionInfo);
+          return { ok: true as const, changed };
+        } catch (err) {
+          return { ok: false as const, err };
+        }
+      });
+      if (!syncResult.ok) {
+        const message = `世界文件写回失败：${
+          syncResult.err instanceof Error
+            ? syncResult.err.message
+            : String(syncResult.err)
+        }`;
+        runtime.log.error({ err: syncResult.err }, "World file sync failed");
+        if (responseOutput) {
+          responseOutput = `${responseOutput}\n\n（系统）${message}`;
+        } else {
+          await batchSpan("sync_world_files_notify", async () =>
+            this.adapter.sendMessage(mergedWithTrace, `（系统）${message}`),
+          );
+        }
+      }
+
       await batchSpan("send_response", async () =>
-        this.sendResponse(mergedWithTrace, auditedOutput),
+        this.sendResponse(mergedWithTrace, responseOutput),
       );
       await batchSpan("append_history", async () =>
         this.appendHistoryFromJob(
@@ -371,7 +397,7 @@ export class SessionProcessor {
           historyKey,
           result.historyEntries?.filter((entry) => entry.role !== "assistant"),
           result.streamEvents,
-          auditedOutput,
+          responseOutput,
           { stdout: result.rawStdout, stderr: result.rawStderr },
         ),
       );
@@ -497,17 +523,19 @@ export class SessionProcessor {
   }
 
   private async ensureWorldWorkspace(sessionInfo: SessionInfo): Promise<void> {
-    const worldId = parseWorldGroupId(sessionInfo.meta.groupId);
-    if (!worldId) {
+    const parsed = parseWorldGroup(sessionInfo.meta.groupId);
+    if (!parsed) {
       return;
     }
+    const { worldId, kind } = parsed;
 
     const worldDir = path.join(sessionInfo.workspacePath, "world");
     await mkdir(worldDir, { recursive: true });
 
-    const [card, rules] = await Promise.all([
+    const [card, rules, source] = await Promise.all([
       this.worldFiles.readWorldCard(worldId),
       this.worldFiles.readRules(worldId),
+      kind === "build" ? this.worldFiles.readSourceDocument(worldId) : null,
     ]);
 
     await Promise.all([
@@ -520,6 +548,19 @@ export class SessionProcessor {
         rules ?? `# 世界规则（W${worldId}）\n`,
       ),
     ]);
+
+    const sourcePath = path.join(worldDir, "source.md");
+    if (kind === "build") {
+      if (source?.trim()) {
+        await atomicWrite(sourcePath, source);
+      } else {
+        await rm(sourcePath, { force: true });
+      }
+      await rm(path.join(worldDir, "active-character.md"), { force: true });
+      return;
+    }
+
+    await rm(sourcePath, { force: true });
 
     const activeCharacterId = await this.worldStore.getActiveCharacterId({
       worldId,
@@ -539,6 +580,66 @@ export class SessionProcessor {
       return;
     }
     await atomicWrite(activePath, characterCard);
+  }
+
+  private async syncWorldBuildFilesFromWorkspace(
+    sessionInfo: SessionInfo,
+  ): Promise<string[]> {
+    const parsed = parseWorldGroup(sessionInfo.meta.groupId);
+    if (!parsed || parsed.kind !== "build") {
+      return [];
+    }
+    const worldId = parsed.worldId;
+
+    const worldDir = path.join(sessionInfo.workspacePath, "world");
+    const readWorkspaceFile = async (
+      filename: string,
+    ): Promise<string | null> =>
+      readFile(path.join(worldDir, filename), "utf8").catch((err) => {
+        if (err && typeof err === "object" && "code" in err) {
+          const code = (err as { code?: unknown }).code;
+          if (code === "ENOENT") {
+            return null;
+          }
+        }
+        throw err;
+      });
+
+    const [workspaceCard, workspaceRules, storedCard, storedRules] =
+      await Promise.all([
+        readWorkspaceFile("world-card.md"),
+        readWorkspaceFile("rules.md"),
+        this.worldFiles.readWorldCard(worldId),
+        this.worldFiles.readRules(worldId),
+      ]);
+
+    const changed: string[] = [];
+    if (
+      workspaceCard?.trim() &&
+      workspaceCard.trimEnd() !== (storedCard ?? "").trimEnd()
+    ) {
+      await this.worldFiles.writeWorldCard(worldId, workspaceCard);
+      changed.push("world-card.md");
+    }
+    if (
+      workspaceRules?.trim() &&
+      workspaceRules.trimEnd() !== (storedRules ?? "").trimEnd()
+    ) {
+      await this.worldFiles.writeRules(worldId, workspaceRules);
+      changed.push("rules.md");
+    }
+
+    if (changed.length > 0) {
+      await this.worldFiles.appendEvent(worldId, {
+        type: "world_files_updated",
+        worldId,
+        userId: sessionInfo.meta.ownerId,
+        groupId: sessionInfo.meta.groupId,
+        files: changed,
+      });
+    }
+
+    return changed;
   }
 
   private async ensureOpencodeSessionId(

@@ -1,7 +1,7 @@
 import IORedis from "ioredis";
 import type { Logger } from "pino";
 import { logger as defaultLogger } from "../logger";
-import { normalizeWorldId, type WorldId } from "./ids";
+import { buildWorldGroupId, normalizeWorldId, type WorldId } from "./ids";
 import { assertSafePathSegment, isSafePathSegment } from "../utils/path";
 
 export type WorldStatus = "active" | "archived" | "failed";
@@ -119,6 +119,10 @@ export class WorldStore {
     multi.zadd(this.key("world:created_at"), Date.now(), String(meta.id));
     // Route mapping is only required for roleplay channel.
     multi.set(this.channelWorldKey(meta.roleplayChannelId), String(meta.id));
+    multi.set(
+      this.channelGroupKey(meta.roleplayChannelId),
+      buildWorldGroupId(meta.id),
+    );
     await multi.exec();
   }
 
@@ -155,6 +159,27 @@ export class WorldStore {
     }
     const parsed = Number(raw);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  async setChannelGroupId(channelId: string, groupId: string): Promise<void> {
+    const safeChannelId = channelId.trim();
+    if (!safeChannelId) {
+      throw new Error("channelId is required");
+    }
+    assertSafePathSegment(groupId, "groupId");
+    await this.redis.set(this.channelGroupKey(safeChannelId), groupId);
+  }
+
+  async getGroupIdByChannel(channelId: string): Promise<string | null> {
+    const safeChannelId = channelId.trim();
+    if (!safeChannelId) {
+      return null;
+    }
+    const raw = await this.redis.get(this.channelGroupKey(safeChannelId));
+    if (!raw) {
+      return null;
+    }
+    return isSafePathSegment(raw) ? raw : null;
   }
 
   async addMember(worldId: WorldId, userId: string): Promise<boolean> {
@@ -307,6 +332,14 @@ export class WorldStore {
       throw new Error("channelId is required");
     }
     return this.key(`channel:${trimmed}:world`);
+  }
+
+  private channelGroupKey(channelId: string): string {
+    const trimmed = channelId.trim();
+    if (!trimmed) {
+      throw new Error("channelId is required");
+    }
+    return this.key(`channel:${trimmed}:group`);
   }
 
   private characterMetaKey(characterId: number): string {

@@ -182,7 +182,7 @@ export class MessageDispatcher {
     let envelope = parsed.value;
     let forceEnqueue = false;
     if (runtime.message.guildId && this.worldStore) {
-      const worldId = await runtime.span(
+      const channelGroupId = await runtime.span(
         "resolve_world_channel",
         {
           message: {
@@ -193,11 +193,29 @@ export class MessageDispatcher {
           attrs: { channelId: runtime.message.channelId },
         },
         async () =>
-          this.worldStore?.getWorldIdByChannel(runtime.message.channelId),
+          this.worldStore?.getGroupIdByChannel?.(runtime.message.channelId),
       );
-      if (worldId) {
-        envelope = { ...envelope, groupId: buildWorldGroupId(worldId) };
+      if (channelGroupId) {
+        envelope = { ...envelope, groupId: channelGroupId };
         forceEnqueue = true;
+      } else {
+        const worldId = await runtime.span(
+          "resolve_world_channel_fallback",
+          {
+            message: {
+              ...runtime.baseSpanMessage,
+              botId: envelope.botId,
+              groupId: envelope.groupId,
+            },
+            attrs: { channelId: runtime.message.channelId },
+          },
+          async () =>
+            this.worldStore?.getWorldIdByChannel(runtime.message.channelId),
+        );
+        if (worldId) {
+          envelope = { ...envelope, groupId: buildWorldGroupId(worldId) };
+          forceEnqueue = true;
+        }
       }
     }
 

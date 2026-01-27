@@ -24,7 +24,8 @@ export type WorldFileKind =
   | "world_card"
   | "rules"
   | "events"
-  | "character_card";
+  | "character_card"
+  | "source_latest";
 
 export class WorldFileStore {
   private logger: Logger;
@@ -46,6 +47,7 @@ export class WorldFileStore {
     await mkdir(path.join(dir, "characters"), { recursive: true });
     await mkdir(path.join(dir, "map"), { recursive: true });
     await mkdir(path.join(dir, "canon"), { recursive: true });
+    await mkdir(path.join(dir, "sources"), { recursive: true });
     return dir;
   }
 
@@ -94,6 +96,28 @@ export class WorldFileStore {
     await appendFile(filePath, line, "utf8");
   }
 
+  async writeSourceDocument(
+    worldId: WorldId,
+    input: {
+      filename: string;
+      content: string;
+    },
+  ): Promise<{ latestPath: string; archivedPath: string }> {
+    const dir = await this.ensureWorldDir(worldId);
+    const safeFilename = sanitizeSourceFilename(input.filename);
+    const archivedName = `${Date.now()}-${safeFilename}`;
+    const archivedPath = path.join(dir, "sources", archivedName);
+    await this.atomicWrite(archivedPath, input.content);
+
+    const latestPath = this.worldFilePath(worldId, "source_latest");
+    await this.atomicWrite(latestPath, input.content);
+    return { latestPath, archivedPath };
+  }
+
+  async readSourceDocument(worldId: WorldId): Promise<string | null> {
+    return this.readTextFile(this.worldFilePath(worldId, "source_latest"));
+  }
+
   async ensureDefaultFiles(input: {
     worldId: WorldId;
     worldName: string;
@@ -128,6 +152,9 @@ export class WorldFileStore {
     if (kind === "events") {
       return path.join(dir, "events.jsonl");
     }
+    if (kind === "source_latest") {
+      return path.join(dir, "source.md");
+    }
     throw new Error(`Unknown world file kind: ${kind}`);
   }
 
@@ -160,6 +187,20 @@ export class WorldFileStore {
     );
     await rename(tmpPath, filePath);
   }
+}
+
+function sanitizeSourceFilename(filename: string): string {
+  const raw = filename.trim() || "document.txt";
+  const parts = raw.split("/").filter(Boolean);
+  const basename = parts.length > 0 ? parts[parts.length - 1] : raw;
+  const normalized = basename
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
+  const safe = normalized || "document.txt";
+  const capped = safe.length > 64 ? safe.slice(0, 64) : safe;
+  return capped.includes(".") ? capped : `${capped}.txt`;
 }
 
 function buildDefaultWorldCard(input: {

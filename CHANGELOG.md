@@ -18,6 +18,7 @@
 ### Changed
 
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
+- K8s：`llbot`（QQ）StatefulSet 默认 `replicas=0`（默认不启用，需要时再手动 scale）
 
 ### Fixed
 

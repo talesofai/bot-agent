@@ -5,7 +5,8 @@ metadata:
   namespace: bot
 spec:
   serviceName: llbot-0-headless
-  replicas: 3
+  # 默认关闭：本仓库主线以 Discord 为主；需要 QQ 时再手动 scale up。
+  replicas: 0
   selector:
     matchLabels:
       app: llbot

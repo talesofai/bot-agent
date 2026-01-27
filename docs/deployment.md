@@ -73,7 +73,7 @@ docker compose -f deployments/docker/docker-compose.yml up -d --force-recreate o
 
 ## Kubernetes 部署（仍在迭代）
 
-当前仓库已提供 `deployments/k8s/` 目录，采用 `llbot` StatefulSet（单 Pod 内含 `luckylillia` + `pmhq` 两个容器）：
+当前仓库已提供 `deployments/k8s/` 目录。`llbot`（QQ）为可选组件，默认不启用（`deployments/k8s/llbot-statefulset.yaml` 的 `replicas=0`）；仅需要 QQ 时再手动 scale：
 
 - `deployments/k8s/bot-namespace.yaml`
 - `deployments/k8s/bot-data-pvc.yaml`（Bot Agent /data 持久化）
@@ -303,6 +303,7 @@ kubectl apply -f deployments/k8s/llbot-secret.yaml
 kubectl apply -f deployments/k8s/llbot-configmap.yaml
 kubectl apply -f deployments/k8s/llbot-services.yaml
 kubectl apply -f deployments/k8s/llbot-statefulset.yaml
+# 如需启用 QQ llbot：kubectl -n bot scale statefulset/llbot --replicas=3
 kubectl apply -f deployments/k8s/opencode-bot-agent-adapter.yaml
 kubectl apply -f deployments/k8s/opencode-bot-agent-worker.yaml
 kubectl apply -f deployments/k8s/session-cleaner-cronjob.yaml

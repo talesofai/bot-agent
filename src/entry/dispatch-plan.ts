@@ -117,6 +117,7 @@ export function routeDispatch(input: {
   groupConfig: GroupConfig;
   routerSnapshot: RouterSnapshot | null | undefined;
   botId: string;
+  forceEnqueue?: boolean;
 }): DispatchRoutingPlan {
   const globalKeywords = input.routerSnapshot?.globalKeywords ?? [];
   const globalEchoRate = input.routerSnapshot?.globalEchoRate ?? 30;
@@ -133,7 +134,10 @@ export function routeDispatch(input: {
     globalEchoRate,
   );
 
-  if (!shouldEnqueue({ message: input.message, rule: triggerRule })) {
+  if (
+    !input.forceEnqueue &&
+    !shouldEnqueue({ message: input.message, rule: triggerRule })
+  ) {
     return { kind: "passive", echoRate: effectiveEchoRate };
   }
 

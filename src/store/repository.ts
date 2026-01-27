@@ -36,6 +36,9 @@ keywordRouting:
   enableBot: true
 echoRate: null
 adminUsers: []
+world:
+  createPolicy: admin
+  createWhitelist: []
 maxSessions: 1
 push:
   enabled: false

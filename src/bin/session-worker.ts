@@ -50,15 +50,6 @@ async function main(): Promise<void> {
   });
   shutdownController.installSignalHandlers();
 
-  if (!config.DATABASE_URL) {
-    logger.error("DATABASE_URL is required for session worker");
-    await shutdownController.shutdown({
-      exitCode: 1,
-      reason: "missing DATABASE_URL",
-    });
-    return;
-  }
-
   botMessageStore = new BotMessageStore({
     redisUrl: config.REDIS_URL,
     logger,
@@ -112,7 +103,6 @@ async function main(): Promise<void> {
     id: "worker-1",
     dataDir: config.GROUPS_DATA_DIR,
     adapter: multiAdapter,
-    databaseUrl: config.DATABASE_URL,
     opencodeClient,
     onFatalError: async (err) => {
       logger.error({ err }, "Session worker crashed");

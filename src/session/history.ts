@@ -33,6 +33,20 @@ export interface HistoryStore {
   close(): Promise<void>;
 }
 
+export class NoopHistoryStore implements HistoryStore {
+  async readHistory(): Promise<HistoryEntry[]> {
+    return [];
+  }
+
+  async readGroupHistory(): Promise<HistoryEntry[]> {
+    return [];
+  }
+
+  async appendHistory(): Promise<void> {}
+
+  async close(): Promise<void> {}
+}
+
 export class InMemoryHistoryStore implements HistoryStore {
   private entries = new Map<string, HistoryEntry[]>();
 

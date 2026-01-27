@@ -7,12 +7,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- Discord：新增世界系统（`/world create|list|info|rules|join|stats`），世界全局共享（单 `homeGuild`），通过 World Role 实现“能看到但不能进入/写”
+- Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`），并可通过 `/character act` 让 bot 在世界入口频道扮演角色
+- World：新增 `channelId -> worldId` 路由与 world roleplay 频道 always-on（绕过 mention/keyword 触发），会话隔离为 `groupId=world_{worldId}` 并注入 `world/world-card.md`、`world/rules.md`、`world/active-character.md`
+- 持久化：Redis 维护自增 ID / meta / 成员与角色集合；`/data/worlds/{worldId}` 落地世界卡/规则/角色卡/事件流
+- Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
+
+### Changed
+
+- History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
+
 ### Fixed
 
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Router：移除 `ensureBotConfig()` 的 `ensuredBots` 内存缓存，避免配置文件被删/重建后留下假状态
 - Opencode：`ensureOpencodeSkills()` 增加 workspace 同步哨兵，未变化时跳过全量 rm+cp，降低批处理 I/O
+- World：Redis 连接改为 lazy connect，避免测试环境出现 net 超时与 between-tests 未处理错误
 
 ## [0.0.30] - 2026-01-24
 

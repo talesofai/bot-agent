@@ -1,5 +1,8 @@
 import type { Logger } from "pino";
 
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import type { SessionJob, SessionJobData } from "../queue";
 import type { PlatformAdapter, SessionEvent } from "../types/platform";
 import type { HistoryEntry, SessionInfo } from "../types/session";
@@ -24,6 +27,9 @@ import type { OpencodeClient } from "../opencode/server-client";
 import { appendInputAuditIfSuspicious } from "../opencode/input-audit";
 import { ensureOpencodeSkills } from "../opencode/skills";
 import { getConfig } from "../config";
+import { WorldFileStore } from "../world/file-store";
+import { parseWorldGroupId } from "../world/ids";
+import { WorldStore } from "../world/store";
 import {
   parseOpencodeModelIdsCsv,
   selectOpencodeModelId,
@@ -80,6 +86,8 @@ export class SessionProcessor {
   private runner: OpencodeRunner;
   private activityIndex: SessionActivityIndex;
   private bufferStore: SessionBuffer;
+  private worldStore: WorldStore;
+  private worldFiles: WorldFileStore;
 
   constructor(options: SessionProcessorOptions) {
     this.logger = options.logger.child({ component: "session-processor" });
@@ -91,6 +99,13 @@ export class SessionProcessor {
     this.runner = options.runner;
     this.activityIndex = options.activityIndex;
     this.bufferStore = options.bufferStore;
+
+    const config = getConfig();
+    this.worldStore = new WorldStore({
+      redisUrl: config.REDIS_URL,
+      logger: this.logger,
+    });
+    this.worldFiles = new WorldFileStore({ logger: this.logger });
   }
 
   async process(
@@ -374,6 +389,7 @@ export class SessionProcessor {
     await this.activityIndex.close();
     await this.bufferStore.close();
     await this.historyStore.close();
+    await this.worldStore.close();
   }
 
   private async buildPromptContext(
@@ -418,6 +434,10 @@ export class SessionProcessor {
     );
     const agentPrompt = await span("load_agent_prompt", async () =>
       this.getAgentPrompt(groupId),
+    );
+
+    await span("ensure_world_workspace", async () =>
+      this.ensureWorldWorkspace(sessionInfo),
     );
 
     await span("ensure_opencode_skills", async () =>
@@ -474,6 +494,51 @@ export class SessionProcessor {
     };
 
     return { history: [], request };
+  }
+
+  private async ensureWorldWorkspace(sessionInfo: SessionInfo): Promise<void> {
+    const worldId = parseWorldGroupId(sessionInfo.meta.groupId);
+    if (!worldId) {
+      return;
+    }
+
+    const worldDir = path.join(sessionInfo.workspacePath, "world");
+    await mkdir(worldDir, { recursive: true });
+
+    const [card, rules] = await Promise.all([
+      this.worldFiles.readWorldCard(worldId),
+      this.worldFiles.readRules(worldId),
+    ]);
+
+    await Promise.all([
+      atomicWrite(
+        path.join(worldDir, "world-card.md"),
+        card ?? `# 世界卡（W${worldId}）\n`,
+      ),
+      atomicWrite(
+        path.join(worldDir, "rules.md"),
+        rules ?? `# 世界规则（W${worldId}）\n`,
+      ),
+    ]);
+
+    const activeCharacterId = await this.worldStore.getActiveCharacterId({
+      worldId,
+      userId: sessionInfo.meta.ownerId,
+    });
+    const activePath = path.join(worldDir, "active-character.md");
+    if (!activeCharacterId) {
+      await rm(activePath, { force: true });
+      return;
+    }
+    const characterCard = await this.worldFiles.readCharacterCard(
+      worldId,
+      activeCharacterId,
+    );
+    if (!characterCard) {
+      await rm(activePath, { force: true });
+      return;
+    }
+    await atomicWrite(activePath, characterCard);
   }
 
   private async ensureOpencodeSessionId(
@@ -874,4 +939,18 @@ function isLikelyOpencodeSessionId(value: string): boolean {
   return (
     /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/.test(value) || value.startsWith("ses_")
   );
+}
+
+async function atomicWrite(filePath: string, content: string): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const tmpPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  await writeFile(
+    tmpPath,
+    content.endsWith("\n") ? content : `${content}\n`,
+    "utf8",
+  );
+  await rename(tmpPath, filePath);
 }

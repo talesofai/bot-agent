@@ -16,6 +16,7 @@ import type { SessionJobData } from "../../queue";
 import type { SessionBuffer, SessionBufferKey } from "../../session/buffer";
 import { GroupStore } from "../../store";
 import { SessionRepository } from "../../session";
+import type { WorldStore } from "../../world/store";
 import { EchoTracker } from "../echo";
 import { MessageDispatcher } from "../message-dispatcher";
 import { resolveDispatchGroupId } from "../message-dispatcher";
@@ -401,6 +402,107 @@ describe("MessageDispatcher telemetry propagation", () => {
         traceId?: string;
       };
       expect(extras.traceId).toBe(jobData.traceId);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("MessageDispatcher world routing", () => {
+  test("forces enqueue and rewrites groupId when channel is mapped to a world", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const adapter = new MemoryAdapter();
+    const groupStore = new GroupStore({ dataDir: tempDir, logger });
+    await groupStore.init();
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const bufferStore = new CapturingSessionBuffer();
+    const sessionQueue = new CapturingSessionQueue();
+
+    const dispatcher = new MessageDispatcher({
+      adapter,
+      groupStore,
+      routerStore: null,
+      sessionRepository,
+      sessionQueue: sessionQueue as unknown as BullmqSessionQueue,
+      bufferStore,
+      echoTracker: new EchoTracker({ store: new MemoryEchoStore() }),
+      worldStore: {
+        getWorldIdByChannel: async () => 1,
+      } as unknown as WorldStore,
+      logger,
+    });
+
+    try {
+      await dispatcher.dispatch({
+        type: "message",
+        platform: "discord",
+        selfId: "123",
+        userId: "999",
+        guildId: "guild1",
+        channelId: "channel-world",
+        messageId: "msg1",
+        content: "hello",
+        elements: [{ type: "text", text: "hello" }],
+        timestamp: Date.now(),
+        extras: {},
+      });
+
+      expect(sessionQueue.jobs).toHaveLength(1);
+      expect(sessionQueue.jobs[0]?.groupId).toBe("world_1");
+      expect(bufferStore.lastKey?.groupId).toBe("world_1");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not enqueue when message is not a trigger outside world channels", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const adapter = new MemoryAdapter();
+    const groupStore = new GroupStore({ dataDir: tempDir, logger });
+    await groupStore.init();
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const bufferStore = new CapturingSessionBuffer();
+    const sessionQueue = new CapturingSessionQueue();
+
+    const dispatcher = new MessageDispatcher({
+      adapter,
+      groupStore,
+      routerStore: null,
+      sessionRepository,
+      sessionQueue: sessionQueue as unknown as BullmqSessionQueue,
+      bufferStore,
+      echoTracker: new EchoTracker({ store: new MemoryEchoStore() }),
+      worldStore: {
+        getWorldIdByChannel: async () => null,
+      } as unknown as WorldStore,
+      logger,
+    });
+
+    try {
+      await dispatcher.dispatch({
+        type: "message",
+        platform: "discord",
+        selfId: "123",
+        userId: "999",
+        guildId: "guild1",
+        channelId: "channel1",
+        messageId: "msg1",
+        content: "hello",
+        elements: [{ type: "text", text: "hello" }],
+        timestamp: Date.now(),
+        extras: {},
+      });
+
+      expect(sessionQueue.jobs).toHaveLength(0);
+      expect(bufferStore.lastKey).toBeNull();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

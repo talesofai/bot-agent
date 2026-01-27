@@ -14,6 +14,15 @@ export const KeywordRoutingSchema = z.object({
 export type KeywordRouting = z.infer<typeof KeywordRoutingSchema>;
 export const EchoRateSchema = z.number().int().min(0).max(100);
 
+export const WorldCreatePolicySchema = z.enum(["admin", "whitelist", "open"]);
+
+export const WorldConfigSchema = z
+  .object({
+    createPolicy: WorldCreatePolicySchema.default("admin"),
+    createWhitelist: z.array(z.string()).default([]),
+  })
+  .default({ createPolicy: "admin", createWhitelist: [] });
+
 /**
  * Group configuration schema with zod validation
  */
@@ -28,6 +37,7 @@ export const GroupConfigSchema = z.object({
   }),
   echoRate: EchoRateSchema.nullable().default(null),
   adminUsers: z.array(z.string()).default([]),
+  world: WorldConfigSchema,
   maxSessions: z.number().int().min(1).default(1),
   model: z.string().optional(),
   push: z
@@ -103,6 +113,10 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = {
   },
   echoRate: null,
   adminUsers: [],
+  world: {
+    createPolicy: "admin",
+    createWhitelist: [],
+  },
   maxSessions: 1,
   push: {
     enabled: false,

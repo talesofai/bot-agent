@@ -11,6 +11,8 @@ import { getConfig } from "../config";
 import { parseOpencodeModelIdsCsv } from "../opencode/model-ids";
 import type { BotMessageStore } from "../store/bot-message-store";
 import type { GroupRouteStore } from "../store/group-route-store";
+import type { WorldStore } from "../world/store";
+import { buildWorldGroupId } from "../world/ids";
 import { EchoTracker } from "./echo";
 import { isSafePathSegment } from "../utils/path";
 import type { SessionBuffer } from "../session/buffer";
@@ -43,6 +45,7 @@ export interface MessageDispatcherOptions {
   echoTracker: EchoTracker;
   botMessageStore?: BotMessageStore;
   groupRouteStore?: GroupRouteStore;
+  worldStore?: WorldStore;
   logger: Logger;
   forceGroupId?: string;
 }
@@ -75,6 +78,7 @@ export class MessageDispatcher {
   private echoTracker: EchoTracker;
   private botMessageStore?: BotMessageStore;
   private groupRouteStore?: GroupRouteStore;
+  private worldStore?: WorldStore;
   private logger: Logger;
   private forceGroupId?: string;
 
@@ -88,6 +92,7 @@ export class MessageDispatcher {
     this.echoTracker = options.echoTracker;
     this.botMessageStore = options.botMessageStore;
     this.groupRouteStore = options.groupRouteStore;
+    this.worldStore = options.worldStore;
     this.logger = options.logger;
     const forceGroupId = options.forceGroupId?.trim();
     this.forceGroupId = forceGroupId ? forceGroupId : undefined;
@@ -174,7 +179,28 @@ export class MessageDispatcher {
       return;
     }
 
-    const envelope = parsed.value;
+    let envelope = parsed.value;
+    let forceEnqueue = false;
+    if (runtime.message.guildId && this.worldStore) {
+      const worldId = await runtime.span(
+        "resolve_world_channel",
+        {
+          message: {
+            ...runtime.baseSpanMessage,
+            botId: envelope.botId,
+            groupId: envelope.groupId,
+          },
+          attrs: { channelId: runtime.message.channelId },
+        },
+        async () =>
+          this.worldStore?.getWorldIdByChannel(runtime.message.channelId),
+      );
+      if (worldId) {
+        envelope = { ...envelope, groupId: buildWorldGroupId(worldId) };
+        forceEnqueue = true;
+      }
+    }
+
     const { groupId, rawBotId, canonicalBotId, botId } = envelope;
 
     if (canonicalBotId !== rawBotId) {
@@ -230,6 +256,7 @@ export class MessageDispatcher {
       groupConfig: auth.groupConfig,
       routerSnapshot,
       botId,
+      forceEnqueue,
     });
 
     await this.handleDispatchRouting({

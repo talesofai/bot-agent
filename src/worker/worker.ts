@@ -6,7 +6,7 @@ import type { SessionJobData } from "../queue";
 import { GroupFileRepository } from "../store/repository";
 import { SessionRepository } from "../session/repository";
 import type { HistoryStore } from "../session/history";
-import { PostgresHistoryStore } from "../session/history";
+import { NoopHistoryStore } from "../session/history";
 import type { OpencodeRunner } from "./runner";
 import type { OpencodeClient } from "../opencode/server-client";
 import type { PlatformAdapter } from "../types/platform";
@@ -20,7 +20,6 @@ export interface SessionWorkerOptions {
   id: string;
   dataDir: string;
   adapter: PlatformAdapter;
-  databaseUrl?: string;
   historyStore?: HistoryStore;
   opencodeClient: OpencodeClient;
   onFatalError?: (err: unknown) => void | Promise<void>;
@@ -64,9 +63,7 @@ export class SessionWorker {
       dataDir: options.dataDir,
       logger: this.logger,
     });
-    const historyStore =
-      options.historyStore ??
-      createDefaultHistoryStore(this.logger, options.databaseUrl);
+    const historyStore = options.historyStore ?? new NoopHistoryStore();
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
 
@@ -178,14 +175,4 @@ export class SessionWorker {
     assertValidSessionKey(jobData.key);
     return jobData;
   }
-}
-
-function createDefaultHistoryStore(
-  logger: Logger,
-  databaseUrl: string | undefined,
-): HistoryStore {
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required for Postgres history store");
-  }
-  return new PostgresHistoryStore(logger, { databaseUrl });
 }

@@ -18,6 +18,7 @@ import { BotMessageStore } from "../store/bot-message-store";
 import { GroupRouteStore } from "../store/group-route-store";
 import { GroupHotPushScheduler } from "../push/scheduler";
 import { createGracefulShutdown } from "../utils/graceful-shutdown";
+import { WorldStore } from "../world/store";
 
 const config = getConfig();
 
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   let httpServer: HttpServer | null = null;
   let botMessageStore: BotMessageStore | null = null;
   let groupRouteStore: GroupRouteStore | null = null;
+  let worldStore: WorldStore | null = null;
   let sessionQueue: BullmqSessionQueue | null = null;
   let bufferStore: SessionBufferStore | null = null;
   let echoTracker: EchoTracker | null = null;
@@ -52,6 +54,7 @@ async function main(): Promise<void> {
         await sessionQueue?.close();
         await botMessageStore?.close();
         await groupRouteStore?.close();
+        await worldStore?.close();
         if (adapter && bot) {
           await adapter.disconnect(bot);
         }
@@ -72,6 +75,10 @@ async function main(): Promise<void> {
     logger,
   });
   groupRouteStore = new GroupRouteStore({
+    redisUrl: config.REDIS_URL,
+    logger,
+  });
+  worldStore = new WorldStore({
     redisUrl: config.REDIS_URL,
     logger,
   });
@@ -172,6 +179,7 @@ async function main(): Promise<void> {
     echoTracker,
     botMessageStore,
     groupRouteStore,
+    worldStore,
     logger,
     forceGroupId: config.FORCE_GROUP_ID,
   });

@@ -38,6 +38,7 @@
 - Opencode：`ensureOpencodeSkills()` 增加 workspace 同步哨兵，未变化时跳过全量 rm+cp，降低批处理 I/O
 - World：Redis 连接改为 lazy connect，避免测试环境出现 net 超时与 between-tests 未处理错误
 - Discord：修复 `/character create` 的参数顺序导致 Slash Commands 注册失败（进而缺失 `/world`）
+- Discord：世界构建/编辑会话创建支持兜底：当无法创建 Thread 时回退到 creator-only 临时频道，并允许在该频道内执行 `/world close` 完成发布/关闭；同时补齐频道权限以支持线程内发言/创建线程
 
 ## [0.0.30] - 2026-01-24
 

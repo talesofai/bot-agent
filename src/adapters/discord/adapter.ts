@@ -610,45 +610,80 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
       let buildConversationChannelId: string | null = null;
       let buildConversationMention = "(创建话题失败)";
+      const threadName = worldNameRaw
+        ? `世界创建 W${worldId} ${worldNameRaw}`
+        : `世界创建 W${worldId}`;
       try {
-        const baseChannel = await guild.channels.fetch(interaction.channelId);
-        if (!baseChannel) {
-          throw new Error("channel not found");
-        }
-        const thread = await (
-          baseChannel as unknown as {
-            threads: {
-              create: (input: Record<string, unknown>) => Promise<{
-                id: string;
-                members?: { add: (userId: string) => Promise<unknown> };
-              }>;
-            };
-          }
-        ).threads.create({
-          name: worldNameRaw
-            ? `世界创建 W${worldId} ${worldNameRaw}`
-            : `世界创建 W${worldId}`,
-          type: ChannelType.PrivateThread,
-          invitable: false,
-          autoArchiveDuration: 1440,
+        const created = await this.tryCreatePrivateThread({
+          guild,
+          parentChannelId: interaction.channelId,
+          name: threadName,
           reason: `world draft by ${interaction.user.id}`,
+          memberUserId: interaction.user.id,
         });
-        await thread.members?.add(interaction.user.id);
-        await this.worldStore.setChannelGroupId(
-          thread.id,
-          buildWorldBuildGroupId(worldId),
-        );
-        buildConversationChannelId = thread.id;
-        buildConversationMention = `<#${thread.id}>`;
-        await this.worldFiles.appendEvent(worldId, {
-          type: "world_draft_thread_created",
-          worldId,
-          guildId: interaction.guildId,
-          userId: interaction.user.id,
-          threadId: thread.id,
-        });
+        if (created) {
+          buildConversationChannelId = created.threadId;
+          buildConversationMention = `<#${created.threadId}>`;
+          await this.worldStore.setChannelGroupId(
+            created.threadId,
+            buildWorldBuildGroupId(worldId),
+          );
+          await this.worldFiles.appendEvent(worldId, {
+            type: "world_draft_thread_created",
+            worldId,
+            guildId: interaction.guildId,
+            userId: interaction.user.id,
+            threadId: created.threadId,
+            parentChannelId: created.parentChannelId,
+          });
+        } else {
+          const fallbackChannel = await this.createCreatorOnlyChannel({
+            guild,
+            name: `world-build-draft-w${worldId}`,
+            creatorUserId: interaction.user.id,
+            reason: `world draft by ${interaction.user.id}`,
+          });
+          const fallbackThread = await this.tryCreatePrivateThread({
+            guild,
+            parentChannelId: fallbackChannel.id,
+            name: threadName,
+            reason: `world draft by ${interaction.user.id}`,
+            memberUserId: interaction.user.id,
+          });
+          if (fallbackThread) {
+            buildConversationChannelId = fallbackThread.threadId;
+            buildConversationMention = `<#${fallbackThread.threadId}>`;
+            await this.worldStore.setChannelGroupId(
+              fallbackThread.threadId,
+              buildWorldBuildGroupId(worldId),
+            );
+            await this.worldFiles.appendEvent(worldId, {
+              type: "world_draft_thread_created",
+              worldId,
+              guildId: interaction.guildId,
+              userId: interaction.user.id,
+              threadId: fallbackThread.threadId,
+              parentChannelId: fallbackThread.parentChannelId,
+              fallbackParentChannelId: fallbackChannel.id,
+            });
+          } else {
+            buildConversationChannelId = fallbackChannel.id;
+            buildConversationMention = `<#${fallbackChannel.id}>`;
+            await this.worldStore.setChannelGroupId(
+              fallbackChannel.id,
+              buildWorldBuildGroupId(worldId),
+            );
+            await this.worldFiles.appendEvent(worldId, {
+              type: "world_draft_build_channel_created",
+              worldId,
+              guildId: interaction.guildId,
+              userId: interaction.user.id,
+              channelId: fallbackChannel.id,
+            });
+          }
+        }
       } catch (err) {
-        this.logger.warn({ err }, "Failed to create world build thread");
+        this.logger.warn({ err }, "Failed to create world build conversation");
       }
 
       if (buildConversationChannelId) {
@@ -1105,40 +1140,74 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     let buildConversationChannelId: string | null = null;
     let buildConversationMention = "(创建话题失败)";
     try {
-      const parent = await guild.channels.fetch(parentChannelId);
-      if (!parent) {
-        throw new Error("channel not found");
-      }
-      const thread = await (
-        parent as unknown as {
-          threads: {
-            create: (input: Record<string, unknown>) => Promise<{
-              id: string;
-              members?: { add: (userId: string) => Promise<unknown> };
-            }>;
-          };
-        }
-      ).threads.create({
+      const created = await this.tryCreatePrivateThread({
+        guild,
+        parentChannelId,
         name: `世界编辑 W${meta.id}`,
-        type: ChannelType.PrivateThread,
-        invitable: false,
-        autoArchiveDuration: 1440,
         reason: `world edit by ${interaction.user.id}`,
+        memberUserId: interaction.user.id,
       });
-      await thread.members?.add(interaction.user.id);
-      await this.worldStore.setChannelGroupId(
-        thread.id,
-        buildWorldBuildGroupId(meta.id),
-      );
-      buildConversationChannelId = thread.id;
-      buildConversationMention = `<#${thread.id}>`;
-      await this.worldFiles.appendEvent(meta.id, {
-        type: "world_edit_thread_created",
-        worldId: meta.id,
-        guildId: interaction.guildId,
-        userId: interaction.user.id,
-        threadId: thread.id,
-      });
+      if (created) {
+        buildConversationChannelId = created.threadId;
+        buildConversationMention = `<#${created.threadId}>`;
+        await this.worldStore.setChannelGroupId(
+          created.threadId,
+          buildWorldBuildGroupId(meta.id),
+        );
+        await this.worldFiles.appendEvent(meta.id, {
+          type: "world_edit_thread_created",
+          worldId: meta.id,
+          guildId: interaction.guildId,
+          userId: interaction.user.id,
+          threadId: created.threadId,
+          parentChannelId: created.parentChannelId,
+        });
+      } else {
+        const fallbackChannel = await this.createCreatorOnlyChannel({
+          guild,
+          name: `world-edit-w${meta.id}`,
+          creatorUserId: interaction.user.id,
+          reason: `world edit by ${interaction.user.id}`,
+        });
+        const fallbackThread = await this.tryCreatePrivateThread({
+          guild,
+          parentChannelId: fallbackChannel.id,
+          name: `世界编辑 W${meta.id}`,
+          reason: `world edit by ${interaction.user.id}`,
+          memberUserId: interaction.user.id,
+        });
+        if (fallbackThread) {
+          buildConversationChannelId = fallbackThread.threadId;
+          buildConversationMention = `<#${fallbackThread.threadId}>`;
+          await this.worldStore.setChannelGroupId(
+            fallbackThread.threadId,
+            buildWorldBuildGroupId(meta.id),
+          );
+          await this.worldFiles.appendEvent(meta.id, {
+            type: "world_edit_thread_created",
+            worldId: meta.id,
+            guildId: interaction.guildId,
+            userId: interaction.user.id,
+            threadId: fallbackThread.threadId,
+            parentChannelId: fallbackThread.parentChannelId,
+            fallbackParentChannelId: fallbackChannel.id,
+          });
+        } else {
+          buildConversationChannelId = fallbackChannel.id;
+          buildConversationMention = `<#${fallbackChannel.id}>`;
+          await this.worldStore.setChannelGroupId(
+            fallbackChannel.id,
+            buildWorldBuildGroupId(meta.id),
+          );
+          await this.worldFiles.appendEvent(meta.id, {
+            type: "world_edit_build_channel_created",
+            worldId: meta.id,
+            guildId: interaction.guildId,
+            userId: interaction.user.id,
+            channelId: fallbackChannel.id,
+          });
+        }
+      }
     } catch (err) {
       this.logger.warn({ err }, "Failed to create world edit thread");
     }
@@ -1175,23 +1244,27 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     const channel = interaction.channel;
-    if (!channel || !("isThread" in channel) || !channel.isThread()) {
-      await safeReply(interaction, "请在世界构建/编辑话题（Thread）内执行。", {
-        ephemeral: false,
-      });
-      return;
-    }
-
     const groupId = await this.worldStore.getGroupIdByChannel(
       interaction.channelId,
     );
     const parsed = groupId ? parseWorldGroup(groupId) : null;
     if (!parsed || parsed.kind !== "build") {
-      await safeReply(interaction, "当前话题不属于世界构建会话，无法关闭。", {
+      await safeReply(interaction, "当前频道不属于世界构建会话，无法关闭。", {
         ephemeral: false,
       });
       return;
     }
+    if (!channel) {
+      await safeReply(interaction, "无法获取频道信息，请稍后重试。", {
+        ephemeral: false,
+      });
+      return;
+    }
+    const isThread =
+      "isThread" in channel &&
+      typeof (channel as { isThread?: () => boolean }).isThread ===
+        "function" &&
+      (channel as { isThread: () => boolean }).isThread();
 
     const world = await this.worldStore.getWorld(parsed.worldId);
     if (!world) {
@@ -1204,6 +1277,20 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(interaction, "无权限：只有世界创作者可以关闭该话题。", {
         ephemeral: false,
       });
+      return;
+    }
+
+    if (
+      !isThread &&
+      world.status !== "draft" &&
+      "buildChannelId" in world &&
+      world.buildChannelId === interaction.channelId
+    ) {
+      await safeReply(
+        interaction,
+        "请在世界构建/编辑话题（Thread）内执行 /world close。当前频道用于承载话题，请先用 /world edit 创建话题。",
+        { ephemeral: false },
+      );
       return;
     }
 
@@ -1306,26 +1393,41 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       );
     }
 
-    try {
-      await (
-        channel as unknown as { setArchived: (v: boolean) => Promise<unknown> }
-      ).setArchived(true);
-    } catch {
-      // ignore
-    }
-    try {
-      await (
-        channel as unknown as { setLocked: (v: boolean) => Promise<unknown> }
-      ).setLocked(true);
-    } catch {
-      // ignore
+    if (isThread) {
+      try {
+        await (
+          channel as unknown as {
+            setArchived: (v: boolean) => Promise<unknown>;
+          }
+        ).setArchived(true);
+      } catch {
+        // ignore
+      }
+      try {
+        await (
+          channel as unknown as { setLocked: (v: boolean) => Promise<unknown> }
+        ).setLocked(true);
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        await (
+          channel as unknown as {
+            delete: (reason?: string) => Promise<unknown>;
+          }
+        ).delete("world build closed");
+      } catch {
+        // ignore
+      }
     }
 
     await this.worldFiles.appendEvent(world.id, {
       type: "world_build_closed",
       worldId: world.id,
       userId: interaction.user.id,
-      threadId: interaction.channelId,
+      channelId: interaction.channelId,
+      isThread,
     });
   }
 
@@ -1701,6 +1803,122 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       userId: interaction.user.id,
       threadId: interaction.channelId,
     });
+  }
+
+  private async tryCreatePrivateThread(input: {
+    guild: NonNullable<ChatInputCommandInteraction["guild"]>;
+    parentChannelId: string;
+    name: string;
+    reason: string;
+    memberUserId: string;
+  }): Promise<{ threadId: string; parentChannelId: string } | null> {
+    const resolvedParentId = input.parentChannelId.trim();
+    if (!resolvedParentId) {
+      return null;
+    }
+    const base = await input.guild.channels
+      .fetch(resolvedParentId)
+      .catch(() => {
+        return null;
+      });
+    if (!base) {
+      return null;
+    }
+
+    let parentChannel: unknown = base;
+    if (
+      parentChannel &&
+      typeof parentChannel === "object" &&
+      "isThread" in parentChannel &&
+      typeof (parentChannel as { isThread?: () => boolean }).isThread ===
+        "function" &&
+      (parentChannel as { isThread: () => boolean }).isThread()
+    ) {
+      const parentId = (parentChannel as { parentId?: unknown }).parentId;
+      if (typeof parentId === "string" && parentId.trim()) {
+        const fetched = await input.guild.channels.fetch(parentId).catch(() => {
+          return null;
+        });
+        if (fetched) {
+          parentChannel = fetched;
+        }
+      }
+    }
+
+    const creator = (
+      parentChannel as unknown as {
+        threads?: {
+          create?: (input: Record<string, unknown>) => Promise<unknown>;
+        };
+      }
+    ).threads?.create;
+    if (typeof creator !== "function") {
+      return null;
+    }
+
+    const thread = await (
+      parentChannel as unknown as {
+        threads: {
+          create: (input: Record<string, unknown>) => Promise<{
+            id: string;
+            members?: { add: (userId: string) => Promise<unknown> };
+          }>;
+        };
+      }
+    ).threads.create({
+      name: input.name,
+      type: ChannelType.PrivateThread,
+      invitable: false,
+      autoArchiveDuration: 1440,
+      reason: input.reason,
+    });
+    await thread.members?.add(input.memberUserId);
+
+    const parentChannelId =
+      parentChannel &&
+      typeof parentChannel === "object" &&
+      "id" in parentChannel &&
+      typeof (parentChannel as { id?: unknown }).id === "string"
+        ? ((parentChannel as { id: string }).id as string)
+        : resolvedParentId;
+    return { threadId: thread.id, parentChannelId };
+  }
+
+  private async createCreatorOnlyChannel(input: {
+    guild: NonNullable<ChatInputCommandInteraction["guild"]>;
+    name: string;
+    creatorUserId: string;
+    reason: string;
+  }): Promise<{ id: string }> {
+    const channelName = input.name.trim();
+    if (!channelName) {
+      throw new Error("channel name is required");
+    }
+    const existing = input.guild.channels.cache.find(
+      (candidate) =>
+        candidate.type === ChannelType.GuildText &&
+        candidate.name === channelName,
+    );
+    if (existing) {
+      return { id: existing.id };
+    }
+
+    const botUserId = this.botUserId ?? this.client.user?.id ?? "";
+    if (!botUserId) {
+      throw new Error("Bot 尚未就绪，无法创建频道。");
+    }
+    const overwrites = buildDraftCreatorOnlyOverwrites({
+      everyoneRoleId: input.guild.roles.everyone.id,
+      creatorUserId: input.creatorUserId,
+      botUserId,
+    });
+    const channel = await input.guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      permissionOverwrites: overwrites,
+      reason: input.reason,
+    });
+    return { id: channel.id };
   }
 
   private async createWorldSubspace(input: {
@@ -2315,12 +2533,25 @@ function buildWorldBaseOverwrites(input: {
   const view = PermissionFlagsBits.ViewChannel;
   const readHistory = PermissionFlagsBits.ReadMessageHistory;
   const send = PermissionFlagsBits.SendMessages;
+  const sendInThreads = PermissionFlagsBits.SendMessagesInThreads;
+  const createPrivateThreads = PermissionFlagsBits.CreatePrivateThreads;
   const connect = PermissionFlagsBits.Connect;
   const speak = PermissionFlagsBits.Speak;
 
   const allowBot =
     input.botUserId && input.botUserId.trim()
-      ? [{ id: input.botUserId, allow: [view, readHistory, send] }]
+      ? [
+          {
+            id: input.botUserId,
+            allow: [
+              view,
+              readHistory,
+              send,
+              sendInThreads,
+              createPrivateThreads,
+            ],
+          },
+        ]
       : [];
 
   const everyoneReadOnly = {
@@ -2339,7 +2570,7 @@ function buildWorldBaseOverwrites(input: {
   };
   const worldWritable = {
     id: input.worldRoleId,
-    allow: [view, readHistory, send],
+    allow: [view, readHistory, send, sendInThreads],
   };
 
   return {
@@ -2362,16 +2593,69 @@ function buildCreatorOnlyOverwrites(input: {
   const view = PermissionFlagsBits.ViewChannel;
   const readHistory = PermissionFlagsBits.ReadMessageHistory;
   const send = PermissionFlagsBits.SendMessages;
+  const sendInThreads = PermissionFlagsBits.SendMessagesInThreads;
+  const createPrivateThreads = PermissionFlagsBits.CreatePrivateThreads;
 
   const allowBot =
     input.botUserId && input.botUserId.trim()
-      ? [{ id: input.botUserId, allow: [view, readHistory, send] }]
+      ? [
+          {
+            id: input.botUserId,
+            allow: [
+              view,
+              readHistory,
+              send,
+              sendInThreads,
+              createPrivateThreads,
+            ],
+          },
+        ]
       : [];
 
   return [
     { id: input.everyoneRoleId, deny: [view] },
     { id: input.worldRoleId, deny: [view] },
-    { id: input.creatorUserId, allow: [view, readHistory, send] },
+    {
+      id: input.creatorUserId,
+      allow: [view, readHistory, send, sendInThreads],
+    },
+    ...allowBot,
+  ];
+}
+
+function buildDraftCreatorOnlyOverwrites(input: {
+  everyoneRoleId: string;
+  creatorUserId: string;
+  botUserId: string;
+}): Array<{ id: string; allow?: bigint[]; deny?: bigint[] }> {
+  const view = PermissionFlagsBits.ViewChannel;
+  const readHistory = PermissionFlagsBits.ReadMessageHistory;
+  const send = PermissionFlagsBits.SendMessages;
+  const sendInThreads = PermissionFlagsBits.SendMessagesInThreads;
+  const createPrivateThreads = PermissionFlagsBits.CreatePrivateThreads;
+
+  const allowBot =
+    input.botUserId && input.botUserId.trim()
+      ? [
+          {
+            id: input.botUserId,
+            allow: [
+              view,
+              readHistory,
+              send,
+              sendInThreads,
+              createPrivateThreads,
+            ],
+          },
+        ]
+      : [];
+
+  return [
+    { id: input.everyoneRoleId, deny: [view] },
+    {
+      id: input.creatorUserId,
+      allow: [view, readHistory, send, sendInThreads],
+    },
     ...allowBot,
   ];
 }

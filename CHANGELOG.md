@@ -13,6 +13,8 @@
 - Discord：`/world create` 支持上传设定文档（Attachment），自动创建 `#world-build` 并启动多轮“世界构建”会话（`groupId=world_{id}_build`）；写回 `/data/worlds/{id}/world-card.md`、`rules.md` 与 `source.md`
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
 - Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`），并可通过 `/character act` 让 bot 在世界入口频道扮演角色
+- Discord：`/character create` 自动创建“角色构建”话题（`groupId=world_{id}_character_{cid}_build`），并触发 kickoff 以多轮补全角色卡
+- Discord：新增 `/world close`、`/character close`（仅创作者）用于关闭构建话题（archive+lock）
 - World：新增 `channelId -> worldId` 路由与 world roleplay 频道 always-on（绕过 mention/keyword 触发），会话隔离为 `groupId=world_{worldId}` 并注入 `world/world-card.md`、`world/rules.md`、`world/active-character.md`
 - 持久化：Redis 维护自增 ID / meta / 成员与角色集合；`/data/worlds/{worldId}` 落地世界卡/规则/角色卡/事件流
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
@@ -20,6 +22,9 @@
 ### Changed
 
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
+- World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
+- Discord：除 help 外，Slash Commands 回复默认公开（non-ephemeral）
+- Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
 - K8s：`llbot`（QQ）StatefulSet 默认 `replicas=0`（默认不启用，需要时再手动 scale）
 
 ### Fixed

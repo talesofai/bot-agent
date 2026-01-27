@@ -61,7 +61,7 @@ const envSchema = z.object({
   LLBOT_REGISTRY_REFRESH_SEC: z.coerce.number().int().min(1).default(10),
   LLBOT_REGISTRY_BOT_ID: z.string().optional(),
   LLBOT_REGISTRY_WS_URL: z.string().optional(),
-  LLBOT_PLATFORM: z.enum(["qq", "discord"]).default("qq"),
+  LLBOT_PLATFORM: z.enum(["qq", "discord"]).default("discord"),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

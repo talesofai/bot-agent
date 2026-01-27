@@ -8,13 +8,7 @@ export function createPlatformAdapters(
   config: AppConfig,
   options?: { botMessageStore?: BotMessageStore },
 ): PlatformAdapter[] {
-  const adapters: PlatformAdapter[] = [
-    new QQAdapterPool({
-      redisUrl: config.REDIS_URL,
-      registryPrefix: config.LLBOT_REGISTRY_PREFIX,
-      botMessageStore: options?.botMessageStore,
-    }),
-  ];
+  const adapters: PlatformAdapter[] = [];
 
   const discordToken = config.DISCORD_TOKEN?.trim();
   if (discordToken) {
@@ -22,6 +16,16 @@ export function createPlatformAdapters(
       new DiscordAdapter({
         token: discordToken,
         applicationId: config.DISCORD_APPLICATION_ID,
+        botMessageStore: options?.botMessageStore,
+      }),
+    );
+  }
+
+  if (config.LLBOT_PLATFORM === "qq") {
+    adapters.push(
+      new QQAdapterPool({
+        redisUrl: config.REDIS_URL,
+        registryPrefix: config.LLBOT_REGISTRY_PREFIX,
         botMessageStore: options?.botMessageStore,
       }),
     );

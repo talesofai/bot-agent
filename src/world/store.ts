@@ -165,8 +165,17 @@ export class WorldStore {
     multi.sadd(this.key("world:ids"), String(meta.id));
     multi.zadd(this.key("world:created_at"), Date.now(), String(meta.id));
     multi.set(this.categoryWorldKey(meta.categoryId), String(meta.id));
-    // Route mapping is only required for roleplay channel.
+    // Keep channel -> world mapping for key channels so we can infer worldId even
+    // if a category is missing/moved.
+    multi.set(this.channelWorldKey(meta.infoChannelId), String(meta.id));
     multi.set(this.channelWorldKey(meta.roleplayChannelId), String(meta.id));
+    multi.set(this.channelWorldKey(meta.proposalsChannelId), String(meta.id));
+    if (payload.joinChannelId) {
+      multi.set(this.channelWorldKey(payload.joinChannelId), String(meta.id));
+    }
+    if (payload.buildChannelId) {
+      multi.set(this.channelWorldKey(payload.buildChannelId), String(meta.id));
+    }
     multi.set(
       this.channelGroupKey(meta.roleplayChannelId),
       buildWorldGroupId(meta.id),
@@ -263,6 +272,18 @@ export class WorldStore {
     await this.redis.set(this.channelGroupKey(safeChannelId), groupId);
   }
 
+  async setChannelWorldId(channelId: string, worldId: WorldId): Promise<void> {
+    const safeChannelId = channelId.trim();
+    if (!safeChannelId) {
+      throw new Error("channelId is required");
+    }
+    const normalized = normalizeWorldId(worldId);
+    await this.redis.set(
+      this.channelWorldKey(safeChannelId),
+      String(normalized),
+    );
+  }
+
   async getGroupIdByChannel(channelId: string): Promise<string | null> {
     const safeChannelId = channelId.trim();
     if (!safeChannelId) {
@@ -322,6 +343,80 @@ export class WorldStore {
   async characterCount(worldId: WorldId): Promise<number> {
     const normalized = normalizeWorldId(worldId);
     return this.redis.scard(this.worldCharactersKey(normalized));
+  }
+
+  async purgeWorld(meta: WorldMeta): Promise<{
+    deletedMembers: number;
+    deletedCharacters: number;
+  }> {
+    const worldId = normalizeWorldId(meta.id);
+
+    const [memberIds, characterIdsRaw] = await Promise.all([
+      this.redis.smembers(this.worldMembersKey(worldId)),
+      this.redis.smembers(this.worldCharactersKey(worldId)),
+    ]);
+    const characterIds = characterIdsRaw
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0);
+
+    const characterMetas = await Promise.all(
+      characterIds.map(async (characterId) => {
+        const parsed = await this.getCharacter(characterId);
+        return parsed ?? null;
+      }),
+    );
+
+    const multi = this.redis.multi();
+
+    for (const userId of memberIds) {
+      if (!isSafePathSegment(userId)) {
+        continue;
+      }
+      multi.srem(this.userWorldsKey(userId), String(worldId));
+    }
+    multi.del(this.worldMembersKey(worldId));
+
+    for (const characterMeta of characterMetas) {
+      if (!characterMeta) {
+        continue;
+      }
+      multi.del(this.characterMetaKey(characterMeta.id));
+      if (isSafePathSegment(characterMeta.creatorId)) {
+        multi.srem(
+          this.userCharactersKey(characterMeta.creatorId),
+          String(characterMeta.id),
+        );
+      }
+    }
+    multi.del(this.worldCharactersKey(worldId));
+
+    multi.del(this.worldMetaKey(worldId));
+    multi.srem(this.key("world:ids"), String(worldId));
+    multi.zrem(this.key("world:created_at"), String(worldId));
+
+    if (meta.status !== "draft") {
+      multi.del(this.categoryWorldKey(meta.categoryId));
+      multi.del(this.channelWorldKey(meta.infoChannelId));
+      multi.del(this.channelWorldKey(meta.roleplayChannelId));
+      multi.del(this.channelWorldKey(meta.proposalsChannelId));
+      if (meta.joinChannelId?.trim()) {
+        multi.del(this.channelWorldKey(meta.joinChannelId));
+      }
+      if (meta.buildChannelId?.trim()) {
+        multi.del(this.channelWorldKey(meta.buildChannelId));
+      }
+      multi.del(this.channelGroupKey(meta.roleplayChannelId));
+      if (meta.buildChannelId?.trim()) {
+        multi.del(this.channelGroupKey(meta.buildChannelId));
+      }
+    }
+
+    await multi.exec();
+
+    return {
+      deletedMembers: memberIds.length,
+      deletedCharacters: characterIds.length,
+    };
   }
 
   async createCharacter(meta: CharacterMeta): Promise<void> {

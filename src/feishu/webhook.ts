@@ -179,6 +179,9 @@ function shouldSendToFeishu(record: Record<string, unknown>): boolean {
   if (event === "discord.command.start" || event === "discord.command.reply") {
     return true;
   }
+  if (event === "ai.start" || event === "ai.finish") {
+    return true;
+  }
 
   return false;
 }
@@ -186,11 +189,135 @@ function shouldSendToFeishu(record: Record<string, unknown>): boolean {
 function formatLogLine(value: unknown): string {
   const ts = new Date().toISOString();
   if (isRecord(value)) {
+    const formatted = formatFeishuEvent(value);
+    if (formatted) {
+      return `${ts} ${formatted}`;
+    }
     return `${ts} ${formatLogfmt(value)}`;
   }
   const raw = redactSensitiveText(String(value ?? ""));
   const trimmed = raw.trim();
   return trimmed ? `${ts} ${trimmed}` : ts;
+}
+
+function formatFeishuEvent(record: Record<string, unknown>): string | null {
+  const event = typeof record.event === "string" ? record.event.trim() : "";
+  if (!event) {
+    return null;
+  }
+
+  const platform = readString(record.platform);
+  const traceId = readString(record.traceId);
+  const guildId = readString(record.guildId);
+  const groupId = readString(record.groupId);
+  const channelId = readString(record.channelId);
+  const userId = readString(record.userId);
+  const messageId = readString(record.messageId);
+  const worldId = readNumber(record.worldId);
+  const characterId = readNumber(record.characterId);
+
+  const location = [
+    platform ? `p:${platform}` : null,
+    guildId ? `g:${guildId}` : null,
+    channelId ? `c:${channelId}` : null,
+    groupId ? `group:${groupId}` : null,
+    userId ? `u:${userId}` : null,
+    worldId ? `W${worldId}` : null,
+    characterId ? `C${characterId}` : null,
+    traceId ? `t:${traceId}` : null,
+    messageId ? `m:${messageId}` : null,
+  ]
+    .filter((v): v is string => Boolean(v))
+    .join(" ");
+
+  if (event === "io.recv") {
+    const preview = readString(record.contentPreview);
+    return [`【收】`, location, preview ? `：${preview}` : null]
+      .filter((v): v is string => Boolean(v))
+      .join("");
+  }
+  if (event === "io.send") {
+    const preview = readString(record.contentPreview);
+    return [`【发】`, location, preview ? `：${preview}` : null]
+      .filter((v): v is string => Boolean(v))
+      .join("");
+  }
+  if (event === "discord.command.start") {
+    const command = readString(record.command);
+    return [`【指令】`, location, command ? ` /${command}` : ""].join("");
+  }
+  if (event === "discord.command.reply") {
+    const command = readString(record.command);
+    const preview = readString(record.contentPreview);
+    const ephemeral = record.ephemeral === true ? "（ephemeral）" : "";
+    return [
+      `【指令回复】`,
+      location,
+      command ? ` /${command}${ephemeral}` : ephemeral,
+      preview ? `：${preview}` : "",
+    ].join("");
+  }
+  if (event === "ai.start") {
+    const key = readNumber(record.key);
+    return [`【AI开始】`, location, key !== null ? ` key:${key}` : ""].join("");
+  }
+  if (event === "ai.finish") {
+    const key = readNumber(record.key);
+    const preview = readString(record.outputPreview);
+    return [
+      `【AI结束】`,
+      location,
+      key !== null ? ` key:${key}` : "",
+      preview ? `：${preview}` : "",
+    ].join("");
+  }
+  if (event === "log.warn" || event === "log.error") {
+    const level = event === "log.error" ? "【WARN以上-ERROR】" : "【WARN】";
+    const msg = readString(record.msg);
+    const component = readString(record.component);
+    const step = readString(record.step);
+    const errName = readString(record.errName);
+    const errMessage = readString(record.errMessage);
+    const parts = [
+      level,
+      location,
+      component ? ` component:${component}` : null,
+      step ? ` step:${step}` : null,
+      msg ? ` msg:${msg}` : null,
+      errName || errMessage
+        ? ` err:${[errName, errMessage].filter(Boolean).join(":")}`
+        : null,
+    ].filter((v): v is string => Boolean(v));
+    return parts.join(" ");
+  }
+
+  return null;
+}
+
+function readString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = redactSensitiveText(value).trim();
+  return trimmed ? truncateFeishu(trimmed, 600) : null;
+}
+
+function readNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function truncateFeishu(input: string, maxChars: number): string {
+  if (input.length <= maxChars) {
+    return input;
+  }
+  return `${input.slice(0, maxChars)}…`;
 }
 
 function formatLogfmt(record: Record<string, unknown>): string {

@@ -37,6 +37,8 @@ const envSchema = z.object({
   // Discord platform configuration
   DISCORD_TOKEN: z.string().optional(),
   DISCORD_APPLICATION_ID: z.string().optional(),
+  /** Optional: lock world system to a single home guild. */
+  DISCORD_HOME_GUILD_ID: z.string().regex(/^\d+$/).optional(),
   GROUPS_DATA_DIR: z.string().default("/data/groups"),
   DATA_DIR: z.string().optional(),
   OPENCODE_PROMPT_MAX_BYTES: z.coerce

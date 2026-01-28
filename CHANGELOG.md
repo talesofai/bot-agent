@@ -23,6 +23,7 @@
 - 持久化：Redis 维护自增 ID / meta / 成员与角色集合；`/data/worlds/{worldId}` 落地世界卡/规则/角色卡/事件流
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
 - Logging：飞书 webhook 仅推送 `warn/error` 与消息收发（`io.recv/io.send` + SlashCommand 输入/输出），便于在飞书追踪对话与故障而不刷噪音
+- Logging：新增 `ai.start/ai.finish` 事件（含输出预览），用于定位“子话题不推进/看起来没反应”
 
 ### Changed
 
@@ -36,10 +37,15 @@
 - Discord：`/world info` 与 `world-info` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
+- Config：新增 `DISCORD_HOME_GUILD_ID`（可选：锁定世界系统只允许在单一 homeGuild 创建世界）
 - K8s：`llbot`（QQ）StatefulSet 默认 `replicas=0`（默认不启用，需要时再手动 scale）
 
 ### Fixed
 
+- World：新增构建/角色构建会话的 Discord channel 路由自修复（根据线程/频道名与分类映射回填 `channel->group/world`），避免“子话题不需要 @bot 但不入队”
+- World：`world-join` parent category 丢失/无效时自动重试创建，并回填 `joinChannelId` + `channel->worldId` 映射，避免加入流程卡死
+- Discord：`/world info|rules|stats|status` 在世界子空间频道内可省略 `world_id`
+- Discord：新增 `/world remove`（管理员）清理世界 meta/集合与 worlds 文件，并 best-effort 删除 Discord 资源
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”

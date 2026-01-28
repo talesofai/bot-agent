@@ -30,6 +30,7 @@ import { getConfig } from "../config";
 import { WorldFileStore } from "../world/file-store";
 import { parseWorldGroup } from "../world/ids";
 import { WorldStore } from "../world/store";
+import { feishuLogJson } from "../feishu/webhook";
 import {
   parseOpencodeModelIdsCsv,
   selectOpencodeModelId,
@@ -358,9 +359,7 @@ export class SessionProcessor {
           }
         }
 
-        const responseOutput = isAbort
-          ? "我这边初始化会话超时了，请稍后再试。"
-          : "我这边初始化会话失败了，请稍后再试。";
+        const responseOutput = "我这边暂时处理不过来，请稍后再试。";
         try {
           await batchSpan(
             "send_response",
@@ -397,6 +396,25 @@ export class SessionProcessor {
       }
 
       const { history, request, promptBytes } = promptContext;
+
+      const parsedWorld = parseWorldGroup(sessionInfo.meta.groupId);
+      feishuLogJson({
+        event: "ai.start",
+        traceId: runtime.traceId,
+        platform: mergedWithTrace.platform,
+        guildId: mergedWithTrace.guildId,
+        channelId: mergedWithTrace.channelId,
+        messageId: mergedWithTrace.messageId,
+        groupId: sessionInfo.meta.groupId,
+        sessionId: sessionInfo.meta.sessionId,
+        userId: sessionInfo.meta.ownerId,
+        key: sessionInfo.meta.key,
+        worldId: parsedWorld?.worldId,
+        characterId:
+          parsedWorld?.kind === "character_build"
+            ? parsedWorld.characterId
+            : undefined,
+      });
 
       let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
       try {
@@ -556,6 +574,24 @@ export class SessionProcessor {
           outputPreviewTruncated: responseOutputPreview.truncated,
         },
       );
+      feishuLogJson({
+        event: "ai.finish",
+        traceId: runtime.traceId,
+        platform: mergedWithTrace.platform,
+        guildId: mergedWithTrace.guildId,
+        channelId: mergedWithTrace.channelId,
+        messageId: mergedWithTrace.messageId,
+        groupId: sessionInfo.meta.groupId,
+        sessionId: sessionInfo.meta.sessionId,
+        userId: sessionInfo.meta.ownerId,
+        key: sessionInfo.meta.key,
+        worldId: parsedWorld?.worldId,
+        characterId:
+          parsedWorld?.kind === "character_build"
+            ? parsedWorld.characterId
+            : undefined,
+        outputPreview: responseOutputPreview.content,
+      });
       await batchSpan("append_history", async () =>
         this.appendHistoryFromJob(
           sessionInfo,

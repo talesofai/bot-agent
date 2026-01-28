@@ -532,7 +532,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       channelId: threadId,
       content: [
         `【新手引导】`,
-        `你会在这里进行私密引导（仅你与 bot 可见）。`,
+        `你会在这里完成新手引导。`,
         ``,
         `请选择身份（仅需一次）：`,
         `- /onboard role:player`,
@@ -914,7 +914,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     await safeReply(
       interaction,
-      `已选择身份：${role}。继续在私密话题：<#${threadId}>`,
+      `已选择身份：${role}。继续在这里：<#${threadId}>`,
       { ephemeral: true },
     );
   }
@@ -949,7 +949,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.handleWorldOpen(interaction, worldId);
       return;
     }
-    if (subcommand === "done") {
+    if (subcommand === "publish") {
       await this.handleWorldPublish(interaction);
       return;
     }
@@ -1278,7 +1278,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       if (!thread) {
         throw new Error(
-          "无法创建世界私密话题：请检查 bot 是否具备创建私密话题权限（CreatePrivateThreads）",
+          "无法创建世界编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
         );
       }
 
@@ -1313,13 +1313,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         worldId,
         traceId,
       });
-      await this.emitSyntheticWorldBuildKickoff({
-        channelId: buildConversationChannelId,
-        userId: interaction.user.id,
-        worldId,
-        worldName,
-        traceId,
-      });
 
       feishuLogJson({
         event: "discord.world.create.success",
@@ -1333,8 +1326,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         interaction,
         [
           `世界创建已开始：W${worldId}`,
-          `继续创建（私密话题）：${buildConversationMention}`,
-          `下一步：在私密话题里阅读规则后，直接发设定原文/上传文档；完成后执行 /world done 发布世界`,
+          `继续创建：${buildConversationMention}`,
         ].join("\n"),
         { ephemeral: true },
       );
@@ -1363,9 +1355,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       [
         "世界系统指令：",
         "- /world create（默认仅管理员；可配置 world.createPolicy）",
-        "  - 执行后会创建一个私密话题：先阅读规则，再粘贴/上传设定原文，多轮补全；用 /world done 发布世界并创建子空间",
-        "- /world open world_id:<世界ID>（仅创作者；打开该世界的私密编辑话题）",
-        "- /world done（仅创作者；在世界私密编辑话题中发布草稿世界）",
+        "  - 执行后会创建一个编辑话题：粘贴/上传设定原文，多轮补全；用 /world publish 发布世界并创建子空间",
+        "- /world open world_id:<世界ID>（仅创作者；打开该世界的编辑话题）",
+        "- /world publish（仅创作者；在编辑话题中发布草稿世界）",
         "- /world list [limit:<1-100>]",
         "- /world search query:<关键词> [limit:<1-50>]",
         "- /world info [world_id:<世界ID>]（在世界子空间频道内可省略 world_id）",
@@ -1450,7 +1442,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       if (!thread) {
         throw new Error(
-          "无法创建世界私密话题：请检查 bot 是否具备创建私密话题权限（CreatePrivateThreads）",
+          "无法创建世界编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
         );
       }
       buildConversationChannelId = thread.threadId;
@@ -1476,12 +1468,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         channelId: buildConversationChannelId,
         worldId: meta.id,
       });
-      await this.emitSyntheticWorldBuildKickoff({
-        channelId: buildConversationChannelId,
-        userId: interaction.user.id,
-        worldId: meta.id,
-        worldName: meta.name,
-      });
     }
 
     await this.worldStore.setChannelGroupId(
@@ -1491,7 +1477,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     await safeReply(
       interaction,
-      `已打开世界编辑：W${meta.id} ${meta.name}\n私密话题：<#${buildConversationChannelId}>`,
+      `已打开世界编辑：W${meta.id} ${meta.name}\n编辑话题：<#${buildConversationChannelId}>`,
       { ephemeral: true },
     );
   }
@@ -1506,7 +1492,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!parsed || parsed.kind !== "build") {
       await safeReply(
         interaction,
-        "请先在私密话题中执行 /world create 或 /world open，然后再执行 /world done。",
+        "请先执行 /world create 或 /world open，然后在对应编辑话题执行 /world publish。",
         { ephemeral: true },
       );
       return;
@@ -2310,7 +2296,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   ): Promise<void> {
     await safeReply(
       interaction,
-      `该指令已弃用：请使用 /world open world_id:${input.worldId}（在私密话题中）后，在私密话题里继续编辑并 /world done 发布。`,
+      `该指令已弃用：请使用 /world open world_id:${input.worldId} 打开编辑话题，然后在编辑话题里继续编辑并 /world publish 发布。`,
       { ephemeral: true },
     );
   }
@@ -2318,9 +2304,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async handleWorldDone(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
-    await safeReply(interaction, "请在私密话题中执行 /world done 发布世界。", {
-      ephemeral: true,
-    });
+    await safeReply(
+      interaction,
+      "请在世界编辑话题中执行 /world publish 发布。",
+      {
+        ephemeral: true,
+      },
+    );
   }
 
   private async handleWorldRemove(
@@ -2443,8 +2433,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         `已移除世界：W${meta.id} ${meta.name}（status=${meta.status}）`,
         `清理：成员 ${purge.deletedMembers}、角色 ${purge.deletedWorldCharacters}`,
         deleted.length > 0
-          ? `已删除 Discord 资源：${deleted.length}`
-          : "Discord 资源删除：跳过/失败（请手工检查）",
+          ? `已删除频道/角色等资源：${deleted.length}`
+          : "频道/角色等资源删除：跳过/失败（请手工检查）",
       ].join("\n"),
       { ephemeral: true },
     );
@@ -2607,7 +2597,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     });
     if (!thread) {
       throw new Error(
-        "无法创建角色私密话题：请检查 bot 是否具备创建私密话题权限（CreatePrivateThreads）",
+        "无法创建角色编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
       );
     }
     buildConversationChannelId = thread.threadId;
@@ -2628,13 +2618,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       characterId,
       traceId,
     });
-    await this.emitSyntheticCharacterBuildKickoff({
-      channelId: buildConversationChannelId,
-      userId: interaction.user.id,
-      characterId,
-      characterName: name,
-      traceId,
-    });
 
     feishuLogJson({
       event: "discord.character.create.success",
@@ -2649,7 +2632,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       interaction,
       [
         `角色已创建：C${characterId} ${name}（visibility=${visibility}）`,
-        `完善角色卡（私密话题）：${buildConversationMention}`,
+        `完善角色卡：${buildConversationMention}`,
         `设为默认角色：/character use character_id:${characterId}`,
       ].join("\n"),
       { ephemeral: true },
@@ -2664,8 +2647,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       [
         "角色系统指令：",
         "- /character create [name:<角色名>] [visibility:public|private] [description:<补充>]",
-        "  - 会创建一个私密话题，多轮补全角色卡；默认 visibility=private",
-        "- /character open character_id:<角色ID>（仅创作者；打开该角色的私密编辑话题）",
+        "  - 会创建一个编辑话题，多轮补全角色卡；默认 visibility=private",
+        "- /character open character_id:<角色ID>（仅创作者；打开该角色的编辑话题）",
         "- /character view character_id:<角色ID>（遵循 visibility 权限）",
         "- /character use character_id:<角色ID>（设置你的默认角色，全局）",
         "- /character act character_id:<角色ID>（在世界频道内执行：设置你在该世界的当前角色）",
@@ -2873,7 +2856,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       if (!thread) {
         throw new Error(
-          "无法创建角色私密话题：请检查 bot 是否具备创建私密话题权限（CreatePrivateThreads）",
+          "无法创建角色编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
         );
       }
       conversationChannelId = thread.threadId;
@@ -2886,12 +2869,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         channelId: conversationChannelId,
         characterId: meta.id,
       });
-      await this.emitSyntheticCharacterBuildKickoff({
-        channelId: conversationChannelId,
-        userId: interaction.user.id,
-        characterId: meta.id,
-        characterName: meta.name,
-      });
     }
 
     await this.worldStore.setChannelGroupId(
@@ -2901,7 +2878,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     await safeReply(
       interaction,
-      `已打开角色卡编辑：C${meta.id} ${meta.name}\n私密话题：<#${conversationChannelId}>`,
+      `已打开角色卡编辑：C${meta.id} ${meta.name}\n编辑话题：<#${conversationChannelId}>`,
       { ephemeral: true },
     );
   }
@@ -3009,7 +2986,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       characterId: meta.id,
       visibility: "private",
     });
-    await safeReply(interaction, `已设为私密：C${meta.id} ${meta.name}`, {
+    await safeReply(interaction, `已设为不公开：C${meta.id} ${meta.name}`, {
       ephemeral: true,
     });
   }
@@ -3163,7 +3140,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (parsed?.kind === "build") {
       return parsed.characterId;
     }
-    throw new Error("缺少 character_id：请显式提供，或在角色私密话题中执行。");
+    throw new Error("缺少 character_id：请显式提供，或在角色编辑话题中执行。");
   }
 
   private async resolveJoinCharacterId(input: {
@@ -3340,7 +3317,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       content: [
         `【世界专用角色卡修正】C${input.characterId}（W${input.worldId}）`,
         `我会尝试根据该世界的 world/rules.md 自动校正角色卡（只改角色卡，不改世界正典）。`,
-        `你可以在本私密话题继续补充信息（不需要 @）。`,
+        `你可以在本话题继续补充信息（不需要 @）。`,
       ].join("\n"),
     });
 
@@ -3359,7 +3336,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   ): Promise<void> {
     await safeReply(
       interaction,
-      "角色构建私密话题不再需要关闭（永久存在）。如需继续编辑：/character open character_id:<角色ID>。",
+      "角色编辑话题不需要关闭（长期保留）。如需继续编辑：/character open character_id:<角色ID>。",
       { ephemeral: true },
     );
   }
@@ -3545,7 +3522,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     });
     if (!thread) {
       throw new Error(
-        "无法创建新手指导私密话题：请检查 bot 是否具备创建私密话题权限（CreatePrivateThreads）",
+        "无法创建新手指导话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
       );
     }
     await this.userState.setOnboardingThreadId({
@@ -3911,18 +3888,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       channelId: input.channelId,
       traceId: input.traceId,
       content: [
-        `【世界创建规则】（W${input.worldId} 私密会话）`,
+        `【世界创建指南】（W${input.worldId}）`,
         ``,
-        `1) 这是一段私密会话：仅你与 bot 可见；你在这里发的任何内容都会被当作“对 bot 的输入”，不需要 @。`,
-        `2) 你可以用两种方式提供设定原文：`,
+        `1) 你可以用两种方式提供设定原文：`,
         `   - 直接粘贴/分段发送（多轮对话补全）`,
         `   - 或上传 txt/md（以及可解析的 docx）（会自动写入 world/source.md）`,
-        `3) bot 会把设定整理为两份正典文件（可反复修改）：`,
-        `   - world/world-card.md（世界背景/势力/地点/历史等）`,
-        `   - world/rules.md（硬规则：初始金额/装备/底层逻辑/禁止事项等）`,
-        `4) 规则与世界卡是“正典”：没写到的部分允许后续补全，但不要自相矛盾。`,
-        `5) 当你确认已经 OK：在本私密话题执行 /world done 发布世界；发布后会创建子空间（公告/讨论/提案）。`,
-        `6) 私密会话永久存在：不需要关闭；以后继续修改用 /world open world_id:<世界ID>。`,
+        `2) 设定会被整理为两份正典（可反复修改）：`,
+        `   world-card（世界背景/势力/地点/历史等）`,
+        `   rules.md（硬规则：初始金额/装备/底层逻辑/禁止事项等）`,
+        `3) 规则与世界卡是“正典”：没写到的部分允许后续补全，但不要自相矛盾。`,
+        `4) 当你确认已经 OK：在本话题执行 /world publish 发布世界。`,
         ``,
       ].join("\n"),
     });
@@ -3939,12 +3914,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       channelId: input.channelId,
       traceId: input.traceId,
       content: [
-        `【角色卡创建规则】（C${input.characterId} 私密会话）`,
+        `【角色卡创建指南】（C${input.characterId}）`,
         ``,
-        `1) 这是一段私密会话：仅你与 bot 可见；你在这里发的任何内容都会被当作“对 bot 的输入”，不需要 @。`,
+        `1) 你在这里发的任何内容都会被当作“对 bot 的输入”，不需要 @。`,
         `2) 角色卡文件位于会话工作区：character/character-card.md（可写）。`,
         `3) bot 会把你的描述整理成标准角色卡；如果信息不足，会追问你补充。`,
-        `4) 私密会话永久存在：不需要关闭。以后继续修改用 /character open character_id:${input.characterId}。`,
+        `4) 本话题会长期保留；后续继续修改用 /character open character_id:${input.characterId}。`,
         ``,
       ].join("\n"),
     });
@@ -4130,7 +4105,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       `3) 不要 roleplay，不要编造未给出的设定。`,
       `4) 禁止使用任何交互式提问工具（例如 question）；需要补充信息请直接用文字列出问题。`,
       ``,
-      `提示：创作者完成后在本私密话题中执行 /world done 发布世界。`,
+      `提示：完成后在本话题中执行 /world publish 发布世界。`,
       ``,
       `世界：W${input.worldId} ${input.worldName}`,
     ].join("\n");
@@ -4398,7 +4373,7 @@ function buildSlashCommands() {
   return [
     new SlashCommandBuilder()
       .setName("onboard")
-      .setDescription("新手引导：选择身份并进入私密话题")
+      .setDescription("新手引导：选择身份并进入引导话题")
       .addStringOption((option) =>
         option
           .setName("role")
@@ -4479,13 +4454,13 @@ function buildSlashCommands() {
         sub
           .setName("create")
           .setDescription(
-            "创建世界（进入私密话题，多轮补全；/world done 发布）",
+            "创建世界（进入编辑话题，多轮补全；/world publish 发布）",
           ),
       )
       .addSubcommand((sub) =>
         sub
           .setName("open")
-          .setDescription("打开该世界的私密编辑话题（仅创作者）")
+          .setDescription("打开该世界的编辑话题（仅创作者）")
           .addIntegerOption((option) =>
             option
               .setName("world_id")
@@ -4496,8 +4471,8 @@ function buildSlashCommands() {
       )
       .addSubcommand((sub) =>
         sub
-          .setName("done")
-          .setDescription("发布当前草稿世界（仅创作者，在私密话题中执行）"),
+          .setName("publish")
+          .setDescription("发布当前草稿世界（仅创作者，在编辑话题中执行）"),
       )
       .addSubcommand((sub) =>
         sub
@@ -4720,11 +4695,11 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("create")
-          .setDescription("创建角色卡（进入私密话题，多轮补全）")
+          .setDescription("创建角色卡（进入编辑话题，多轮补全）")
           .addStringOption((option) =>
             option
               .setName("name")
-              .setDescription("角色名（可选；也可在私密话题中补全）")
+              .setDescription("角色名（可选；也可在编辑话题中补全）")
               .setRequired(false),
           )
           .addStringOption((option) =>
@@ -4750,7 +4725,7 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("open")
-          .setDescription("打开该角色的私密编辑话题（仅创作者）")
+          .setDescription("打开该角色的编辑话题（仅创作者）")
           .addIntegerOption((option) =>
             option
               .setName("character_id")
@@ -4802,7 +4777,7 @@ function buildSlashCommands() {
           .addIntegerOption((option) =>
             option
               .setName("character_id")
-              .setDescription("角色ID（可省略：在私密话题中会取当前角色）")
+              .setDescription("角色ID（可省略：在编辑话题中会取当前角色）")
               .setMinValue(1)
               .setRequired(false),
           ),
@@ -4810,11 +4785,11 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("unpublish")
-          .setDescription("将角色设为私密（private）")
+          .setDescription("将角色设为不公开（private）")
           .addIntegerOption((option) =>
             option
               .setName("character_id")
-              .setDescription("角色ID（可省略：在私密话题中会取当前角色）")
+              .setDescription("角色ID（可省略：在编辑话题中会取当前角色）")
               .setMinValue(1)
               .setRequired(false),
           ),
@@ -4856,9 +4831,7 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("adopt")
-          .setDescription(
-            "使用公开角色：复制或 fork 为你的角色（默认设为私密）",
-          )
+          .setDescription("使用公开角色：复制或 fork 为你的角色（默认不公开）")
           .addIntegerOption((option) =>
             option
               .setName("character_id")
@@ -4995,28 +4968,28 @@ function buildDraftCreatorOnlyOverwrites(input: {
 function buildRulesText(role: UserRole): string {
   if (role === "creator") {
     return [
-      `【世界创建者规则】`,
+      `【创作者指南】`,
       ``,
-      `你将以“世界创建者”的身份工作。`,
+      `你将以“创作者”的身份开始创作。`,
       ``,
       `流程：`,
-      `1) 在 homeGuild 执行 /world create（如无权限请联系管理员开放 createPolicy）。`,
-      `2) 系统会创建一个“世界构建私密话题”（仅你与 bot 可见），你可以：粘贴设定原文/上传 txt|md|docx。`,
-      `3) bot 会把原文整理为：world/world-card.md 与 world/rules.md。`,
-      `4) 确认无误后执行 /world done 发布世界（创建公告/讨论/提案区并自动拉你加入）。`,
+      `1) 执行 /world create。`,
+      `2) 系统会创建一个编辑话题，你可以：粘贴设定原文/上传 txt|md|docx。`,
+      `3) 设定会被整理为 world/world-card.md 与 world/rules.md，并在信息不足时向你提问。`,
+      `4) 确认无误后执行 /world publish 发布世界。`,
       ``,
       `提示：`,
-      `- 私密话题长期存在；后续可用 /world open world_id:<ID> 打开对应世界继续编辑。`,
+      `- 编辑话题会长期保留；后续可以继续编辑来更新设定。`,
     ].join("\n");
   }
 
   return [
-    `【玩家规则】`,
+    `【玩家指南】`,
     ``,
-    `你将以“玩家”的身份游玩。`,
+    `你将以“玩家”的身份开始游玩。`,
     ``,
     `流程：`,
-    `1) 创建角色卡：/character create（会创建一个私密话题，多轮补全）。`,
+    `1) 创建角色卡：/character create（会创建一个编辑话题，多轮补全）。`,
     `2) 选择世界：用 /world list 或 /world search 找到世界 ID。`,
     `3) 查看世界：/world info world_id:<ID>（可看到世界名、一句话简介、规则等）。`,
     `4) 加入世界：/world join world_id:<ID>（加入后你才有发言权限）。`,
@@ -5038,12 +5011,12 @@ function buildWorldAgentPrompt(input: {
     `version: "1"`,
     `---`,
     ``,
-    `你在 Discord 世界系统中工作。当前世界：W${input.worldId} ${input.worldName}。`,
+    `你在世界系统中工作。当前世界：W${input.worldId} ${input.worldName}。`,
     ``,
     `硬性规则：`,
     `1) 世界正典与规则在会话工作区的 \`world/world-card.md\` 与 \`world/rules.md\`。回答前必须读取它们；不确定就说不知道，禁止编造。`,
     `2) 如果 \`world/active-character.md\` 存在：这代表用户正在以该角色身份发言。你作为旁白/世界系统/GM回应，禁止替用户发言，更不能用第一人称扮演用户角色。`,
-    `3) 当前是游玩会话（只读）。当用户请求修改世界设定/正典时：不要直接改写文件；应引导联系世界创作者在私密会话中执行 /world open world_id:${input.worldId} 后修改，并用 /world done 发布更新。`,
+    `3) 当前是游玩会话（只读）。当用户请求修改世界设定/正典时：不要直接改写文件；应引导联系世界创作者执行 /world open world_id:${input.worldId} 后修改，并用 /world publish 发布更新。`,
     ``,
   ].join("\n");
 }
@@ -5058,14 +5031,14 @@ function buildWorldBuildAgentPrompt(input: {
     `version: "1"`,
     `---`,
     ``,
-    `你在 Discord 世界系统中工作，当前是“世界创作/整理”模式：W${input.worldId} ${input.worldName}。`,
+    `你在世界系统中工作，当前是“世界创作/整理”模式：W${input.worldId} ${input.worldName}。`,
     ``,
     `目标：把创作者上传的设定文档规范化为可用的“世界卡 + 世界规则”，并持续补全。`,
     ``,
     `硬性规则：`,
     `1) 设定原文在会话工作区的 \`world/source.md\`。`,
     `2) 规范化后的产物必须写入：\`world/world-card.md\` 与 \`world/rules.md\`。你必须使用工具写入/编辑文件，禁止只在回复里输出。`,
-    `3) 每次回复都包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /world done。`,
+    `3) 每次回复都包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /world publish。`,
     `4) 禁止使用任何交互式提问工具（例如 question）；需要补充信息请直接在回复里列出问题。`,
     `5) 你不是来写小说的，不要 roleplay。`,
     ``,
@@ -5084,7 +5057,7 @@ function buildCharacterBuildAgentPrompt(input: {
     `version: "1"`,
     `---`,
     ``,
-    `你在 Discord 世界系统中工作，当前是“角色卡创作/整理”模式：C${input.characterId} ${input.characterName}。`,
+    `你在世界系统中工作，当前是“角色卡创作/整理”模式：C${input.characterId} ${input.characterName}。`,
     ``,
     `目标：把角色设定规范化为可用的角色卡，并持续补全。`,
     ``,
@@ -5111,7 +5084,7 @@ function buildWorldCharacterBuildAgentPrompt(input: {
     `version: "1"`,
     `---`,
     ``,
-    `你在 Discord 世界系统中工作，当前是“世界专用角色卡修正”模式。`,
+    `你在世界系统中工作，当前是“世界专用角色卡修正”模式。`,
     ``,
     `世界：W${input.worldId} ${input.worldName}`,
     `角色：C${input.characterId} ${input.characterName}`,

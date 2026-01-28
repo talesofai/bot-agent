@@ -9,11 +9,11 @@
 
 ### Added
 
-- Discord：新增世界系统（`/world help|create|open|done|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
+- Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
 - Discord：`/world create` 创建世界草稿并创建私密话题（Thread，位于 `world-workshop-{userId}`），支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
 - Discord：`/world open`（仅创作者）打开该世界的私密编辑话题
-- Discord：`/world done` 发布世界并创建子空间（`world-announcements`/`world-discussion`/`world-proposals`/`World Voice`），默认所有人可见只读；join 后获得发言权限
+- Discord：`/world publish` 发布世界并创建子空间（`world-announcements`/`world-discussion`/`world-proposals`/`World Voice`），默认所有人可见只读；join 后获得发言权限
 - Discord：`/world submit|approve|check`：提案/任务/编年史/正典补充提交流程（pending → approved → 写入 `canon/*.md`）
 - Discord：发布后自动推送“世界信息快照”（世界卡 + 世界规则 + 统计）到 `world-announcements`，便于所有人查看当前已确定设定
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
@@ -32,7 +32,7 @@
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
 - Discord：`/world join` 支持在世界子空间频道内省略 `world_id`（也支持显式 `world_id:<ID>`）
-- Discord：`/world create` 不接收参数；设定原文在私密话题内通过多轮消息/附件补全
+- Discord：`/world create` 不接收参数；设定原文在编辑话题内通过多轮消息/附件补全
 - Discord：世界子空间 `world-info` 重命名为 `world-announcements`（公告区，世界背景/正典内容放此处），并新增 `world-discussion`（讨论区）
 - Discord：Slash Commands 默认公开；涉及创作/管理的指令（如 `/world create|open|publish|remove`、`/character create|open|publish|unpublish`）默认使用 ephemeral，避免刷屏与泄露私密信息
 - Discord：`/world info` 与 `world-announcements` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
@@ -60,7 +60,7 @@
 - World：Redis 连接改为 lazy connect，避免测试环境出现 net 超时与 between-tests 未处理错误
 - Skills：`world-design-card` 输出仅保留必要模块，减少超长响应导致的超时
 - Discord：修复 `/character create` 的参数顺序导致 Slash Commands 注册失败（进而缺失 `/world`）
-- Discord：世界构建/编辑会话统一落在 creator-only 临时频道（可选 Thread），避免 parent channel 权限导致 bot 无法发言；并允许在该频道内执行 `/world done` 完成发布/关闭
+- Discord：世界构建/编辑会话统一落在 creator-only 临时频道（可选 Thread），避免 parent channel 权限导致 bot 无法发言；并允许在该频道内执行 `/world publish` 完成发布/关闭
 - Discord：生成的 `agent.md` frontmatter 修正为字符串版 `version`，避免解析告警刷屏飞书
 - Discord：当世界 Category 被手动删除/缺失时，世界子空间维护不会强依赖 `parent_id`；避免触发 `CHANNEL_PARENT_INVALID`，并确保世界识别/加入流程可继续推进
 - Discord：`/world create` 私密话题会先发送“世界创建规则”，再进入多轮补全，降低新用户上手成本

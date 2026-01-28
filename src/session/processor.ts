@@ -16,7 +16,11 @@ import {
 } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/default-system-prompt";
 import type { OpencodeStreamEvent } from "../opencode/output";
-import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
+import type {
+  OpencodeRequestSpec,
+  OpencodeRunner,
+  OpencodeRunResult,
+} from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { runSessionGateLoop } from "./gate-loop";
@@ -327,17 +331,24 @@ export class SessionProcessor {
         },
       );
 
-      const result = await batchSpan(
-        "opencode_run",
-        async () =>
-          this.runner.run({
-            job: this.mapJob(runtime.job),
-            session: sessionInfo,
-            history,
-            request,
-          }),
-        { historyEntries: history.length },
-      );
+      let result: OpencodeRunResult | null = null;
+      let runError: unknown = null;
+      try {
+        result = await batchSpan(
+          "opencode_run",
+          async () =>
+            this.runner.run({
+              job: this.mapJob(runtime.job),
+              session: sessionInfo,
+              history,
+              request,
+            }),
+          { historyEntries: history.length },
+        );
+      } catch (err) {
+        runError = err;
+        runtime.log.error({ err }, "Opencode run failed");
+      }
 
       const stillOwnerAfterRun = await this.bufferStore.claimGate(
         runtime.bufferKey,
@@ -356,6 +367,24 @@ export class SessionProcessor {
           );
         }
         return "lost_gate";
+      }
+
+      if (runError) {
+        const message = formatOpencodeRunError(runError);
+        await batchSpan("send_response_error", async () =>
+          this.adapter.sendMessage(mergedWithTrace, `（系统）${message}`),
+        );
+        await batchSpan("append_history", async () =>
+          this.appendHistoryFromJob(sessionInfo, mergedWithTrace, historyKey),
+        );
+        await batchSpan("record_activity", async () =>
+          this.recordActivity(sessionInfo, runtime.log),
+        );
+        return "continue";
+      }
+
+      if (!result) {
+        throw new Error("Opencode run returned no result");
       }
 
       const output = resolveOutput(result.output);
@@ -1118,6 +1147,15 @@ function buildOpencodeSessionTitle(sessionInfo: SessionInfo): string {
   const groupId = sessionInfo.meta.groupId;
   const location = groupId === "0" ? "dm:0" : `group:${groupId}`;
   return `${location} user:${sessionInfo.meta.ownerId} bot:${sessionInfo.meta.botId} sid:${sessionInfo.meta.sessionId} key:${sessionInfo.meta.key}`;
+}
+
+function formatOpencodeRunError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("timeout") || normalized.includes("timed out")) {
+    return "生成超时，请稍后重试。";
+  }
+  return "生成失败，请稍后重试。";
 }
 
 function isLikelyOpencodeSessionId(value: string): boolean {

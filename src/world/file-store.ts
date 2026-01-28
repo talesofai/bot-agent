@@ -20,12 +20,7 @@ export interface WorldFileStoreOptions {
   dataRoot?: string;
 }
 
-export type WorldFileKind =
-  | "world_card"
-  | "rules"
-  | "events"
-  | "character_card"
-  | "source_latest";
+export type WorldFileKind = "world_card" | "rules" | "events" | "source_latest";
 
 export class WorldFileStore {
   private logger: Logger;
@@ -41,13 +36,22 @@ export class WorldFileStore {
     return path.join(this.dataRoot, "worlds", String(normalized));
   }
 
+  characterDir(): string {
+    return path.join(this.dataRoot, "characters");
+  }
+
   async ensureWorldDir(worldId: WorldId): Promise<string> {
     const dir = this.worldDir(worldId);
     await mkdir(dir, { recursive: true });
-    await mkdir(path.join(dir, "characters"), { recursive: true });
     await mkdir(path.join(dir, "map"), { recursive: true });
     await mkdir(path.join(dir, "canon"), { recursive: true });
     await mkdir(path.join(dir, "sources"), { recursive: true });
+    return dir;
+  }
+
+  async ensureCharacterDir(): Promise<string> {
+    const dir = this.characterDir();
+    await mkdir(dir, { recursive: true });
     return dir;
   }
 
@@ -68,22 +72,36 @@ export class WorldFileStore {
   }
 
   async writeCharacterCard(
-    worldId: WorldId,
     characterId: number,
     content: string,
   ): Promise<void> {
-    const dir = await this.ensureWorldDir(worldId);
-    const filePath = path.join(dir, "characters", `${characterId}.md`);
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    const dir = await this.ensureCharacterDir();
+    const filePath = path.join(dir, `${characterId}.md`);
     await this.atomicWrite(filePath, content);
   }
 
-  async readCharacterCard(
-    worldId: WorldId,
-    characterId: number,
-  ): Promise<string | null> {
-    const dir = this.worldDir(worldId);
-    const filePath = path.join(dir, "characters", `${characterId}.md`);
+  async readCharacterCard(characterId: number): Promise<string | null> {
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      return null;
+    }
+    const filePath = path.join(this.characterDir(), `${characterId}.md`);
     return this.readTextFile(filePath);
+  }
+
+  async appendCharacterEvent(
+    characterId: number,
+    event: Record<string, unknown>,
+  ): Promise<void> {
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    const dir = await this.ensureCharacterDir();
+    const filePath = path.join(dir, `${characterId}.events.jsonl`);
+    const line = `${JSON.stringify({ ts: Date.now(), ...event })}\n`;
+    await appendFile(filePath, line, "utf8");
   }
 
   async appendEvent(

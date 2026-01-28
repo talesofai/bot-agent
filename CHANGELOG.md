@@ -9,16 +9,14 @@
 
 ### Added
 
-- Discord：新增世界系统（`/world create|list|search|canon|info|rules|stats|status|join|edit|done`），世界全局共享（单 `homeGuild`）
-- Discord：`/world create` 创建“世界草稿 + 私密话题”，允许空输入并支持上传 txt/md/docx 设定文档；多轮补全后在话题中执行 `/world done` 发布世界并创建子空间；世界构建会话 `groupId=world_{id}_build` 写回 `/data/worlds/{id}/world-card.md`、`rules.md` 与 `source.md`
-- Discord：`/world edit`（仅创作者）创建“世界编辑话题”，用于后续通过对话持续修改世界设定
-- Discord：世界子空间默认“未 join 不可见”：`world-roleplay/world-proposals/voice` 仅对 World Role 可见；新增 `world-join`（所有人可见）用于执行 `/world join` 加入后获得进入与发言权限
-- Discord：启动时自动为旧世界补齐 `world-join` 并回填 `joinChannelId`，避免旧 world meta 缺字段导致无法加入
-- Discord：发布/编辑结束后自动推送“世界卡 + 世界规则”快照到 `world-info`，便于所有人查看当前已确定设定
+- Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
+- Discord：`/world create` 创建世界草稿并进入“私密构建会话”（DM 优先，失败则创建创作者专属频道）；支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
+- Discord：`/world open`（仅创作者）在私密对话中切换当前编辑世界
+- Discord：`/world publish` 发布世界并创建子空间（`world-announcements`/`world-discussion`/`world-proposals`/`World Voice`），默认所有人可见只读；join 后获得发言权限
+- Discord：发布后自动推送“世界信息快照”（世界卡 + 世界规则 + 统计）到 `world-announcements`，便于所有人查看当前已确定设定
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
-- Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`）；`/character act` 用于设置你在该世界的当前角色（用户扮演，bot 作为旁白/世界系统回应）
-- Discord：`/character create` 自动创建“角色构建”话题（`groupId=world_{id}_character_{cid}_build`），并触发 kickoff 以多轮补全角色卡
-- Discord：新增 `/world done`、`/character close`（仅创作者）用于结束构建话题（archive+lock）
+- Discord：新增角色系统（`/character help|create|open|view|use|act|publish|unpublish|list|search`），角色卡全局（不绑定世界），visibility（`public|private`，默认 `private`）
+- Discord：`/character create` 自动进入“角色构建私密会话”（DM 优先，失败则创建创作者专属频道），构建会话 `groupId=character_{id}_build` 并触发 kickoff 以多轮补全角色卡
 - World：新增 `channelId -> worldId` 路由与 world roleplay 频道 always-on（绕过 mention/keyword 触发），会话隔离为 `groupId=world_{worldId}` 并注入 `world/world-card.md`、`world/rules.md`、`world/active-character.md`
 - 持久化：Redis 维护自增 ID / meta / 成员与角色集合；`/data/worlds/{worldId}` 落地世界卡/规则/角色卡/事件流
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
@@ -30,11 +28,11 @@
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
-- Discord：`/world join` 改为仅在 `world-join` 频道执行，不再接受 `world_id`
+- Discord：`/world join` 改为仅在世界子空间频道执行（无需 `world_id`）
 - Discord：`/world create` 不再接收任何参数，改为直接进入“世界创建私密话题”，设定原文在话题内通过多轮消息/附件补全
 - Discord：世界子空间 `world-info` 重命名为 `world-announcements`（公告区，世界背景/正典内容放此处），并新增 `world-discussion`（讨论区）
-- Discord：除 help 外，Slash Commands 回复默认公开（non-ephemeral）
-- Discord：`/world info` 与 `world-info` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
+- Discord：Slash Commands 默认公开；涉及创作/管理的指令（如 `/world create|open|publish|remove`、`/character create|open|publish|unpublish`）默认使用 ephemeral，避免刷屏与泄露私密信息
+- Discord：`/world info` 与 `world-announcements` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
 - Config：新增 `DISCORD_HOME_GUILD_ID`（可选：锁定世界系统只允许在单一 homeGuild 创建世界）
@@ -44,7 +42,7 @@
 ### Fixed
 
 - World：新增构建/角色构建会话的 Discord channel 路由自修复（根据线程/频道名与分类映射回填 `channel->group/world`），避免“子话题不需要 @bot 但不入队”
-- World：`world-join` parent category 丢失/无效时自动重试创建，并回填 `joinChannelId` + `channel->worldId` 映射，避免加入流程卡死
+- World：当世界子空间的 Category 被手动删除/缺失时，worldId 推断逻辑会降级为按已知频道 ID 匹配并回填 `channel->worldId`，避免 `/world info|rules|stats|join` 无法识别当前世界
 - Discord：`/world info|rules|stats|status` 在世界子空间频道内可省略 `world_id`
 - Discord：新增 `/world remove`（管理员）清理世界 meta/集合与 worlds 文件，并 best-effort 删除 Discord 资源
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
@@ -60,10 +58,10 @@
 - Discord：修复 `/character create` 的参数顺序导致 Slash Commands 注册失败（进而缺失 `/world`）
 - Discord：世界构建/编辑会话统一落在 creator-only 临时频道（可选 Thread），避免 parent channel 权限导致 bot 无法发言；并允许在该频道内执行 `/world done` 完成发布/关闭
 - Discord：生成的 `agent.md` frontmatter 修正为字符串版 `version`，避免解析告警刷屏飞书
-- Discord：当世界 Category 被手动删除/缺失时，`world-join` 频道补齐会降级为无 parent 创建，并支持通过已知频道 ID 推断世界，避免 `CHANNEL_PARENT_INVALID` 导致无法加入
+- Discord：当世界 Category 被手动删除/缺失时，世界子空间维护不会强依赖 `parent_id`；避免触发 `CHANNEL_PARENT_INVALID`，并确保世界识别/加入流程可继续推进
 - Discord：`/world create` 私密话题会先发送“世界创建规则”，再进入多轮补全，降低新用户上手成本
 - Logging：飞书 `warn/error` 日志补齐 `guildId/worldId/characterId` 字段，便于快速定位是哪个世界/会话出问题
-- Discord：`world-join` 迁移仅在启用 Slash Commands 的进程执行，避免 adapter/worker 双进程重复补齐造成重复告警/重复创建
+- Discord：世界子空间迁移仅在启用 Slash Commands 的进程执行，避免 adapter/worker 双进程重复迁移造成重复告警/重复创建
 
 ## [0.0.30] - 2026-01-24
 

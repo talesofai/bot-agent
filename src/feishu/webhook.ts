@@ -159,16 +159,6 @@ function shouldSendToFeishu(record: Record<string, unknown>): boolean {
     return false;
   }
 
-  if (record.ok === false) {
-    return true;
-  }
-  if (
-    (typeof record.errName === "string" && record.errName.trim()) ||
-    (typeof record.errMessage === "string" && record.errMessage.trim())
-  ) {
-    return true;
-  }
-
   // Only keep: warn/error + all message I/O (Discord only for now).
   if (event === "log.warn" || event === "log.error") {
     return true;

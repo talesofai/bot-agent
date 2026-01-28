@@ -6,7 +6,7 @@ import { assertSafePathSegment, isSafePathSegment } from "../utils/path";
 
 export type WorldStatus = "draft" | "active" | "archived" | "failed";
 
-export type CharacterVisibility = "world" | "public" | "private";
+export type CharacterVisibility = "public" | "private";
 
 export type WorldDraftMeta = {
   id: WorldId;
@@ -40,7 +40,6 @@ export type WorldMeta = WorldDraftMeta | WorldActiveMeta;
 
 export type CharacterMeta = {
   id: number;
-  worldId: WorldId;
   creatorId: string;
   name: string;
   visibility: CharacterVisibility;
@@ -178,6 +177,10 @@ export class WorldStore {
     }
     multi.set(
       this.channelGroupKey(meta.roleplayChannelId),
+      buildWorldGroupId(meta.id),
+    );
+    multi.set(
+      this.channelGroupKey(meta.proposalsChannelId),
       buildWorldGroupId(meta.id),
     );
     await multi.exec();
@@ -347,7 +350,7 @@ export class WorldStore {
 
   async purgeWorld(meta: WorldMeta): Promise<{
     deletedMembers: number;
-    deletedCharacters: number;
+    deletedWorldCharacters: number;
   }> {
     const worldId = normalizeWorldId(meta.id);
 
@@ -359,13 +362,6 @@ export class WorldStore {
       .map((value) => Number(value))
       .filter((value) => Number.isInteger(value) && value > 0);
 
-    const characterMetas = await Promise.all(
-      characterIds.map(async (characterId) => {
-        const parsed = await this.getCharacter(characterId);
-        return parsed ?? null;
-      }),
-    );
-
     const multi = this.redis.multi();
 
     for (const userId of memberIds) {
@@ -376,18 +372,6 @@ export class WorldStore {
     }
     multi.del(this.worldMembersKey(worldId));
 
-    for (const characterMeta of characterMetas) {
-      if (!characterMeta) {
-        continue;
-      }
-      multi.del(this.characterMetaKey(characterMeta.id));
-      if (isSafePathSegment(characterMeta.creatorId)) {
-        multi.srem(
-          this.userCharactersKey(characterMeta.creatorId),
-          String(characterMeta.id),
-        );
-      }
-    }
     multi.del(this.worldCharactersKey(worldId));
 
     multi.del(this.worldMetaKey(worldId));
@@ -415,12 +399,11 @@ export class WorldStore {
 
     return {
       deletedMembers: memberIds.length,
-      deletedCharacters: characterIds.length,
+      deletedWorldCharacters: characterIds.length,
     };
   }
 
   async createCharacter(meta: CharacterMeta): Promise<void> {
-    normalizeWorldId(meta.worldId);
     if (!Number.isInteger(meta.id) || meta.id <= 0) {
       throw new Error("character id must be a positive integer");
     }
@@ -430,7 +413,6 @@ export class WorldStore {
     const now = new Date().toISOString();
     const payload: Record<string, string> = {
       id: String(meta.id),
-      worldId: String(meta.worldId),
       creatorId: meta.creatorId,
       name: meta.name,
       visibility: meta.visibility,
@@ -441,7 +423,6 @@ export class WorldStore {
     const multi = this.redis.multi();
     multi.hset(this.characterMetaKey(meta.id), payload);
     multi.sadd(this.userCharactersKey(meta.creatorId), String(meta.id));
-    multi.sadd(this.worldCharactersKey(meta.worldId), String(meta.id));
     await multi.exec();
   }
 
@@ -491,6 +472,92 @@ export class WorldStore {
     }
     const parsed = Number(raw);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  async setGlobalActiveCharacter(input: {
+    userId: string;
+    characterId: number;
+  }): Promise<void> {
+    if (!isSafePathSegment(input.userId)) {
+      throw new Error("userId must be a safe path segment");
+    }
+    if (!Number.isInteger(input.characterId) || input.characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    await this.redis.set(
+      this.globalActiveCharacterKey(input.userId),
+      String(input.characterId),
+    );
+  }
+
+  async getGlobalActiveCharacterId(input: {
+    userId: string;
+  }): Promise<number | null> {
+    if (!isSafePathSegment(input.userId)) {
+      return null;
+    }
+    const raw = await this.redis.get(
+      this.globalActiveCharacterKey(input.userId),
+    );
+    if (!raw) {
+      return null;
+    }
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  async listUserCharacterIds(userId: string, limit = 50): Promise<number[]> {
+    if (!isSafePathSegment(userId)) {
+      throw new Error("userId must be a safe path segment");
+    }
+    const capped = Math.max(1, Math.min(200, Math.floor(limit)));
+    const ids = await this.redis.smembers(this.userCharactersKey(userId));
+    return ids
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0)
+      .slice(0, capped);
+  }
+
+  async listPublicCharacterIds(limit = 50): Promise<number[]> {
+    const capped = Math.max(1, Math.min(200, Math.floor(limit)));
+    const ids = await this.redis.zrevrange(
+      this.key("character:public:created_at"),
+      0,
+      capped - 1,
+    );
+    return ids
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0);
+  }
+
+  async setCharacterVisibility(input: {
+    characterId: number;
+    visibility: CharacterVisibility;
+  }): Promise<void> {
+    if (!Number.isInteger(input.characterId) || input.characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    const meta = await this.getCharacter(input.characterId);
+    if (!meta) {
+      throw new Error(`角色不存在：C${input.characterId}`);
+    }
+    const now = new Date().toISOString();
+    const publicKey = this.key("character:public:created_at");
+    const multi = this.redis.multi();
+    multi.hset(this.characterMetaKey(meta.id), {
+      visibility: input.visibility,
+      updatedAt: now,
+    });
+    if (input.visibility === "public") {
+      multi.zadd(
+        publicKey,
+        Date.parse(meta.createdAt) || Date.now(),
+        String(meta.id),
+      );
+    } else {
+      multi.zrem(publicKey, String(meta.id));
+    }
+    await multi.exec();
   }
 
   private key(suffix: string): string {
@@ -546,6 +613,11 @@ export class WorldStore {
   private userCharactersKey(userId: string): string {
     assertSafePathSegment(userId, "userId");
     return this.key(`user:${userId}:characters`);
+  }
+
+  private globalActiveCharacterKey(userId: string): string {
+    assertSafePathSegment(userId, "userId");
+    return this.key(`user:${userId}:active_character`);
   }
 
   private activeCharacterKey(worldId: WorldId, userId: string): string {
@@ -635,16 +707,8 @@ function parseCharacterMeta(raw: Record<string, string>): CharacterMeta | null {
   if (!Number.isInteger(id) || id <= 0) {
     return null;
   }
-  const worldId = Number(raw.worldId);
-  if (!Number.isInteger(worldId) || worldId <= 0) {
-    return null;
-  }
   const visibility = raw.visibility as CharacterVisibility;
-  if (
-    visibility !== "world" &&
-    visibility !== "public" &&
-    visibility !== "private"
-  ) {
+  if (visibility !== "public" && visibility !== "private") {
     return null;
   }
   const status = raw.status as CharacterMeta["status"];
@@ -659,7 +723,6 @@ function parseCharacterMeta(raw: Record<string, string>): CharacterMeta | null {
   }
   return {
     id,
-    worldId,
     creatorId: raw.creatorId,
     name: raw.name,
     visibility,

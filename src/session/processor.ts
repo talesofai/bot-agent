@@ -31,6 +31,7 @@ import { WorldFileStore } from "../world/file-store";
 import { parseWorldGroup } from "../world/ids";
 import { WorldStore } from "../world/store";
 import { feishuLogJson } from "../feishu/webhook";
+import { parseCharacterGroup } from "../character/ids";
 import {
   parseOpencodeModelIdsCsv,
   selectOpencodeModelId,
@@ -398,6 +399,7 @@ export class SessionProcessor {
       const { history, request, promptBytes } = promptContext;
 
       const parsedWorld = parseWorldGroup(sessionInfo.meta.groupId);
+      const parsedCharacter = parseCharacterGroup(sessionInfo.meta.groupId);
       feishuLogJson({
         event: "ai.start",
         traceId: runtime.traceId,
@@ -410,10 +412,7 @@ export class SessionProcessor {
         userId: sessionInfo.meta.ownerId,
         key: sessionInfo.meta.key,
         worldId: parsedWorld?.worldId,
-        characterId:
-          parsedWorld?.kind === "character_build"
-            ? parsedWorld.characterId
-            : undefined,
+        characterId: parsedCharacter?.characterId,
       });
 
       let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
@@ -446,23 +445,26 @@ export class SessionProcessor {
         );
 
         try {
-          const syncResult = await batchSpan("sync_world_files", async () => {
-            try {
-              const changed =
-                await this.syncWorldFilesFromWorkspace(sessionInfo);
-              return { ok: true as const, changed };
-            } catch (syncErr) {
-              return { ok: false as const, err: syncErr };
-            }
-          });
+          const syncResult = await batchSpan(
+            "sync_workspace_files",
+            async () => {
+              try {
+                const changed =
+                  await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
+                return { ok: true as const, changed };
+              } catch (syncErr) {
+                return { ok: false as const, err: syncErr };
+              }
+            },
+          );
           if (!syncResult.ok) {
             runtime.log.error(
               { err: syncResult.err },
-              "World file sync failed",
+              "Workspace file sync failed",
             );
           }
         } catch (syncErr) {
-          runtime.log.error({ err: syncErr }, "World file sync failed");
+          runtime.log.error({ err: syncErr }, "Workspace file sync failed");
         }
 
         if (isAbort) {
@@ -547,16 +549,20 @@ export class SessionProcessor {
       }
 
       const responseOutput = auditedOutput;
-      const syncResult = await batchSpan("sync_world_files", async () => {
+      const syncResult = await batchSpan("sync_workspace_files", async () => {
         try {
-          const changed = await this.syncWorldFilesFromWorkspace(sessionInfo);
+          const changed =
+            await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
           return { ok: true as const, changed };
         } catch (err) {
           return { ok: false as const, err };
         }
       });
       if (!syncResult.ok) {
-        runtime.log.error({ err: syncResult.err }, "World file sync failed");
+        runtime.log.error(
+          { err: syncResult.err },
+          "Workspace file sync failed",
+        );
       }
 
       const responseOutputBytes = responseOutput
@@ -586,10 +592,7 @@ export class SessionProcessor {
         userId: sessionInfo.meta.ownerId,
         key: sessionInfo.meta.key,
         worldId: parsedWorld?.worldId,
-        characterId:
-          parsedWorld?.kind === "character_build"
-            ? parsedWorld.characterId
-            : undefined,
+        characterId: parsedCharacter?.characterId,
         outputPreview: responseOutputPreview.content,
       });
       await batchSpan("append_history", async () =>
@@ -665,8 +668,8 @@ export class SessionProcessor {
       this.getAgentPrompt(groupId),
     );
 
-    await span("ensure_world_workspace", async () =>
-      this.ensureWorldWorkspace(sessionInfo),
+    await span("ensure_workspace_bindings", async () =>
+      this.ensureWorkspaceBindings(sessionInfo),
     );
 
     await span("ensure_opencode_skills", async () =>
@@ -727,24 +730,34 @@ export class SessionProcessor {
     return { history: [], request, promptBytes };
   }
 
-  private async ensureWorldWorkspace(sessionInfo: SessionInfo): Promise<void> {
-    const parsed = parseWorldGroup(sessionInfo.meta.groupId);
-    if (!parsed) {
+  private async ensureWorkspaceBindings(
+    sessionInfo: SessionInfo,
+  ): Promise<void> {
+    const world = parseWorldGroup(sessionInfo.meta.groupId);
+    if (world) {
+      await this.ensureWorldWorkspace(sessionInfo, world);
       return;
     }
+    const character = parseCharacterGroup(sessionInfo.meta.groupId);
+    if (character) {
+      await this.ensureCharacterWorkspace(sessionInfo, character);
+    }
+  }
+
+  private async ensureWorldWorkspace(
+    sessionInfo: SessionInfo,
+    parsed: NonNullable<ReturnType<typeof parseWorldGroup>>,
+  ): Promise<void> {
     const worldId = parsed.worldId;
 
     const worldDir = path.join(sessionInfo.workspacePath, "world");
     await mkdir(worldDir, { recursive: true });
 
-    const [card, rules, source, characterCard] = await Promise.all([
+    const [card, rules, source] = await Promise.all([
       this.worldFiles.readWorldCard(worldId),
       this.worldFiles.readRules(worldId),
       parsed.kind === "build"
         ? this.worldFiles.readSourceDocument(worldId)
-        : null,
-      parsed.kind === "character_build"
-        ? this.worldFiles.readCharacterCard(worldId, parsed.characterId)
         : null,
     ]);
 
@@ -760,7 +773,6 @@ export class SessionProcessor {
     ]);
 
     const sourcePath = path.join(worldDir, "source.md");
-    const characterCardPath = path.join(worldDir, "character-card.md");
     if (parsed.kind === "build") {
       if (source?.trim()) {
         await atomicWrite(sourcePath, source);
@@ -768,22 +780,10 @@ export class SessionProcessor {
         await rm(sourcePath, { force: true });
       }
       await rm(path.join(worldDir, "active-character.md"), { force: true });
-      await rm(characterCardPath, { force: true });
       return;
     }
 
     await rm(sourcePath, { force: true });
-
-    if (parsed.kind === "character_build") {
-      await atomicWrite(
-        characterCardPath,
-        characterCard ?? `# 角色卡（C${parsed.characterId}）\n`,
-      );
-      await rm(path.join(worldDir, "active-character.md"), { force: true });
-      return;
-    }
-
-    await rm(characterCardPath, { force: true });
 
     const activeCharacterId = await this.worldStore.getActiveCharacterId({
       worldId,
@@ -794,10 +794,8 @@ export class SessionProcessor {
       await rm(activePath, { force: true });
       return;
     }
-    const activeCharacterCard = await this.worldFiles.readCharacterCard(
-      worldId,
-      activeCharacterId,
-    );
+    const activeCharacterCard =
+      await this.worldFiles.readCharacterCard(activeCharacterId);
     if (!activeCharacterCard) {
       await rm(activePath, { force: true });
       return;
@@ -805,11 +803,40 @@ export class SessionProcessor {
     await atomicWrite(activePath, activeCharacterCard);
   }
 
-  private async syncWorldFilesFromWorkspace(
+  private async ensureCharacterWorkspace(
+    sessionInfo: SessionInfo,
+    parsed: NonNullable<ReturnType<typeof parseCharacterGroup>>,
+  ): Promise<void> {
+    const characterId = parsed.characterId;
+    const dir = path.join(sessionInfo.workspacePath, "character");
+    await mkdir(dir, { recursive: true });
+
+    const card = await this.worldFiles.readCharacterCard(characterId);
+    await atomicWrite(
+      path.join(dir, "character-card.md"),
+      card ?? `# 角色卡（C${characterId}）\n`,
+    );
+  }
+
+  private async syncWorkspaceFilesFromWorkspace(
     sessionInfo: SessionInfo,
   ): Promise<string[]> {
-    const parsed = parseWorldGroup(sessionInfo.meta.groupId);
-    if (!parsed || parsed.kind === "play") {
+    const world = parseWorldGroup(sessionInfo.meta.groupId);
+    if (world) {
+      return this.syncWorldFilesFromWorkspace(sessionInfo, world);
+    }
+    const character = parseCharacterGroup(sessionInfo.meta.groupId);
+    if (character) {
+      return this.syncCharacterFilesFromWorkspace(sessionInfo, character);
+    }
+    return [];
+  }
+
+  private async syncWorldFilesFromWorkspace(
+    sessionInfo: SessionInfo,
+    parsed: NonNullable<ReturnType<typeof parseWorldGroup>>,
+  ): Promise<string[]> {
+    if (parsed.kind === "play") {
       return [];
     }
     const worldId = parsed.worldId;
@@ -873,22 +900,33 @@ export class SessionProcessor {
 
       return changed;
     }
+    return [];
+  }
 
-    const meta = await this.worldStore.getCharacter(parsed.characterId);
+  private async syncCharacterFilesFromWorkspace(
+    sessionInfo: SessionInfo,
+    parsed: NonNullable<ReturnType<typeof parseCharacterGroup>>,
+  ): Promise<string[]> {
+    const characterId = parsed.characterId;
+    const meta = await this.worldStore.getCharacter(characterId);
     if (!meta) {
-      throw new Error(`角色不存在：C${parsed.characterId}`);
-    }
-    if (meta.worldId !== worldId) {
-      throw new Error("角色不属于该世界，拒绝写回。");
+      throw new Error(`角色不存在：C${characterId}`);
     }
     if (meta.creatorId !== sessionInfo.meta.ownerId) {
       throw new Error("无权限：只有角色创作者可以修改角色卡。");
     }
 
-    const [workspaceCard, storedCard] = await Promise.all([
-      readWorkspaceFile("character-card.md"),
-      this.worldFiles.readCharacterCard(worldId, parsed.characterId),
-    ]);
+    const dir = path.join(sessionInfo.workspacePath, "character");
+    const workspacePath = path.join(dir, "character-card.md");
+    const workspaceCard = await readFile(workspacePath, "utf8").catch((err) => {
+      if (err && typeof err === "object" && "code" in err) {
+        if ((err as { code?: unknown }).code === "ENOENT") {
+          return null;
+        }
+      }
+      throw err;
+    });
+    const storedCard = await this.worldFiles.readCharacterCard(characterId);
 
     if (
       !workspaceCard?.trim() ||
@@ -896,19 +934,15 @@ export class SessionProcessor {
     ) {
       return [];
     }
-    await this.worldFiles.writeCharacterCard(
-      worldId,
-      parsed.characterId,
-      workspaceCard,
-    );
-    await this.worldFiles.appendEvent(worldId, {
+
+    await this.worldFiles.writeCharacterCard(characterId, workspaceCard);
+    await this.worldFiles.appendCharacterEvent(characterId, {
       type: "character_card_updated",
-      worldId,
-      characterId: parsed.characterId,
+      characterId,
       userId: sessionInfo.meta.ownerId,
       groupId: sessionInfo.meta.groupId,
     });
-    return ["character-card.md"];
+    return ["character/character-card.md"];
   }
 
   private async ensureOpencodeSessionId(

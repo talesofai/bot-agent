@@ -1935,7 +1935,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         `角色已创建：C${characterId} ${name}（visibility=${visibility}）`,
         `完善角色卡：${buildConversationMention}`,
         `完成后关闭：/character close`,
-        `开始扮演：/character act character_id:${characterId}`,
+        `设为当前角色：/character act character_id:${characterId}`,
       ].join("\n"),
       { ephemeral: false },
     );
@@ -1952,11 +1952,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         "  - 在世界入口频道（world-roleplay）内可省略 world_id",
         "  - visibility 默认 world",
         "- /character view character_id:<角色ID>（遵循 visibility 权限）",
-        "- /character act character_id:<角色ID>（让 bot 在该世界扮演此角色）",
+        "- /character act character_id:<角色ID>（设置你在该世界的当前角色；你用该角色发言，bot 作为旁白/世界系统回应）",
         "- /character close（仅创作者，关闭当前角色构建话题）",
         "",
         "提示：",
-        "- 需要先 /world join 才能创建/指定扮演角色",
+        "- 需要先 /world join 才能创建/设置当前角色",
       ].join("\n"),
       { ephemeral: true },
     );
@@ -2013,7 +2013,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       interaction.user.id,
     );
     if (!isMember) {
-      await safeReply(interaction, "你尚未加入该世界，无法指定扮演角色。", {
+      await safeReply(interaction, "你尚未加入该世界，无法设置当前角色。", {
         ephemeral: false,
       });
       return;
@@ -2025,7 +2025,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     });
     await safeReply(
       interaction,
-      `已设置扮演角色：C${meta.id} ${meta.name}\n请在世界入口频道内开始对话。`,
+      [
+        `已设置你的当前角色：C${meta.id} ${meta.name}`,
+        `接下来你在世界入口频道的发言将视为该角色的行动/台词；bot 会作为旁白/世界系统回应。`,
+      ].join("\n"),
       { ephemeral: false },
     );
   }
@@ -3251,7 +3254,7 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("act")
-          .setDescription("指定 bot 在本世界扮演哪个角色")
+          .setDescription("设置你在本世界的当前角色")
           .addIntegerOption((option) =>
             option
               .setName("character_id")
@@ -3427,7 +3430,7 @@ function buildWorldAgentPrompt(input: {
     ``,
     `硬性规则：`,
     `1) 世界正典与规则在会话工作区的 \`world/world-card.md\` 与 \`world/rules.md\`。回答前必须读取它们；不确定就说不知道，禁止编造。`,
-    `2) 如果 \`world/active-character.md\` 存在：你必须以其中角色口吻进行对话（用户通过 /character act 设置）。否则你作为旁白/世界系统。`,
+    `2) 如果 \`world/active-character.md\` 存在：这代表用户正在以该角色身份发言。你作为旁白/世界系统/GM回应，禁止替用户发言，更不能用第一人称扮演用户角色。`,
     `3) 当前是游玩会话（只读）。当用户请求修改世界设定/正典时：不要直接改写文件；应引导联系世界创作者使用 /world edit。`,
     ``,
   ].join("\n");

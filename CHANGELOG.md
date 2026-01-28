@@ -16,7 +16,7 @@
 - Discord：启动时自动为旧世界补齐 `world-join` 并回填 `joinChannelId`，避免旧 world meta 缺字段导致无法加入
 - Discord：发布/编辑结束后自动推送“世界卡 + 世界规则”快照到 `world-info`，便于所有人查看当前已确定设定
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
-- Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`），并可通过 `/character act` 让 bot 在世界入口频道扮演角色
+- Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`）；`/character act` 用于设置你在该世界的当前角色（用户扮演，bot 作为旁白/世界系统回应）
 - Discord：`/character create` 自动创建“角色构建”话题（`groupId=world_{id}_character_{cid}_build`），并触发 kickoff 以多轮补全角色卡
 - Discord：新增 `/world done`、`/character close`（仅创作者）用于结束构建话题（archive+lock）
 - World：新增 `channelId -> worldId` 路由与 world roleplay 频道 always-on（绕过 mention/keyword 触发），会话隔离为 `groupId=world_{worldId}` 并注入 `world/world-card.md`、`world/rules.md`、`world/active-character.md`

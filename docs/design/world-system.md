@@ -21,7 +21,7 @@
    - **访客数**：用 join 人数（members）定义即可。
    - **角色数**：这个世界下登记的角色数量（characters）。
 7. **世界ID/角色ID**：都必须是**数字自增**。
-8. “角色”不是用户本人 RP；而是用户创建一个人设在该世界生活；**roleplay = 用户与 bot 对话，并指定 bot 扮演某个角色**。
+8. “角色”不是用户本人 RP；而是用户创建一个人设在该世界生活；**roleplay = 用户以该角色身份发言，bot 作为旁白/世界系统回应**。
 9. 世界信息在子空间聊天时应可只读获取（skill），且该子空间的对话是**新的 session**，不带外部记忆。
 
 如果上述有任何偏差，你直接指出哪条错了，我会改设计，而不是加 if。
@@ -122,7 +122,7 @@
 
 - `worldMembers: Set<userId>`：用于访客数（join 数）
 
-**RoleplayState（每个用户在世界里的当前“扮演对象”）**
+**ActiveCharacterState（每个用户在世界里的当前角色；用户扮演）**
 
 - `activeCharacterIdByUser`：`(worldId,userId) -> characterId`
 
@@ -185,7 +185,7 @@ guildId
 - `character:{characterId}:meta` → `HSET`（`worldId creatorId name status createdAt updatedAt`)
 - `user:{userId}:characters` → `SADD characterId`（用于 `/character view [@用户]`）
 
-扮演状态：
+当前角色状态（用户扮演）：
 
 - `world:{worldId}:active_character:{userId}` → `SET characterId`
 
@@ -229,7 +229,7 @@ guildId
 
 这里先把“能看到但不能进入”说清楚：  
 **能看到** = 能获取/阅读世界信息（世界卡/规则/地图/统计/编年史），不要求成为成员。  
-**不能进入** = 不能在世界里产生可写行为（发言/提案/创建角色/触发 bot 扮演），直到 `/world join` 成为成员。
+**不能进入** = 不能在世界里产生可写行为（发言/提案/创建角色/设置当前角色），直到 `/world join` 成为成员。
 
 落到 Discord 体验上：
 

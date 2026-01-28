@@ -202,14 +202,14 @@
 
 ---
 
-## 9. `/character act <characterId>`（指定 bot 扮演角色）
+## 9. `/character act <characterId>`（设置用户当前角色）
 
 ### 主流程
 
 1. 校验角色存在且属于某个 world。
 2. 校验请求者是该世界成员（至少 `visibility != public` 时必须是成员；推荐统一要求成员）。
 3. 写入状态：`SET(world:{worldId}:active_character:{userId}, characterId)`。
-4. 返回确认：后续在 `#world-roleplay` 的对话以该角色身份进行（由 world readonly skill + system prompt 实现）。
+4. 返回确认：后续用户在 `#world-roleplay` 的发言将视为该角色的行动/台词；bot 作为旁白/世界系统回应（由 world readonly skill + system prompt 实现）。
 
 ---
 

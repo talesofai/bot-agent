@@ -13,29 +13,41 @@ describe("UserStateStore", () => {
       const userId = "123";
       const created = await store.upsert(userId, {
         role: "player",
+        language: "zh",
         characterCreatedAt: "t",
       });
       expect(created.userId).toBe(userId);
       expect(created.role).toBe("player");
-      expect(created.version).toBe(2);
+      expect(created.language).toBe("zh");
+      expect(created.version).toBe(3);
 
       const loaded = await store.read(userId);
       expect(loaded).not.toBeNull();
       expect(loaded?.role).toBe("player");
+      expect(loaded?.language).toBe("zh");
       expect(loaded?.characterCreatedAt).toBe("t");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it("markPrompted is idempotent", async () => {
+  it("sets onboarding thread ids by role", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "user-state-"));
     try {
       const store = new UserStateStore({ dataRoot: dir });
-      const first = await store.markPrompted("456");
-      const second = await store.markPrompted("456");
-      expect(first.promptedAt).toBeDefined();
-      expect(second.promptedAt).toBe(first.promptedAt);
+      await store.setOnboardingThreadId({
+        userId: "456",
+        role: "player",
+        threadId: "t1",
+      });
+      await store.setOnboardingThreadId({
+        userId: "456",
+        role: "creator",
+        threadId: "t2",
+      });
+      const loaded = await store.read("456");
+      expect(loaded?.onboardingThreadIds?.player).toBe("t1");
+      expect(loaded?.onboardingThreadIds?.creator).toBe("t2");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

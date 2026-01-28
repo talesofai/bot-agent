@@ -10,6 +10,7 @@
 ### Added
 
 - Discord：新增世界系统（`/world help|create|open|done|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
+- Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
 - Discord：`/world create` 创建世界草稿并创建私密话题（Thread，位于 `world-workshop-{userId}`），支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
 - Discord：`/world open`（仅创作者）打开该世界的私密编辑话题
 - Discord：`/world done` 发布世界并创建子空间（`world-announcements`/`world-discussion`/`world-proposals`/`World Voice`），默认所有人可见只读；join 后获得发言权限
@@ -27,6 +28,7 @@
 ### Changed
 
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
+- Discord：`/onboard` 不再发 DM；改为在 homeGuild 内创建持久化私密话题（`玩家新手指导`/`创作者新手指导`），并把话题内输入视为 `@bot`（无需显式 mention）
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
 - Discord：`/world join` 支持在世界子空间频道内省略 `world_id`（也支持显式 `world_id:<ID>`）
@@ -43,6 +45,7 @@
 ### Fixed
 
 - World：新增构建/角色构建会话的 Discord channel 路由自修复（根据线程/频道名与分类映射回填 `channel->group/world`），避免“子话题不需要 @bot 但不入队”
+- Discord：当 SlashCommand 回复/延迟失败时，补齐飞书 `log.warn` 事件，便于定位 Discord “程序未响应”根因
 - World：当世界子空间的 Category 被手动删除/缺失时，worldId 推断逻辑会降级为按已知频道 ID 匹配并回填 `channel->worldId`，避免 `/world info|rules|stats|join` 无法识别当前世界
 - Discord：`/world info|rules|stats|status` 在世界子空间频道内可省略 `world_id`
 - Discord：新增 `/world remove`（管理员）清理世界 meta/集合与 worlds 文件，并 best-effort 删除 Discord 资源

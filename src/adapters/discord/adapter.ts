@@ -99,7 +99,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages,
       ],
       partials: [Partials.Channel],
     });
@@ -212,15 +211,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       if (!parsed) {
         return;
       }
+      const augmented = await this.maybeAugmentOnboardingMention(parsed);
       feishuLogJson({
         event: "io.recv",
-        platform: parsed.platform,
-        guildId: parsed.guildId,
-        channelId: parsed.channelId,
-        userId: parsed.userId,
-        messageId: parsed.messageId,
-        contentPreview: previewTextForLog(parsed.content ?? "", 1200),
-        contentLength: parsed.content?.length ?? 0,
+        platform: augmented.platform,
+        guildId: augmented.guildId,
+        channelId: augmented.channelId,
+        userId: augmented.userId,
+        messageId: augmented.messageId,
+        contentPreview: previewTextForLog(augmented.content ?? "", 1200),
+        contentLength: augmented.content?.length ?? 0,
         hasAttachments: Boolean(
           message.attachments && message.attachments.size,
         ),
@@ -236,14 +236,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         this.logger.warn({ err }, "Failed to send onboarding prompt");
       }
       try {
-        await this.ingestWorldBuildAttachments(message, parsed);
+        await this.ingestWorldBuildAttachments(message, augmented);
       } catch (err) {
         this.logger.warn({ err }, "Failed to ingest world build attachments");
       }
       try {
         const blocked = await this.maybeRejectWorldPlayMessageNotMember(
           message,
-          parsed,
+          augmented,
         );
         if (blocked) {
           return;
@@ -252,10 +252,48 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         this.logger.warn({ err }, "Failed to check world membership");
       }
       this.logger.debug({ messageId: parsed.messageId }, "Message received");
-      await this.emitEvent(parsed);
+      await this.emitEvent(augmented);
     } catch (err) {
       this.logger.error({ err }, "Failed to handle Discord message");
     }
+  }
+
+  private async maybeAugmentOnboardingMention(
+    session: SessionEvent<DiscordMessageExtras>,
+  ): Promise<SessionEvent<DiscordMessageExtras>> {
+    const botId = session.selfId?.trim() ?? "";
+    if (!botId) {
+      return session;
+    }
+    const channelId = session.channelId?.trim() ?? "";
+    if (!channelId) {
+      return session;
+    }
+    if (
+      session.elements.some(
+        (element) => element.type === "mention" && element.userId === botId,
+      )
+    ) {
+      return session;
+    }
+
+    const state = await this.userState.read(session.userId);
+    const threadIds = state?.onboardingThreadIds ?? null;
+    if (!threadIds || typeof threadIds !== "object") {
+      return session;
+    }
+
+    const ids = Object.values(threadIds)
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter(Boolean);
+    if (!ids.includes(channelId)) {
+      return session;
+    }
+
+    return {
+      ...session,
+      elements: [{ type: "mention", userId: botId }, ...session.elements],
+    };
   }
 
   private async maybeRejectWorldPlayMessageNotMember(
@@ -467,46 +505,44 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!message.guildId || message.guildId !== homeGuildId) {
       return;
     }
+    if (!message.guild) {
+      return;
+    }
     if (!message.author?.id) {
       return;
     }
 
     const existing = await this.userState.read(message.author.id);
-    if (existing?.role || existing?.promptedAt) {
-      return;
-    }
-    await this.userState.markPrompted(message.author.id);
-
-    const dm = await this.openDmOrNull(message.author.id);
-    if (!dm) {
+    const hasAnyThread =
+      existing?.onboardingThreadIds &&
+      (existing.onboardingThreadIds.player ||
+        existing.onboardingThreadIds.creator);
+    if (existing?.role || hasAnyThread) {
       return;
     }
 
+    const threadId = await this.ensureOnboardingThread({
+      guild: message.guild,
+      userId: message.author.id,
+      role: "player",
+      reason: "onboarding auto prompt",
+    });
     await this.sendLongTextToChannel({
-      guildId: undefined,
-      channelId: dm.id,
+      guildId: message.guildId,
+      channelId: threadId,
       content: [
         `【新手引导】`,
-        `1) 先选择身份（仅需一次）：`,
+        `你会在这里进行私密引导（仅你与 bot 可见）。`,
+        ``,
+        `请选择身份（仅需一次）：`,
         `- /onboard role:player`,
         `- /onboard role:creator`,
+        ``,
+        `可选：设置语言 /language lang:zh|en`,
         ``,
         `提示：/help 查看所有指令。`,
       ].join("\n"),
     });
-  }
-
-  private async openDmOrNull(userId: string): Promise<{ id: string } | null> {
-    const safe = userId.trim();
-    if (!safe) {
-      return null;
-    }
-    const user = await this.client.users.fetch(safe).catch(() => null);
-    if (!user) {
-      return null;
-    }
-    const dm = await user.createDM().catch(() => null);
-    return dm ? { id: dm.id } : null;
   }
 
   private async ingestWorldBuildAttachments(
@@ -642,6 +678,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         [
           "可用指令：",
           "- /onboard role:player|creator",
+          "- /language lang:zh|en",
           "- /world help",
           "- /character help",
           "- /reset [key:<会话槽位>] [user:<用户>]",
@@ -656,6 +693,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
     if (commandName === "onboard") {
       await this.handleOnboard(interaction);
+      return;
+    }
+    if (commandName === "language") {
+      await this.handleLanguage(interaction);
       return;
     }
     if (commandName === "world") {
@@ -852,21 +893,42 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     await this.userState.setRole(interaction.user.id, role);
 
-    const dm = await this.openDmOrNull(interaction.user.id);
-    if (dm) {
-      await this.sendLongTextToChannel({
-        channelId: dm.id,
-        content: buildRulesText(role),
+    if (!interaction.guildId || !interaction.guild) {
+      await safeReply(interaction, "该指令仅支持在服务器内使用。", {
+        ephemeral: true,
       });
+      return;
     }
+
+    const threadId = await this.ensureOnboardingThread({
+      guild: interaction.guild,
+      userId: interaction.user.id,
+      role,
+      reason: `onboard role=${role}`,
+    });
+    await this.sendLongTextToChannel({
+      guildId: interaction.guildId,
+      channelId: threadId,
+      content: buildRulesText(role),
+    });
 
     await safeReply(
       interaction,
-      dm
-        ? `已选择身份：${role}。我已私信你规则与下一步指引。`
-        : `已选择身份：${role}。但我无法向你发私信（请检查 DM 设置）。`,
+      `已选择身份：${role}。继续在私密话题：<#${threadId}>`,
       { ephemeral: true },
     );
+  }
+
+  private async handleLanguage(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
+    const langRaw = interaction.options.getString("lang", true);
+    const language = langRaw === "en" ? "en" : "zh";
+    await this.userState.setLanguage(interaction.user.id, language);
+    await safeReply(interaction, `已设置语言：${language}`, {
+      ephemeral: true,
+    });
   }
 
   private async handleWorldCommand(
@@ -3418,6 +3480,82 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     return { id: channel.id };
   }
 
+  private async ensureOnboardingThread(input: {
+    guild: Guild;
+    userId: string;
+    role: UserRole;
+    reason: string;
+  }): Promise<string> {
+    const workshop = await this.createCreatorOnlyChannel({
+      guild: input.guild,
+      name: `onboarding-${input.userId}`,
+      creatorUserId: input.userId,
+      reason: `onboarding workshop ensure for ${input.userId}`,
+    });
+
+    const existingThreadId = await this.userState.getOnboardingThreadId({
+      userId: input.userId,
+      role: input.role,
+    });
+    if (existingThreadId) {
+      const fetched = await input.guild.channels
+        .fetch(existingThreadId)
+        .catch(() => null);
+      if (fetched) {
+        try {
+          const setArchived = (fetched as unknown as { setArchived?: unknown })
+            .setArchived;
+          if (typeof setArchived === "function") {
+            await (
+              fetched as unknown as {
+                setArchived: (
+                  archived: boolean,
+                  reason?: string,
+                ) => Promise<unknown>;
+              }
+            ).setArchived(false, "onboarding reopen");
+          }
+        } catch {
+          // ignore
+        }
+        try {
+          const members = (fetched as unknown as { members?: unknown }).members;
+          const add =
+            members && typeof members === "object"
+              ? (members as { add?: unknown }).add
+              : null;
+          if (typeof add === "function") {
+            await (
+              members as { add: (userId: string) => Promise<unknown> }
+            ).add(input.userId);
+          }
+        } catch {
+          // ignore
+        }
+        return existingThreadId;
+      }
+    }
+
+    const thread = await this.tryCreatePrivateThread({
+      guild: input.guild,
+      parentChannelId: workshop.id,
+      name: input.role === "creator" ? "创作者新手指导" : "玩家新手指导",
+      reason: input.reason,
+      memberUserId: input.userId,
+    });
+    if (!thread) {
+      throw new Error(
+        "无法创建新手指导私密话题：请检查 bot 是否具备创建私密话题权限（CreatePrivateThreads）",
+      );
+    }
+    await this.userState.setOnboardingThreadId({
+      userId: input.userId,
+      role: input.role,
+      threadId: thread.threadId,
+    });
+    return thread.threadId;
+  }
+
   private async migrateWorldAgents(): Promise<void> {
     const ids = await this.worldStore.listWorldIds(200);
     for (const id of ids) {
@@ -4260,7 +4398,7 @@ function buildSlashCommands() {
   return [
     new SlashCommandBuilder()
       .setName("onboard")
-      .setDescription("新手引导：选择身份并接收私信规则")
+      .setDescription("新手引导：选择身份并进入私密话题")
       .addStringOption((option) =>
         option
           .setName("role")
@@ -4269,6 +4407,17 @@ function buildSlashCommands() {
             { name: "player", value: "player" },
             { name: "creator", value: "creator" },
           )
+          .setRequired(true),
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("language")
+      .setDescription("设置 bot 回复语言（影响世界/角色文档写入语言）")
+      .addStringOption((option) =>
+        option
+          .setName("lang")
+          .setDescription("语言")
+          .addChoices({ name: "zh", value: "zh" }, { name: "en", value: "en" })
           .setRequired(true),
       )
       .toJSON(),
@@ -5290,8 +5439,19 @@ async function safeReply(
       return;
     }
     await interaction.reply({ content, ephemeral: options.ephemeral });
-  } catch {
-    // ignore
+  } catch (err) {
+    feishuLogJson({
+      event: "log.warn",
+      msg: "Failed to reply discord interaction",
+      errName: err instanceof Error ? err.name : "Error",
+      errMessage: err instanceof Error ? err.message : String(err),
+      command: buildInteractionCommand(interaction),
+      interactionId: interaction.id,
+      userId: interaction.user.id,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+      ephemeral: options.ephemeral,
+    });
   }
 }
 
@@ -5304,8 +5464,19 @@ async function safeDefer(
       return;
     }
     await interaction.deferReply({ ephemeral: options.ephemeral });
-  } catch {
-    // ignore
+  } catch (err) {
+    feishuLogJson({
+      event: "log.warn",
+      msg: "Failed to defer discord interaction",
+      errName: err instanceof Error ? err.name : "Error",
+      errMessage: err instanceof Error ? err.message : String(err),
+      command: buildInteractionCommand(interaction),
+      interactionId: interaction.id,
+      userId: interaction.user.id,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+      ephemeral: options.ephemeral,
+    });
   }
 }
 

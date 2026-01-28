@@ -9,13 +9,14 @@ import { resolveDataRoot } from "../utils/data-root";
 import { assertSafePathSegment } from "../utils/path";
 
 export type UserRole = "player" | "creator";
+export type UserLanguage = "zh" | "en";
 
-export type UserOnboardingStateV2 = {
-  version: 2;
+export type UserOnboardingStateV3 = {
+  version: 3;
   userId: string;
   role?: UserRole;
-  /** One-time DM onboarding hint (anti-spam). */
-  promptedAt?: string;
+  language?: UserLanguage;
+  onboardingThreadIds?: Partial<Record<UserRole, string>>;
   /** Set when /world create succeeds. */
   worldCreatedAt?: string;
   /** Set when /character create succeeds. */
@@ -47,7 +48,7 @@ export class UserStateStore {
     return path.join(this.userDir(userId), "state.json");
   }
 
-  async read(userId: string): Promise<UserOnboardingStateV2 | null> {
+  async read(userId: string): Promise<UserOnboardingStateV3 | null> {
     const filePath = this.statePath(userId);
     const raw = await readFile(filePath, "utf8").catch((err) => {
       if (err && typeof err === "object" && "code" in err) {
@@ -65,20 +66,14 @@ export class UserStateStore {
       if (!parsed || typeof parsed !== "object") {
         return null;
       }
-      const record = parsed as Partial<UserOnboardingStateV2>;
-      if (record.version !== 2) {
+      const migrated = this.migrateState(
+        userId,
+        parsed as Record<string, unknown>,
+      );
+      if (!migrated) {
         return null;
       }
-      if (
-        typeof record.userId !== "string" ||
-        record.userId.trim() !== userId
-      ) {
-        return null;
-      }
-      if (typeof record.updatedAt !== "string" || !record.updatedAt.trim()) {
-        return null;
-      }
-      return record as UserOnboardingStateV2;
+      return migrated;
     } catch (err) {
       this.logger.warn({ err, userId }, "Failed to parse user state");
       return null;
@@ -88,19 +83,20 @@ export class UserStateStore {
   async upsert(
     userId: string,
     patch: Partial<
-      Omit<UserOnboardingStateV2, "version" | "userId" | "updatedAt">
+      Omit<UserOnboardingStateV3, "version" | "userId" | "updatedAt">
     >,
-  ): Promise<UserOnboardingStateV2> {
+  ): Promise<UserOnboardingStateV3> {
     const safe = userId.trim();
     assertSafePathSegment(safe, "userId");
     return this.withUserLock(safe, async () => {
       const nowIso = new Date().toISOString();
       const existing = await this.read(safe);
-      const next: UserOnboardingStateV2 = {
-        version: 2,
+      const next: UserOnboardingStateV3 = {
+        version: 3,
         userId: safe,
         role: existing?.role,
-        promptedAt: existing?.promptedAt,
+        language: existing?.language,
+        onboardingThreadIds: existing?.onboardingThreadIds,
         worldCreatedAt: existing?.worldCreatedAt,
         characterCreatedAt: existing?.characterCreatedAt,
         joinedWorldIds: existing?.joinedWorldIds,
@@ -116,22 +112,47 @@ export class UserStateStore {
     });
   }
 
-  async markPrompted(userId: string): Promise<UserOnboardingStateV2> {
-    const existing = await this.read(userId);
-    if (existing?.promptedAt) {
-      return existing;
-    }
-    return this.upsert(userId, { promptedAt: new Date().toISOString() });
-  }
-
   async setRole(
     userId: string,
     role: UserRole,
-  ): Promise<UserOnboardingStateV2> {
+  ): Promise<UserOnboardingStateV3> {
     return this.upsert(userId, { role });
   }
 
-  async markWorldCreated(userId: string): Promise<UserOnboardingStateV2> {
+  async setLanguage(
+    userId: string,
+    language: UserLanguage,
+  ): Promise<UserOnboardingStateV3> {
+    return this.upsert(userId, { language });
+  }
+
+  async getLanguage(userId: string): Promise<UserLanguage | null> {
+    const existing = await this.read(userId);
+    return existing?.language ?? null;
+  }
+
+  async setOnboardingThreadId(input: {
+    userId: string;
+    role: UserRole;
+    threadId: string;
+  }): Promise<UserOnboardingStateV3> {
+    const existing = await this.read(input.userId);
+    const previous = existing?.onboardingThreadIds ?? {};
+    return this.upsert(input.userId, {
+      onboardingThreadIds: { ...previous, [input.role]: input.threadId },
+    });
+  }
+
+  async getOnboardingThreadId(input: {
+    userId: string;
+    role: UserRole;
+  }): Promise<string | null> {
+    const existing = await this.read(input.userId);
+    const threadId = existing?.onboardingThreadIds?.[input.role];
+    return typeof threadId === "string" && threadId.trim() ? threadId : null;
+  }
+
+  async markWorldCreated(userId: string): Promise<UserOnboardingStateV3> {
     const existing = await this.read(userId);
     if (existing?.worldCreatedAt) {
       return existing;
@@ -142,7 +163,7 @@ export class UserStateStore {
     });
   }
 
-  async markCharacterCreated(userId: string): Promise<UserOnboardingStateV2> {
+  async markCharacterCreated(userId: string): Promise<UserOnboardingStateV3> {
     const existing = await this.read(userId);
     if (existing?.characterCreatedAt) {
       return existing;
@@ -156,7 +177,7 @@ export class UserStateStore {
   async addJoinedWorld(
     userId: string,
     worldId: number,
-  ): Promise<UserOnboardingStateV2> {
+  ): Promise<UserOnboardingStateV3> {
     if (!Number.isInteger(worldId) || worldId <= 0) {
       return this.upsert(userId, {});
     }
@@ -195,5 +216,73 @@ export class UserStateStore {
         this.locks.delete(userId);
       }
     }
+  }
+
+  private migrateState(
+    userId: string,
+    record: Record<string, unknown>,
+  ): UserOnboardingStateV3 | null {
+    const versionRaw = record["version"];
+    const version =
+      typeof versionRaw === "number" && Number.isInteger(versionRaw)
+        ? versionRaw
+        : null;
+
+    if (version !== 2 && version !== 3) {
+      return null;
+    }
+    if (
+      typeof record["userId"] !== "string" ||
+      record["userId"].trim() !== userId
+    ) {
+      return null;
+    }
+    if (
+      typeof record["updatedAt"] !== "string" ||
+      !record["updatedAt"].trim()
+    ) {
+      return null;
+    }
+
+    if (version === 3) {
+      return record as unknown as UserOnboardingStateV3;
+    }
+
+    const role = record["role"];
+    const language = record["language"];
+    const onboardingThreadIds = record["onboardingThreadIds"];
+    const worldCreatedAtRaw = record["worldCreatedAt"];
+    const characterCreatedAtRaw = record["characterCreatedAt"];
+    const joinedWorldIdsRaw = record["joinedWorldIds"];
+    const updatedAt = record["updatedAt"] as string;
+
+    const worldCreatedAt =
+      typeof worldCreatedAtRaw === "string" && worldCreatedAtRaw.trim()
+        ? worldCreatedAtRaw
+        : undefined;
+    const characterCreatedAt =
+      typeof characterCreatedAtRaw === "string" && characterCreatedAtRaw.trim()
+        ? characterCreatedAtRaw
+        : undefined;
+    const joinedWorldIds = Array.isArray(joinedWorldIdsRaw)
+      ? joinedWorldIdsRaw
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      : undefined;
+
+    return {
+      version: 3,
+      userId,
+      role: role === "player" || role === "creator" ? role : undefined,
+      language: language === "zh" || language === "en" ? language : undefined,
+      onboardingThreadIds:
+        onboardingThreadIds && typeof onboardingThreadIds === "object"
+          ? (onboardingThreadIds as Partial<Record<UserRole, string>>)
+          : undefined,
+      worldCreatedAt,
+      characterCreatedAt,
+      joinedWorldIds,
+      updatedAt,
+    };
   }
 }

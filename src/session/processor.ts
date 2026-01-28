@@ -36,6 +36,7 @@ import {
   parseOpencodeModelIdsCsv,
   selectOpencodeModelId,
 } from "../opencode/model-ids";
+import { UserStateStore, type UserLanguage } from "../user/state-store";
 import {
   type TelemetrySpanInput,
   resolveTraceId,
@@ -90,6 +91,7 @@ export class SessionProcessor {
   private bufferStore: SessionBuffer;
   private worldStore: WorldStore;
   private worldFiles: WorldFileStore;
+  private userState: UserStateStore;
 
   constructor(options: SessionProcessorOptions) {
     this.logger = options.logger.child({ component: "session-processor" });
@@ -108,6 +110,7 @@ export class SessionProcessor {
       logger: this.logger,
     });
     this.worldFiles = new WorldFileStore({ logger: this.logger });
+    this.userState = new UserStateStore({ logger: this.logger });
   }
 
   async process(
@@ -686,8 +689,15 @@ export class SessionProcessor {
     });
     const resolvedInput = resolveSessionInput(promptInput);
     const rawUserText = resolvedInput.trim();
-    const userText = rawUserText
-      ? appendInputAuditIfSuspicious(rawUserText)
+    const language = await span("resolve_user_language", async () =>
+      this.userState.getLanguage(sessionInfo.meta.ownerId),
+    );
+    const languageDirective = buildLanguageDirective(language);
+    const rawWithLanguage = languageDirective
+      ? `${rawUserText}\n\n${languageDirective}`.trim()
+      : rawUserText;
+    const userText = rawWithLanguage
+      ? appendInputAuditIfSuspicious(rawWithLanguage)
       : " ";
 
     const config = getConfig();
@@ -1359,6 +1369,22 @@ function resolveSessionInput(content: string): string {
   }
   // Opencode rejects empty input, but we still need a non-empty placeholder.
   return " ";
+}
+
+function buildLanguageDirective(language: UserLanguage | null): string {
+  if (language === "en") {
+    return [
+      "LANGUAGE: English only.",
+      "Reply in English; and when creating/modifying any files, write the document content in English.",
+    ].join("\n");
+  }
+  if (language === "zh") {
+    return [
+      "语言：中文。",
+      "请用中文回复；当需要创建/修改任何文件时，也必须用中文写入文档内容。",
+    ].join("\n");
+  }
+  return "";
 }
 
 function truncateTextByBytes(

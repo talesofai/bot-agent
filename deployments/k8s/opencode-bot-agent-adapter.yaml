@@ -46,6 +46,8 @@ spec:
                   name: llbot-secrets
                   key: DISCORD_APPLICATION_ID
                   optional: true
+            - name: DISCORD_HOME_GUILD_ID
+              value: "1219988124462088223"
             - name: OPENCODE_MODELS
               valueFrom:
                 secretKeyRef:

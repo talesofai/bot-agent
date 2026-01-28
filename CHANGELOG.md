@@ -39,6 +39,7 @@
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
 - Config：新增 `DISCORD_HOME_GUILD_ID`（可选：锁定世界系统只允许在单一 homeGuild 创建世界）
 - K8s：`llbot`（QQ）StatefulSet 默认 `replicas=0`（默认不启用，需要时再手动 scale）
+- K8s：`opencode-bot-agent` adapter/worker 直配 `FEISHU_WEBHOOK_URL`；worker 移除 `DATABASE_URL`（不再依赖 Postgres）
 
 ### Fixed
 

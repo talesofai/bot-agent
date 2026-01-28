@@ -11,6 +11,7 @@ import {
   SlashCommandBuilder,
   type Attachment,
   type ChatInputCommandInteraction,
+  type Guild,
   type Interaction,
   type Message,
 } from "discord.js";
@@ -919,6 +920,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     const card = await this.worldFiles.readWorldCard(meta.id);
+    const creatorLabel = await this.resolveDiscordUserLabel({
+      userId: meta.creatorId,
+      guild:
+        interaction.guildId === meta.homeGuildId ? interaction.guild : null,
+    });
     let joinChannelId: string | undefined;
     if (meta.status !== "draft") {
       joinChannelId = meta.joinChannelId;
@@ -948,6 +954,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           ];
     const header = [
       `W${meta.id} ${meta.name}`,
+      `创作者：${creatorLabel}`,
       `入口 guild:${meta.homeGuildId}`,
       `状态：${meta.status === "draft" ? "draft(未发布)" : meta.status}`,
       `访客数：${await this.worldStore.memberCount(meta.id)}`,
@@ -955,7 +962,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       ...channels,
       ``,
     ].join("\n");
-    const body = card?.trim() ? card.trim() : "(世界卡缺失)";
+    const body = card?.trim()
+      ? patchCreatorLineInMarkdown(card.trim(), meta.creatorId, creatorLabel)
+      : "(世界卡缺失)";
     await replyLongText(interaction, `${header}${body}`, { ephemeral: false });
   }
 
@@ -2495,22 +2504,33 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     traceId?: string;
   }): Promise<void> {
     const nowIso = new Date().toISOString();
-    const [card, rules, members, characters] = await Promise.all([
+    const [meta, card, rules, members, characters] = await Promise.all([
+      this.worldStore.getWorld(input.worldId),
       this.worldFiles.readWorldCard(input.worldId),
       this.worldFiles.readRules(input.worldId),
       this.worldStore.memberCount(input.worldId),
       this.worldStore.characterCount(input.worldId),
     ]);
+    const creatorLabel =
+      meta?.creatorId && meta.creatorId.trim()
+        ? await this.resolveDiscordUserLabel({
+            userId: meta.creatorId,
+            guild: this.client.guilds.cache.get(input.guildId) ?? null,
+          })
+        : null;
     const joinHint = input.joinChannelId
       ? `加入：<#${input.joinChannelId}>（执行 /world join）`
       : `加入入口：未配置`;
     const header = [
       `【世界信息】W${input.worldId} ${input.worldName}`,
       `更新时间：${nowIso}`,
+      creatorLabel ? `创作者：${creatorLabel}` : null,
       `访客数：${members} 角色数：${characters}`,
       joinHint,
       ``,
-    ].join("\n");
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n");
 
     await this.sendLongTextToChannel({
       guildId: input.guildId,
@@ -2521,7 +2541,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await this.sendLongTextToChannel({
       guildId: input.guildId,
       channelId: input.infoChannelId,
-      content: card?.trim() ? card.trim() : "(世界卡缺失)",
+      content:
+        card?.trim() && meta?.creatorId
+          ? patchCreatorLineInMarkdown(
+              card.trim(),
+              meta.creatorId,
+              creatorLabel,
+            )
+          : card?.trim()
+            ? card.trim()
+            : "(世界卡缺失)",
       traceId: input.traceId,
     });
     await this.sendLongTextToChannel({
@@ -2800,6 +2829,30 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     } satisfies SessionEvent<DiscordInteractionExtras>);
   }
 
+  private async resolveDiscordUserLabel(input: {
+    userId: string;
+    guild?: Guild | null;
+  }): Promise<string> {
+    const userId = input.userId.trim();
+    if (!userId) {
+      return "";
+    }
+    const mention = `<@${userId}>`;
+
+    const guild = input.guild ?? null;
+    if (guild) {
+      const member = await guild.members.fetch(userId).catch(() => null);
+      const displayName = member?.displayName?.trim() ?? "";
+      if (displayName) {
+        return `${mention}（${displayName}）`;
+      }
+    }
+
+    const user = await this.client.users.fetch(userId).catch(() => null);
+    const name = (user?.globalName ?? user?.username ?? "").trim();
+    return name ? `${mention}（${name}）` : mention;
+  }
+
   private async registerSlashCommands(): Promise<void> {
     const applicationId =
       this.applicationId ?? this.client.application?.id ?? null;
@@ -2849,6 +2902,44 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }),
     );
   }
+}
+
+function patchCreatorLineInMarkdown(
+  input: string,
+  creatorId: string,
+  creatorLabel: string | null,
+): string {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return input;
+  }
+  const safeCreatorId = creatorId.trim();
+  if (!safeCreatorId) {
+    return input;
+  }
+  const label = (creatorLabel ?? `<@${safeCreatorId}>`).trim();
+
+  const lines = trimmed.split("\n");
+  let patched = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const match = line.match(/^\s*-\s*创建者\s*[:：]\s*(.+)\s*$/);
+    if (!match) {
+      continue;
+    }
+    const value = match[1]?.trim() ?? "";
+    if (
+      !value ||
+      value === safeCreatorId ||
+      value === `<@${safeCreatorId}>` ||
+      /^\d+$/.test(value) ||
+      value.includes(safeCreatorId)
+    ) {
+      lines[i] = `- 创建者：${label}`;
+      patched = true;
+    }
+  }
+  return patched ? lines.join("\n") : input;
 }
 
 function buildSlashCommands() {

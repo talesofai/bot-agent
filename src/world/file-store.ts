@@ -149,6 +149,33 @@ export class WorldFileStore {
     return { latestPath, archivedPath };
   }
 
+  async appendSourceDocument(
+    worldId: WorldId,
+    input: {
+      content: string;
+      filename?: string;
+    },
+  ): Promise<{ latestPath: string; archivedPath?: string }> {
+    const latestPath = this.worldFilePath(worldId, "source_latest");
+    await mkdir(path.dirname(latestPath), { recursive: true });
+
+    const normalized = input.content.endsWith("\n")
+      ? input.content
+      : `${input.content}\n`;
+    await appendFile(latestPath, normalized, "utf8");
+
+    if (!input.filename) {
+      return { latestPath };
+    }
+
+    const dir = this.worldDir(worldId);
+    const safeFilename = sanitizeSourceFilename(input.filename);
+    const archivedName = `${Date.now()}-${safeFilename}`;
+    const archivedPath = path.join(dir, "sources", archivedName);
+    await this.atomicWrite(archivedPath, normalized);
+    return { latestPath, archivedPath };
+  }
+
   async readSourceDocument(worldId: WorldId): Promise<string | null> {
     return this.readTextFile(this.worldFilePath(worldId, "source_latest"));
   }

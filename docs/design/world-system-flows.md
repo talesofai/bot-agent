@@ -68,7 +68,7 @@
    - AI 必须读取 `world/source.md`
    - AI 必须写入 `world/world-card.md` 与 `world/rules.md`
    - 回复只包含：变更摘要 + 3-5 个待补充问题（或明确“已 OK，可发布”）
-6. 对执行者返回成功（ephemeral）并附私密话题链接；创作者在该话题执行 `/world done` 发布世界。
+6. 对执行者返回成功（ephemeral）并附私密话题链接；创作者在该话题执行 `/world publish` 发布世界。
 
 ### 失败分支（必须明确）
 
@@ -78,7 +78,7 @@
 
 ---
 
-## 1.1 `/world done`（发布世界 / 结束编辑话题）
+## 1.1 `/world publish`（发布世界 / 结束编辑话题）
 
 ### 前置条件
 

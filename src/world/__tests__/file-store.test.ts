@@ -37,4 +37,43 @@ describe("WorldFileStore source documents", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  test("appendSourceDocument appends to latest and can write archived chunks", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const store = new WorldFileStore({ logger, dataRoot: tempDir });
+
+    try {
+      await store.writeSourceDocument(1, {
+        filename: "base.md",
+        content: "base",
+      });
+
+      const firstAppend = await store.appendSourceDocument(1, {
+        content: "append-1",
+      });
+      expect(firstAppend.latestPath.endsWith("/worlds/1/source.md")).toBe(true);
+
+      const secondAppend = await store.appendSourceDocument(1, {
+        filename: "more.md",
+        content: "append-2",
+      });
+
+      const latest = await store.readSourceDocument(1);
+      expect(latest).toContain("base");
+      expect(latest).toContain("append-1");
+      expect(latest).toContain("append-2");
+
+      expect(secondAppend.archivedPath).toBeTruthy();
+      expect(secondAppend.archivedPath?.includes("/worlds/1/sources/")).toBe(
+        true,
+      );
+      expect(secondAppend.archivedPath?.endsWith("more.md")).toBe(true);
+      expect(readFileSync(secondAppend.archivedPath!, "utf8")).toContain(
+        "append-2",
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

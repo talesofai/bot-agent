@@ -72,7 +72,7 @@ status: active
    - 先发送规则说明（可读）
    - 然后触发 kickoff（让 opencode 使用 `world-design-card` 技能写入/更新 `world/world-card.md` 与 `world/rules.md`）
 5. 创作者通过多轮对话/上传 txt/md/docx 原文补全信息（写入 `world/source.md`）。
-6. 创作者确认完成后，在私密话题执行 `/world done`：
+6. 创作者确认完成后，在私密话题执行 `/world publish`：
    - 创建子空间（Category + channels + role）
    - 自动把创作者加入世界（加 role + 计入 members）
    - 推送“世界信息快照”（世界卡 + 规则）到 `world-announcements`
@@ -112,7 +112,7 @@ status: active
 - `/world help`
 - `/world create`（默认 admin）
 - `/world open world_id:<ID>`（仅创作者；打开/切换私密编辑会话）
-- `/world done`（仅创作者；在私密话题执行）
+- `/world publish`（仅创作者；在私密话题执行）
 - `/world list`
 - `/world search`
 - `/world info`（世界子空间内可省略 world_id）

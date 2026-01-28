@@ -12,6 +12,8 @@
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
 - Discord：`/world create` 创建世界草稿并创建私密话题（Thread，位于 `world-workshop-{userId}`），支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
+- World：世界构建会话会把创作者多轮文本与附件持续追加写入 `world/source.md`（避免只依赖对话历史或覆盖丢失）
+- World：世界构建模式支持创作者要求“上网搜索/查公开资料”，允许使用 bash/curl 获取可访问公开资料，并要求把来源链接写入 `world/source.md`/`canon/*.md`
 - Discord：`/world open`（仅创作者）打开该世界的私密编辑话题
 - Discord：`/world publish` 发布世界并创建子空间（`world-announcements`/`world-discussion`/`world-proposals`/`World Voice`），默认所有人可见只读；join 后获得发言权限
 - Discord：`/world submit|approve|check`：提案/任务/编年史/正典补充提交流程（pending → approved → 写入 `canon/*.md`）
@@ -35,6 +37,7 @@
 - Discord：`/world create` 不接收参数；设定原文在编辑话题内通过多轮消息/附件补全
 - Discord：世界子空间 `world-info` 重命名为 `world-announcements`（公告区，世界背景/正典内容放此处），并新增 `world-discussion`（讨论区）
 - Discord：Slash Commands 默认公开；涉及创作/管理的指令（如 `/world create|open|publish|remove`、`/character create|open|publish|unpublish`）默认使用 ephemeral，避免刷屏与泄露私密信息
+- Discord：为容易超时的 SlashCommand 增加 `deferReply`（如 `/world list|info|rules|stats|search|join`、`/world open`、`/character create|open|act`），避免 Discord 显示“程序未响应”
 - Discord：`/world info` 与 `world-announcements` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）

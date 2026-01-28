@@ -235,8 +235,33 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       } catch (err) {
         this.logger.warn({ err }, "Failed to send onboarding prompt");
       }
+
+      let parsedWorldGroup: ReturnType<typeof parseWorldGroup> | null = null;
+      if (
+        (augmented.content && augmented.content.trim()) ||
+        (message.attachments && message.attachments.size)
+      ) {
+        const groupId = await this.worldStore
+          .getGroupIdByChannel(message.channelId)
+          .catch(() => null);
+        parsedWorldGroup = groupId ? parseWorldGroup(groupId) : null;
+      }
+
       try {
-        await this.ingestWorldBuildAttachments(message, augmented);
+        await this.ingestWorldBuildMessageContent(
+          message,
+          augmented,
+          parsedWorldGroup,
+        );
+      } catch (err) {
+        this.logger.warn({ err }, "Failed to ingest world build text");
+      }
+      try {
+        await this.ingestWorldBuildAttachments(
+          message,
+          augmented,
+          parsedWorldGroup,
+        );
       } catch (err) {
         this.logger.warn({ err }, "Failed to ingest world build attachments");
       }
@@ -548,15 +573,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async ingestWorldBuildAttachments(
     message: Message,
     session: SessionEvent<DiscordMessageExtras>,
+    parsedWorldGroup?: ReturnType<typeof parseWorldGroup> | null,
   ): Promise<void> {
     if (!message.attachments || message.attachments.size === 0) {
       return;
     }
 
-    const groupId = await this.worldStore.getGroupIdByChannel(
-      message.channelId,
-    );
-    const parsed = groupId ? parseWorldGroup(groupId) : null;
+    const parsed =
+      parsedWorldGroup ??
+      (await this.worldStore
+        .getGroupIdByChannel(message.channelId)
+        .then((groupId) => (groupId ? parseWorldGroup(groupId) : null))
+        .catch(() => null));
     if (!parsed || parsed.kind !== "build") {
       return;
     }
@@ -588,7 +616,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const nowIso = new Date().toISOString();
     const merged =
       uploaded.length === 1
-        ? uploaded[0].content
+        ? [
+            `# 上传文档：${uploaded[0].filename}`,
+            `- 时间：${nowIso}`,
+            ``,
+            uploaded[0].content.trimEnd(),
+          ].join("\n")
         : uploaded
             .map((doc) =>
               [
@@ -606,9 +639,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const filename =
       uploaded.length === 1 ? uploaded[0].filename : "uploads.md";
 
-    await this.worldFiles.writeSourceDocument(parsed.worldId, {
+    await this.worldFiles.appendSourceDocument(parsed.worldId, {
       filename,
-      content: merged,
+      content: `${merged.trimEnd()}\n\n`,
     });
     for (const doc of uploaded) {
       await this.worldFiles.appendEvent(parsed.worldId, {
@@ -626,6 +659,47 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         `已读取并写入 world/source.md（${uploaded.length} 个文档）。以下文件被忽略（类型不支持）：${rejected.join(", ")}`,
       );
     }
+  }
+
+  private async ingestWorldBuildMessageContent(
+    message: Message,
+    session: SessionEvent<DiscordMessageExtras>,
+    parsedWorldGroup?: ReturnType<typeof parseWorldGroup> | null,
+  ): Promise<void> {
+    const rawContent = session.content ?? "";
+    if (!rawContent.trim()) {
+      return;
+    }
+
+    const parsed =
+      parsedWorldGroup ??
+      (await this.worldStore
+        .getGroupIdByChannel(message.channelId)
+        .then((groupId) => (groupId ? parseWorldGroup(groupId) : null))
+        .catch(() => null));
+    if (!parsed || parsed.kind !== "build") {
+      return;
+    }
+
+    const ts = Number.isFinite(message.createdTimestamp)
+      ? message.createdTimestamp
+      : Date.now();
+    const nowIso = new Date(ts).toISOString();
+    const authorLabel = session.extras.authorName?.trim()
+      ? `${session.extras.authorName} (${session.userId})`
+      : session.userId;
+
+    await this.worldFiles.appendSourceDocument(parsed.worldId, {
+      content: [
+        `## 用户文本`,
+        `- 时间：${nowIso}`,
+        `- 用户：${authorLabel}`,
+        ``,
+        rawContent.trimEnd(),
+        ``,
+        ``,
+      ].join("\n"),
+    });
   }
 
   private async emitEvent(
@@ -1162,6 +1236,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       channelId: interaction.channelId,
       userId: interaction.user.id,
     });
+    await safeDefer(interaction, { ephemeral: true });
 
     const groupPath = await this.groupRepository.ensureGroupDir(
       interaction.guildId,
@@ -1199,7 +1274,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     const guild = interaction.guild;
-    await safeDefer(interaction, { ephemeral: true });
 
     try {
       const nowIso = new Date().toISOString();
@@ -1216,11 +1290,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const source = {
         filename: "source.md",
         content: [
-          `# 设定原文（尚未提供）`,
+          `# 设定原文（汇总）`,
           ``,
-          `请在本话题里继续：`,
-          `- 直接粘贴/分段发送你的世界设定原文`,
-          `- 或上传 txt/md（以及可解析的 docx）文档（会自动写入 world/source.md）`,
+          `你在本话题里发送的设定文字 / 上传的设定文档，会自动追加到本文件。`,
+          ``,
+          `你可以继续：`,
+          `- 直接粘贴/分段发送设定原文（可多轮补全）`,
+          `- 或上传 txt/md/docx（会自动写入本文件）`,
           ``,
           `提示：无需在 /world create 里填写任何参数。`,
           ``,
@@ -1382,6 +1458,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     worldId: number,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
     const meta = await this.worldStore.getWorld(worldId);
     if (!meta) {
       await safeReply(interaction, `世界不存在：W${worldId}`, {
@@ -1432,6 +1509,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     let buildConversationChannelId: string;
     if (fetched) {
       buildConversationChannelId = existingThreadId;
+      try {
+        await this.reopenPrivateThreadForUser(fetched, interaction.user.id, {
+          reason: `world open W${meta.id}`,
+        });
+      } catch {
+        // ignore
+      }
     } else {
       const thread = await this.tryCreatePrivateThread({
         guild: interaction.guild,
@@ -1603,6 +1687,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async handleWorldList(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: false });
     const limit = interaction.options.getInteger("limit") ?? 20;
     const ids = await this.worldStore.listWorldIds(limit);
     if (ids.length === 0) {
@@ -1631,6 +1716,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     worldId: number,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: false });
     const meta = await this.worldStore.getWorld(worldId);
     if (!meta) {
       await safeReply(interaction, `世界不存在：W${worldId}`, {
@@ -1684,6 +1770,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     worldId: number,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: false });
     const meta = await this.worldStore.getWorld(worldId);
     if (!meta) {
       await safeReply(interaction, `世界不存在：W${worldId}`, {
@@ -2076,6 +2163,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     input: { worldId: number; characterId?: number },
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
     const meta = await this.worldStore.getWorld(input.worldId);
     if (!meta) {
       await safeReply(interaction, `世界不存在：W${input.worldId}`, {
@@ -2190,6 +2278,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     worldId: number,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: false });
     const meta = await this.worldStore.getWorld(worldId);
     if (!meta) {
       await safeReply(interaction, `世界不存在：W${worldId}`, {
@@ -2221,6 +2310,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     input: { query: string; limit?: number },
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: false });
     const query = input.query.trim();
     if (!query) {
       await safeReply(interaction, "query 不能为空。", { ephemeral: false });
@@ -2536,6 +2626,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       channelId: interaction.channelId,
       userId: interaction.user.id,
     });
+    await safeDefer(interaction, { ephemeral: true });
     const visibilityRaw =
       (interaction.options.getString(
         "visibility",
@@ -2698,6 +2789,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     characterId: number,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: false });
     const meta = await this.worldStore.getCharacter(characterId);
     if (!meta) {
       await safeReply(interaction, `角色不存在：C${characterId}`, {
@@ -2794,6 +2886,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     characterId: number,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
     const meta = await this.worldStore.getCharacter(characterId);
     if (!meta) {
       await safeReply(interaction, `角色不存在：C${characterId}`, {
@@ -2846,6 +2939,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     let conversationChannelId: string;
     if (fetched) {
       conversationChannelId = existingThreadId;
+      try {
+        await this.reopenPrivateThreadForUser(fetched, interaction.user.id, {
+          reason: `character open C${meta.id}`,
+        });
+      } catch {
+        // ignore
+      }
     } else {
       const thread = await this.tryCreatePrivateThread({
         guild: interaction.guild,
@@ -3418,6 +3518,44 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         ? ((parentChannel as { id: string }).id as string)
         : resolvedParentId;
     return { threadId: thread.id, parentChannelId };
+  }
+
+  private async reopenPrivateThreadForUser(
+    channel: unknown,
+    userId: string,
+    input: { reason: string },
+  ): Promise<void> {
+    try {
+      const setArchived = (channel as unknown as { setArchived?: unknown })
+        .setArchived;
+      if (typeof setArchived === "function") {
+        await (
+          channel as unknown as {
+            setArchived: (
+              archived: boolean,
+              reason?: string,
+            ) => Promise<unknown>;
+          }
+        ).setArchived(false, input.reason);
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const members = (channel as unknown as { members?: unknown }).members;
+      const add =
+        members && typeof members === "object"
+          ? (members as { add?: unknown }).add
+          : null;
+      if (typeof add === "function") {
+        await (members as { add: (userId: string) => Promise<unknown> }).add(
+          userId,
+        );
+      }
+    } catch {
+      // ignore
+    }
   }
 
   private async createCreatorOnlyChannel(input: {
@@ -5044,6 +5182,10 @@ function buildWorldBuildAgentPrompt(input: {
     `3) 每次回复都包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /world publish。`,
     `4) 禁止使用任何交互式提问工具（例如 question）；需要补充信息请直接在回复里列出问题。`,
     `5) 你不是来写小说的，不要 roleplay。`,
+    `6) 当创作者明确要求“上网搜索/查公开资料/引用公开资料”时：你应先尝试检索并整理可访问的公开资料，再提出待补充问题；可使用 bash/curl 访问公开互联网。禁止访问内网/回环/云元数据地址（如 127.0.0.1、169.254.169.254），不得访问需要登录/付费/绕过限制的内容，也不要抓取用户隐私。`,
+    `7) 只要使用了公开资料：必须把来源链接记录到 \`world/source.md\`（建议追加到文末的“## 外部参考”小节，包含 URL + 访问日期 + 1-2 句你的转述）；如该资料属于正典补充，也可写入 \`canon/*.md\`。禁止大段引用或整段复制原文。`,
+    `8) 若遇到网页反爬/需要 JS：优先找可访问的纯文本来源；对 MediaWiki 站点可尝试 \`?action=raw\` 获取 wikitext。`,
+    `9) 如果确实无法访问任何公开资料：不要装作“已经查过”；请让创作者上传/粘贴设定原文或给出可访问链接。`,
     ``,
     `提示：你可以使用技能 \`world-design-card\` 来统一模板与字段。`,
     ``,

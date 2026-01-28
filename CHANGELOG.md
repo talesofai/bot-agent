@@ -45,6 +45,7 @@
 ### Fixed
 
 - World：新增构建/角色构建会话的 Discord channel 路由自修复（根据线程/频道名与分类映射回填 `channel->group/world`），避免“子话题不需要 @bot 但不入队”
+- World：优化世界创建指南的排版与换行，减少阅读负担
 - Discord：当 SlashCommand 回复/延迟失败时，补齐飞书 `log.warn` 事件，便于定位 Discord “程序未响应”根因
 - World：当世界子空间的 Category 被手动删除/缺失时，worldId 推断逻辑会降级为按已知频道 ID 匹配并回填 `channel->worldId`，避免 `/world info|rules|stats|join` 无法识别当前世界
 - Discord：`/world info|rules|stats|status` 在世界子空间频道内可省略 `world_id`

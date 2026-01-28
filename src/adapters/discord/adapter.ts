@@ -846,6 +846,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async handleOnboard(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
     const roleRaw = interaction.options.getString("role", true);
     const role: UserRole = roleRaw === "creator" ? "creator" : "player";
 

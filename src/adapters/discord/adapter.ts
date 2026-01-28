@@ -129,9 +129,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
       this.logger.info({ botId: user.id }, "Discord client ready");
       this.emit("connect");
-      void this.migrateWorldJoinChannels().catch((err) => {
-        this.logger.warn({ err }, "World join channel migration failed");
-      });
+      if (this.slashCommandsEnabled) {
+        void this.migrateWorldJoinChannels().catch((err) => {
+          this.logger.warn({ err }, "World join channel migration failed");
+        });
+      }
     });
 
     this.client.on("messageCreate", (message) => {

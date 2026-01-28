@@ -12,7 +12,8 @@ import { parseOpencodeModelIdsCsv } from "../opencode/model-ids";
 import type { BotMessageStore } from "../store/bot-message-store";
 import type { GroupRouteStore } from "../store/group-route-store";
 import type { WorldStore } from "../world/store";
-import { buildWorldGroupId } from "../world/ids";
+import { buildWorldGroupId, parseWorldGroup } from "../world/ids";
+import { parseCharacterGroup } from "../character/ids";
 import { EchoTracker } from "./echo";
 import { isSafePathSegment } from "../utils/path";
 import type { SessionBuffer } from "../session/buffer";
@@ -208,7 +209,7 @@ export class MessageDispatcher {
       );
       if (channelGroupId) {
         envelope = { ...envelope, groupId: channelGroupId };
-        forceEnqueue = true;
+        forceEnqueue = shouldForceEnqueueForGroupId(channelGroupId);
       } else {
         if (runtime.message.guildId) {
           const worldId = await runtime.span(
@@ -226,7 +227,7 @@ export class MessageDispatcher {
           );
           if (worldId) {
             envelope = { ...envelope, groupId: buildWorldGroupId(worldId) };
-            forceEnqueue = true;
+            forceEnqueue = false;
           }
         }
       }
@@ -1139,6 +1140,20 @@ export class MessageDispatcher {
     }
     return message;
   }
+}
+
+function shouldForceEnqueueForGroupId(groupId: string): boolean {
+  const world = parseWorldGroup(groupId);
+  if (world) {
+    return world.kind === "build";
+  }
+
+  const character = parseCharacterGroup(groupId);
+  if (character) {
+    return character.kind === "build" || character.kind === "world_build";
+  }
+
+  return false;
 }
 
 function truncateTextByBytes(content: string, maxBytes: number): string {

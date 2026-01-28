@@ -9,7 +9,7 @@ status: active
 
 - 世界：所有人可见（可读），未加入（join）不可发言；加入后获得发言权限；统计必须有 **访客数** 与 **角色数**，并可持久化。
 - 角色：用户创建“角色卡”（人设），并在世界内以该角色身份发言；**用户扮演，bot 作为旁白/世界系统回应**。
-- 世界/角色的创作与更新：在“私密对话”中进行（DM 优先，失败则创建创作者专属频道作为兜底），会话长期存在，不需要关闭。
+- 世界/角色的创作与更新：在“私密话题”（Discord 私密 Thread）中进行，会话长期存在，不需要关闭。
 
 # 约束（Constraints）
 
@@ -24,8 +24,7 @@ status: active
 
 - `worldId`: Redis 自增数字。
 - `WorldMeta`（Redis Hash）：`draft|active`，包含创作者、homeGuild、发布后 Discord 资源（roleId/categoryId/各频道 id）。
-- `members`（Redis Set）：`world:{id}:members` → 访客数（join 人数）。
-- `worldCharacters`（Redis Set）：`world:{id}:characters` → 角色数（进入/使用过的角色集合）。
+- Redis 中仍保留部分 runtime key（例如 channel 路由、成员/角色集合），但**计数与审计以文件落盘为准**（避免 Redis 重启丢失）。
 
 文件落盘（FileStore）：
 
@@ -33,6 +32,9 @@ status: active
 - `/data/worlds/{worldId}/rules.md`（世界规则，正典）
 - `/data/worlds/{worldId}/source.md`（创作者上传/粘贴的设定原文，构建态可见）
 - `/data/worlds/{worldId}/events.jsonl`（事件流，便于审计/追踪）
+- `/data/worlds/{worldId}/stats.json`（统计持久化：访客数/角色数）
+- `/data/worlds/{worldId}/members/{userId}.json`（访客去重与持久化）
+- `/data/worlds/{worldId}/world-characters/{characterId}.json`（世界角色计数去重与持久化）
 
 ## Character（角色卡）
 
@@ -65,19 +67,19 @@ status: active
 
 1. 在 `homeGuild` 执行 `/world create`（默认仅管理员；由 `world.createPolicy` 控制）。
 2. 系统创建 `draft` 世界（分配 `worldId`），并生成默认文件：`world/world-card.md`、`world/rules.md`、`world/source.md`（占位）。
-3. 自动打开“私密对话”（DM 优先；失败则创建 `world-workshop-{userId}` 仅创作者可见频道）并绑定到 `groupId=world_{worldId}_build`。
-4. 在私密对话中：
+3. 系统确保存在 `world-workshop-{userId}`（仅创作者可见）频道，并创建一个私密话题（Thread）`世界创建 W{worldId}`，绑定到 `groupId=world_{worldId}_build`。
+4. 在私密话题中：
    - 先发送规则说明（可读）
    - 然后触发 kickoff（让 opencode 使用 `world-design-card` 技能写入/更新 `world/world-card.md` 与 `world/rules.md`）
 5. 创作者通过多轮对话/上传 txt/md/docx 原文补全信息（写入 `world/source.md`）。
-6. 创作者确认完成后，在私密对话执行 `/world publish`：
+6. 创作者确认完成后，在私密话题执行 `/world done`：
    - 创建子空间（Category + channels + role）
    - 自动把创作者加入世界（加 role + 计入 members）
    - 推送“世界信息快照”（世界卡 + 规则）到 `world-announcements`
 
 ## 2) 世界加入（玩家）
 
-1. 玩家在世界子空间任一频道执行 `/world join`（无需 worldId）。
+1. 玩家在世界子空间任一频道执行 `/world join`（可省略 worldId），或在任意频道执行 `/world join world_id:<ID>`。
 2. 系统给玩家加 World Role，并把玩家计入 `members`（访客数）。
 3. 选择“当前角色”：
    - 若玩家显式提供 `character_id` → 作为当前角色
@@ -96,7 +98,7 @@ status: active
 ## 4) 角色卡创建/管理（用户）
 
 1. 执行 `/character create`（默认 visibility=private），创建角色卡与默认内容。
-2. 自动进入私密对话（DM 优先，失败则 `character-workshop-{userId}`），绑定 `groupId=character_{id}_build`。
+2. 系统确保存在 `character-workshop-{userId}`（仅创作者可见）频道，并创建一个私密话题（Thread）`角色创建 C{id}`，绑定 `groupId=character_{id}_build`。
 3. opencode 使用 `character-card` 技能写入 `character/character-card.md`。
 4. 可用命令：
    - `/character use`：设置全局默认角色
@@ -110,12 +112,15 @@ status: active
 - `/world help`
 - `/world create`（默认 admin）
 - `/world open world_id:<ID>`（仅创作者；打开/切换私密编辑会话）
-- `/world publish`（仅创作者；在私密对话执行）
+- `/world done`（仅创作者；在私密话题执行）
 - `/world list`
 - `/world search`
 - `/world info`（世界子空间内可省略 world_id）
 - `/world rules`（世界子空间内可省略 world_id）
 - `/world canon`
+- `/world submit`
+- `/world approve`
+- `/world check`
 - `/world join`（在世界子空间内执行）
 - `/world stats` / `/world status`
 - `/world remove world_id:<ID>`（管理员）
@@ -131,6 +136,7 @@ status: active
 - `/character publish` / `/character unpublish`
 - `/character list`
 - `/character search`
+- `/character adopt`
 
 # 日志（Feishu）
 

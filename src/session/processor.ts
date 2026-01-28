@@ -733,14 +733,66 @@ export class SessionProcessor {
   private async ensureWorkspaceBindings(
     sessionInfo: SessionInfo,
   ): Promise<void> {
+    const character = parseCharacterGroup(sessionInfo.meta.groupId);
+    if (character?.kind === "world_build") {
+      await this.ensureWorldCharacterBuildWorkspace(sessionInfo, character);
+      return;
+    }
+
     const world = parseWorldGroup(sessionInfo.meta.groupId);
     if (world) {
       await this.ensureWorldWorkspace(sessionInfo, world);
       return;
     }
-    const character = parseCharacterGroup(sessionInfo.meta.groupId);
-    if (character) {
+    if (character?.kind === "build") {
       await this.ensureCharacterWorkspace(sessionInfo, character);
+    }
+  }
+
+  private async ensureWorldCharacterBuildWorkspace(
+    sessionInfo: SessionInfo,
+    parsed: Extract<
+      ReturnType<typeof parseCharacterGroup>,
+      { kind: "world_build" }
+    >,
+  ): Promise<void> {
+    const worldId = parsed.worldId;
+    const characterId = parsed.characterId;
+
+    const worldDir = path.join(sessionInfo.workspacePath, "world");
+    const characterDir = path.join(sessionInfo.workspacePath, "character");
+    await Promise.all([
+      mkdir(worldDir, { recursive: true }),
+      mkdir(characterDir, { recursive: true }),
+    ]);
+
+    const [card, rules, source, characterCard] = await Promise.all([
+      this.worldFiles.readWorldCard(worldId),
+      this.worldFiles.readRules(worldId),
+      this.worldFiles.readSourceDocument(worldId),
+      this.worldFiles.readCharacterCard(characterId),
+    ]);
+
+    await Promise.all([
+      atomicWrite(
+        path.join(worldDir, "world-card.md"),
+        card ?? `# 世界卡（W${worldId}）\n`,
+      ),
+      atomicWrite(
+        path.join(worldDir, "rules.md"),
+        rules ?? `# 世界规则（W${worldId}）\n`,
+      ),
+      atomicWrite(
+        path.join(characterDir, "character-card.md"),
+        characterCard ?? `# 角色卡（C${characterId}）\n`,
+      ),
+    ]);
+
+    const sourcePath = path.join(worldDir, "source.md");
+    if (source?.trim()) {
+      await atomicWrite(sourcePath, source);
+    } else {
+      await rm(sourcePath, { force: true });
     }
   }
 
@@ -821,15 +873,67 @@ export class SessionProcessor {
   private async syncWorkspaceFilesFromWorkspace(
     sessionInfo: SessionInfo,
   ): Promise<string[]> {
+    const character = parseCharacterGroup(sessionInfo.meta.groupId);
+    if (character?.kind === "world_build") {
+      return this.syncWorldCharacterBuildFilesFromWorkspace(
+        sessionInfo,
+        character,
+      );
+    }
+
     const world = parseWorldGroup(sessionInfo.meta.groupId);
     if (world) {
       return this.syncWorldFilesFromWorkspace(sessionInfo, world);
     }
-    const character = parseCharacterGroup(sessionInfo.meta.groupId);
-    if (character) {
+    if (character?.kind === "build") {
       return this.syncCharacterFilesFromWorkspace(sessionInfo, character);
     }
     return [];
+  }
+
+  private async syncWorldCharacterBuildFilesFromWorkspace(
+    sessionInfo: SessionInfo,
+    parsed: Extract<
+      ReturnType<typeof parseCharacterGroup>,
+      { kind: "world_build" }
+    >,
+  ): Promise<string[]> {
+    const characterId = parsed.characterId;
+    const meta = await this.worldStore.getCharacter(characterId);
+    if (!meta) {
+      throw new Error(`角色不存在：C${characterId}`);
+    }
+    if (meta.creatorId !== sessionInfo.meta.ownerId) {
+      throw new Error("无权限：只有角色创作者可以修改角色卡。");
+    }
+
+    const dir = path.join(sessionInfo.workspacePath, "character");
+    const workspacePath = path.join(dir, "character-card.md");
+    const workspaceCard = await readFile(workspacePath, "utf8").catch((err) => {
+      if (err && typeof err === "object" && "code" in err) {
+        if ((err as { code?: unknown }).code === "ENOENT") {
+          return null;
+        }
+      }
+      throw err;
+    });
+    const storedCard = await this.worldFiles.readCharacterCard(characterId);
+
+    if (
+      !workspaceCard?.trim() ||
+      workspaceCard.trimEnd() === (storedCard ?? "").trimEnd()
+    ) {
+      return [];
+    }
+
+    await this.worldFiles.writeCharacterCard(characterId, workspaceCard);
+    await this.worldFiles.appendCharacterEvent(characterId, {
+      type: "character_card_updated",
+      characterId,
+      userId: sessionInfo.meta.ownerId,
+      groupId: sessionInfo.meta.groupId,
+    });
+    return ["character/character-card.md"];
   }
 
   private async syncWorldFilesFromWorkspace(

@@ -409,7 +409,7 @@ describe("MessageDispatcher telemetry propagation", () => {
 });
 
 describe("MessageDispatcher world routing", () => {
-  test("forces enqueue and rewrites groupId when channel is mapped to a world", async () => {
+  test("rewrites groupId when channel is mapped to a world", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });
     const adapter = new MemoryAdapter();
@@ -446,7 +446,10 @@ describe("MessageDispatcher world routing", () => {
         channelId: "channel-world",
         messageId: "msg1",
         content: "hello",
-        elements: [{ type: "text", text: "hello" }],
+        elements: [
+          { type: "mention", userId: "123" },
+          { type: "text", text: "hello" },
+        ],
         timestamp: Date.now(),
         extras: {},
       });

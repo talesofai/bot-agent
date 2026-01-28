@@ -9,16 +9,17 @@
 
 ### Added
 
-- Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
-- Discord：`/world create` 创建世界草稿并进入“私密构建会话”（DM 优先，失败则创建创作者专属频道）；支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
-- Discord：`/world open`（仅创作者）在私密对话中切换当前编辑世界
-- Discord：`/world publish` 发布世界并创建子空间（`world-announcements`/`world-discussion`/`world-proposals`/`World Voice`），默认所有人可见只读；join 后获得发言权限
+- Discord：新增世界系统（`/world help|create|open|done|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
+- Discord：`/world create` 创建世界草稿并创建私密话题（Thread，位于 `world-workshop-{userId}`），支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
+- Discord：`/world open`（仅创作者）打开该世界的私密编辑话题
+- Discord：`/world done` 发布世界并创建子空间（`world-announcements`/`world-discussion`/`world-proposals`/`World Voice`），默认所有人可见只读；join 后获得发言权限
+- Discord：`/world submit|approve|check`：提案/任务/编年史/正典补充提交流程（pending → approved → 写入 `canon/*.md`）
 - Discord：发布后自动推送“世界信息快照”（世界卡 + 世界规则 + 统计）到 `world-announcements`，便于所有人查看当前已确定设定
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
 - Discord：新增角色系统（`/character help|create|open|view|use|act|publish|unpublish|list|search`），角色卡全局（不绑定世界），visibility（`public|private`，默认 `private`）
-- Discord：`/character create` 自动进入“角色构建私密会话”（DM 优先，失败则创建创作者专属频道），构建会话 `groupId=character_{id}_build` 并触发 kickoff 以多轮补全角色卡
-- World：新增 `channelId -> worldId` 路由与 world roleplay 频道 always-on（绕过 mention/keyword 触发），会话隔离为 `groupId=world_{worldId}` 并注入 `world/world-card.md`、`world/rules.md`、`world/active-character.md`
-- 持久化：Redis 维护自增 ID / meta / 成员与角色集合；`/data/worlds/{worldId}` 落地世界卡/规则/角色卡/事件流
+- Discord：`/character create` 创建角色草稿并创建私密话题（Thread，位于 `character-workshop-{userId}`），构建会话 `groupId=character_{id}_build` 并触发 kickoff 以多轮补全角色卡
+- World：构建会话（world/character/world-character-build）强制入队；游玩会话（`groupId=world_{worldId}`）默认仅在 `@bot` 时入队，避免刷屏
+- 持久化：Redis 维护自增 ID / meta / 路由；计数（访客数/角色数）落盘到 `/data/worlds/{worldId}/stats.json`（并用 members/world-characters 去重）
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
 - Logging：飞书 webhook 仅推送 `warn/error` 与消息收发（`io.recv/io.send` + SlashCommand 输入/输出），便于在飞书追踪对话与故障而不刷噪音
 - Logging：新增 `ai.start/ai.finish` 事件（含输出预览），用于定位“子话题不推进/看起来没反应”
@@ -28,8 +29,8 @@
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
-- Discord：`/world join` 改为仅在世界子空间频道执行（无需 `world_id`）
-- Discord：`/world create` 不再接收任何参数，改为直接进入“世界创建私密话题”，设定原文在话题内通过多轮消息/附件补全
+- Discord：`/world join` 支持在世界子空间频道内省略 `world_id`（也支持显式 `world_id:<ID>`）
+- Discord：`/world create` 不接收参数；设定原文在私密话题内通过多轮消息/附件补全
 - Discord：世界子空间 `world-info` 重命名为 `world-announcements`（公告区，世界背景/正典内容放此处），并新增 `world-discussion`（讨论区）
 - Discord：Slash Commands 默认公开；涉及创作/管理的指令（如 `/world create|open|publish|remove`、`/character create|open|publish|unpublish`）默认使用 ephemeral，避免刷屏与泄露私密信息
 - Discord：`/world info` 与 `world-announcements` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式

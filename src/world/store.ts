@@ -16,6 +16,7 @@ export type WorldDraftMeta = {
   status: "draft";
   createdAt: string;
   updatedAt: string;
+  buildChannelId?: string;
 };
 
 export type WorldActiveMeta = {
@@ -46,6 +47,7 @@ export type CharacterMeta = {
   status: "active" | "retired" | "failed";
   createdAt: string;
   updatedAt: string;
+  buildChannelId?: string;
 };
 
 export interface WorldStoreOptions {
@@ -100,6 +102,15 @@ export class WorldStore {
     return id;
   }
 
+  async nextWorldSubmissionId(worldId: WorldId): Promise<number> {
+    const normalized = normalizeWorldId(worldId);
+    const id = await this.redis.incr(this.worldSubmissionNextIdKey(normalized));
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error("Redis returned an invalid submission id");
+    }
+    return id;
+  }
+
   async createWorldDraft(meta: Omit<WorldDraftMeta, "status">): Promise<void> {
     normalizeWorldId(meta.id);
     if (!isSafePathSegment(meta.homeGuildId)) {
@@ -119,8 +130,44 @@ export class WorldStore {
       createdAt: meta.createdAt || now,
       updatedAt: meta.updatedAt || now,
     };
+    const buildChannelId = meta.buildChannelId?.trim();
+    if (buildChannelId) {
+      assertSafePathSegment(buildChannelId, "buildChannelId");
+      payload.buildChannelId = buildChannelId;
+    }
 
     await this.redis.hset(this.worldMetaKey(meta.id), payload);
+  }
+
+  async setWorldBuildChannelId(input: {
+    worldId: WorldId;
+    channelId: string;
+  }): Promise<void> {
+    const worldId = normalizeWorldId(input.worldId);
+    const trimmed = input.channelId.trim();
+    if (!trimmed) {
+      throw new Error("channelId is required");
+    }
+    assertSafePathSegment(trimmed, "channelId");
+    const multi = this.redis.multi();
+    multi.hset(this.worldMetaKey(worldId), {
+      buildChannelId: trimmed,
+      updatedAt: new Date().toISOString(),
+    });
+    multi.set(this.channelWorldKey(trimmed), String(worldId));
+    await multi.exec();
+  }
+
+  async setWorldName(input: { worldId: WorldId; name: string }): Promise<void> {
+    const worldId = normalizeWorldId(input.worldId);
+    const name = input.name.trim();
+    if (!name) {
+      throw new Error("name is required");
+    }
+    await this.redis.hset(this.worldMetaKey(worldId), {
+      name,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   async publishWorld(
@@ -420,10 +467,33 @@ export class WorldStore {
       createdAt: meta.createdAt || now,
       updatedAt: meta.updatedAt || now,
     };
+    const buildChannelId = meta.buildChannelId?.trim();
+    if (buildChannelId) {
+      assertSafePathSegment(buildChannelId, "buildChannelId");
+      payload.buildChannelId = buildChannelId;
+    }
     const multi = this.redis.multi();
     multi.hset(this.characterMetaKey(meta.id), payload);
     multi.sadd(this.userCharactersKey(meta.creatorId), String(meta.id));
     await multi.exec();
+  }
+
+  async setCharacterBuildChannelId(input: {
+    characterId: number;
+    channelId: string;
+  }): Promise<void> {
+    if (!Number.isInteger(input.characterId) || input.characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    const trimmed = input.channelId.trim();
+    if (!trimmed) {
+      throw new Error("channelId is required");
+    }
+    assertSafePathSegment(trimmed, "channelId");
+    await this.redis.hset(this.characterMetaKey(input.characterId), {
+      buildChannelId: trimmed,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   async getCharacter(characterId: number): Promise<CharacterMeta | null> {
@@ -487,6 +557,59 @@ export class WorldStore {
     await this.redis.set(
       this.globalActiveCharacterKey(input.userId),
       String(input.characterId),
+    );
+  }
+
+  async getWorldForkedCharacterId(input: {
+    worldId: WorldId;
+    userId: string;
+    sourceCharacterId: number;
+  }): Promise<number | null> {
+    const worldId = normalizeWorldId(input.worldId);
+    if (!isSafePathSegment(input.userId)) {
+      return null;
+    }
+    if (
+      !Number.isInteger(input.sourceCharacterId) ||
+      input.sourceCharacterId <= 0
+    ) {
+      return null;
+    }
+    const raw = await this.redis.get(
+      this.worldForkKey(worldId, input.userId, input.sourceCharacterId),
+    );
+    if (!raw) {
+      return null;
+    }
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  async setWorldForkedCharacterId(input: {
+    worldId: WorldId;
+    userId: string;
+    sourceCharacterId: number;
+    forkedCharacterId: number;
+  }): Promise<void> {
+    const worldId = normalizeWorldId(input.worldId);
+    if (!isSafePathSegment(input.userId)) {
+      throw new Error("userId must be a safe path segment");
+    }
+    if (
+      !Number.isInteger(input.sourceCharacterId) ||
+      input.sourceCharacterId <= 0
+    ) {
+      throw new Error("sourceCharacterId must be a positive integer");
+    }
+    if (
+      !Number.isInteger(input.forkedCharacterId) ||
+      input.forkedCharacterId <= 0
+    ) {
+      throw new Error("forkedCharacterId must be a positive integer");
+    }
+    await this.redis.set(
+      this.worldForkKey(worldId, input.userId, input.sourceCharacterId),
+      String(input.forkedCharacterId),
     );
   }
 
@@ -576,6 +699,10 @@ export class WorldStore {
     return this.key(`world:${worldId}:characters`);
   }
 
+  private worldSubmissionNextIdKey(worldId: WorldId): string {
+    return this.key(`world:${worldId}:submission:next_id`);
+  }
+
   private userWorldsKey(userId: string): string {
     assertSafePathSegment(userId, "userId");
     return this.key(`user:${userId}:worlds`);
@@ -624,6 +751,18 @@ export class WorldStore {
     assertSafePathSegment(userId, "userId");
     return this.key(`world:${worldId}:active_character:${userId}`);
   }
+
+  private worldForkKey(
+    worldId: WorldId,
+    userId: string,
+    sourceCharacterId: number,
+  ): string {
+    assertSafePathSegment(userId, "userId");
+    if (!Number.isInteger(sourceCharacterId) || sourceCharacterId <= 0) {
+      throw new Error("sourceCharacterId must be a positive integer");
+    }
+    return this.key(`world:${worldId}:fork:${userId}:${sourceCharacterId}`);
+  }
 }
 
 function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
@@ -655,6 +794,7 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
   }
 
   if (status === "draft") {
+    const buildChannelId = raw.buildChannelId?.trim() || undefined;
     return {
       id,
       homeGuildId: raw.homeGuildId,
@@ -663,6 +803,7 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
       status,
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
+      buildChannelId,
     };
   }
 
@@ -729,5 +870,6 @@ function parseCharacterMeta(raw: Record<string, string>): CharacterMeta | null {
     status,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
+    buildChannelId: raw.buildChannelId?.trim() || undefined,
   };
 }

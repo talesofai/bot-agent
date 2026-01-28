@@ -40,7 +40,7 @@
 
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
-- Worker：`opencode_run` 增加硬超时（`OPENCODE_RUN_TIMEOUT_MS`，默认 60s）与失败兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”
+- Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”
 - Router：移除 `ensureBotConfig()` 的 `ensuredBots` 内存缓存，避免配置文件被删/重建后留下假状态
 - Opencode：`ensureOpencodeSkills()` 增加 workspace 同步哨兵，未变化时跳过全量 rm+cp，降低批处理 I/O
 - World：Redis 连接改为 lazy connect，避免测试环境出现 net 超时与 between-tests 未处理错误

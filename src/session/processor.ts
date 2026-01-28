@@ -398,15 +398,6 @@ export class SessionProcessor {
 
       const { history, request, promptBytes } = promptContext;
 
-      const config = getConfig();
-      const opencodeTimeoutMs = config.OPENCODE_RUN_TIMEOUT_MS;
-      const opencodeController = new AbortController();
-      let opencodeTimedOut = false;
-      const opencodeTimeout = setTimeout(() => {
-        opencodeTimedOut = true;
-        opencodeController.abort();
-      }, opencodeTimeoutMs);
-
       let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
       try {
         result = await batchSpan(
@@ -417,25 +408,21 @@ export class SessionProcessor {
               session: sessionInfo,
               history,
               request,
-              signal: opencodeController.signal,
             }),
           {
             historyEntries: history.length,
             promptBytes,
             modelProvider: request.body.model?.providerID,
             modelId: request.body.model?.modelID,
-            opencodeTimeoutMs,
           },
         );
       } catch (err) {
         const errMessage = err instanceof Error ? err.message : String(err);
-        const isAbort = opencodeTimedOut || isAbortError(err);
+        const isAbort = isAbortError(err);
 
         runtime.log.warn(
           {
             err,
-            opencodeTimedOut,
-            opencodeTimeoutMs,
           },
           "Opencode run failed",
         );
@@ -481,8 +468,6 @@ export class SessionProcessor {
               outputBytes: Buffer.byteLength(responseOutput, "utf8"),
               outputPreview: responseOutput,
               outputPreviewTruncated: false,
-              opencodeTimedOut,
-              opencodeTimeoutMs,
             },
           );
         } catch (sendErr) {
@@ -500,9 +485,7 @@ export class SessionProcessor {
             undefined,
             responseOutput,
             {
-              stderr: opencodeTimedOut
-                ? `opencode_run_timeout_ms=${opencodeTimeoutMs}`
-                : errMessage,
+              stderr: isAbort ? "opencode_run_aborted" : errMessage,
             },
           ),
         );
@@ -511,8 +494,6 @@ export class SessionProcessor {
         );
 
         return "continue";
-      } finally {
-        clearTimeout(opencodeTimeout);
       }
 
       const stillOwnerAfterRun = await this.bufferStore.claimGate(

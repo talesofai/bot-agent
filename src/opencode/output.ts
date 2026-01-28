@@ -11,6 +11,11 @@ export interface OpencodeRunResult {
   streamEvents?: OpencodeStreamEvent[];
   rawStdout?: string;
   rawStderr?: string;
+  /**
+   * Hint from runner that the current opencode session is stuck (e.g. waiting for
+   * an interactive UI tool) and should be reset before the next turn.
+   */
+  resetOpencodeSession?: boolean;
 }
 
 export function parseOpencodeOutput(

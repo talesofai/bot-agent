@@ -4,6 +4,8 @@ import type { OpencodeRunResult } from "../opencode/output";
 import type {
   OpencodeClient,
   OpencodePromptBody,
+  OpencodeAssistantMessageWithParts,
+  OpencodeMessagePart,
 } from "../opencode/server-client";
 import { extractAssistantText } from "../opencode/server-client";
 
@@ -38,20 +40,52 @@ export class OpencodeServerRunner implements OpencodeRunner {
     if (input.signal?.aborted) {
       throw new Error("Opencode run aborted before start");
     }
-    const response = await this.client.prompt({
-      directory: input.request.directory,
-      sessionId: input.request.sessionId,
-      body: input.request.body,
-      signal: input.signal,
-    });
-    const output = extractAssistantText(response) ?? undefined;
     const createdAt = new Date().toISOString();
-    const historyEntries = output
-      ? ([
-          { role: "assistant", content: output, createdAt },
-        ] satisfies HistoryEntry[])
-      : undefined;
-    return { output, historyEntries };
+    const maxSteps = 6;
+
+    let requestBody: OpencodePromptBody = input.request.body;
+    for (let step = 0; step < maxSteps; step += 1) {
+      const response = await this.client.prompt({
+        directory: input.request.directory,
+        sessionId: input.request.sessionId,
+        body: requestBody,
+        signal: input.signal,
+      });
+
+      const output = extractAssistantText(response) ?? undefined;
+      if (output?.trim()) {
+        return {
+          output,
+          historyEntries: [
+            { role: "assistant", content: output, createdAt },
+          ] satisfies HistoryEntry[],
+        };
+      }
+
+      const questionText = formatQuestionToolAsText(response);
+      if (questionText) {
+        return {
+          output: questionText,
+          historyEntries: [
+            { role: "assistant", content: questionText, createdAt },
+          ] satisfies HistoryEntry[],
+          resetOpencodeSession: true,
+        };
+      }
+
+      if (!shouldContinueAfterToolCalls(response)) {
+        return {};
+      }
+
+      // Opencode server may stop after tool-calls and expects the client to
+      // "continue" the run. We send an empty placeholder message to progress.
+      requestBody = {
+        ...input.request.body,
+        parts: [{ type: "text", text: " " }],
+      };
+    }
+
+    return {};
   }
 }
 
@@ -59,4 +93,123 @@ export class NoopOpencodeRunner implements OpencodeRunner {
   async run(): Promise<OpencodeRunResult> {
     return {};
   }
+}
+
+function shouldContinueAfterToolCalls(
+  response: OpencodeAssistantMessageWithParts,
+): boolean {
+  const parts = response.parts ?? [];
+  const hasQuestion = findToolPart(parts, "question") !== null;
+  if (hasQuestion) {
+    return false;
+  }
+  const hasToolCallsFinish = parts.some(
+    (part) =>
+      part.type === "step-finish" &&
+      typeof part["reason"] === "string" &&
+      part["reason"] === "tool-calls",
+  );
+  if (hasToolCallsFinish) {
+    return true;
+  }
+  const hasAnyTool = parts.some((part) => part.type === "tool");
+  return hasAnyTool;
+}
+
+function formatQuestionToolAsText(
+  response: OpencodeAssistantMessageWithParts,
+): string | null {
+  const parts = response.parts ?? [];
+  const toolPart = findToolPart(parts, "question");
+  if (!toolPart) {
+    return null;
+  }
+
+  const state = isRecord(toolPart.state) ? toolPart.state : null;
+  const input = state && isRecord(state.input) ? state.input : null;
+  const questions =
+    input && Array.isArray(input.questions) ? input.questions : [];
+  if (questions.length === 0) {
+    return [
+      "我需要你补充一些设定信息，但 opencode 触发了不适用于 Discord 的交互提问工具。",
+      "请你直接用文字回复补充：世界背景、规则体系、主要地点/势力等。",
+    ].join("\n");
+  }
+
+  const lines: string[] = [];
+  lines.push(
+    "我需要你补充一些设定信息（直接用文字回复即可，不要使用选择器）。",
+  );
+
+  for (const rawQuestion of questions) {
+    if (!isRecord(rawQuestion)) {
+      continue;
+    }
+    const header =
+      typeof rawQuestion.header === "string" ? rawQuestion.header.trim() : "";
+    const question =
+      typeof rawQuestion.question === "string"
+        ? rawQuestion.question.trim()
+        : "";
+    if (header) {
+      lines.push("", `【${header}】`);
+    }
+    if (question) {
+      lines.push(question);
+    }
+
+    const options = Array.isArray(rawQuestion.options)
+      ? rawQuestion.options
+      : [];
+    const renderedOptions = options
+      .map((opt) => (isRecord(opt) ? opt : null))
+      .filter(Boolean)
+      .map((opt) => {
+        const label = typeof opt!.label === "string" ? opt!.label.trim() : "";
+        const desc =
+          typeof opt!.description === "string" ? opt!.description.trim() : "";
+        if (!label && !desc) {
+          return null;
+        }
+        if (!desc) {
+          return `- ${label}`;
+        }
+        if (!label) {
+          return `- ${desc}`;
+        }
+        return `- ${label}：${desc}`;
+      })
+      .filter((line): line is string => Boolean(line));
+
+    if (renderedOptions.length > 0) {
+      lines.push(...renderedOptions);
+    }
+  }
+
+  lines.push(
+    "",
+    "你也可以直接上传/粘贴设定原文（txt/md/docx），我会据此生成 world/world-card.md 与 world/rules.md。",
+  );
+  const text = lines.join("\n").trim();
+  return text ? text : null;
+}
+
+function findToolPart(
+  parts: OpencodeMessagePart[],
+  toolName: string,
+): (OpencodeMessagePart & { state?: unknown; tool?: unknown }) | null {
+  for (const part of parts) {
+    if (part.type !== "tool") {
+      continue;
+    }
+    const tool = typeof part.tool === "string" ? part.tool.trim() : "";
+    if (tool === toolName) {
+      return part;
+    }
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

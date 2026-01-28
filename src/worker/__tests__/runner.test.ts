@@ -1,14 +1,22 @@
 import { describe, expect, test } from "bun:test";
 
-import type { OpencodeClient } from "../../opencode/server-client";
+import type {
+  OpencodeClient,
+  OpencodeMessagePart,
+} from "../../opencode/server-client";
 import { OpencodeServerRunner } from "../runner";
 
-function createFakeClient(responseText: string | null): {
+type FakePromptResponse = {
+  parts: OpencodeMessagePart[];
+};
+
+function createFakeClient(responses: FakePromptResponse[]): {
   client: OpencodeClient;
   calls: Array<{ directory: string; sessionId: string; body: unknown }>;
 } {
   const calls: Array<{ directory: string; sessionId: string; body: unknown }> =
     [];
+  let cursor = 0;
 
   const client: OpencodeClient = {
     async createSession() {
@@ -23,19 +31,15 @@ function createFakeClient(responseText: string | null): {
         sessionId: input.sessionId,
         body: input.body,
       });
+      const response = responses[Math.min(cursor, responses.length - 1)];
+      cursor += 1;
       return {
         info: {
           id: "msg_test",
           sessionID: input.sessionId,
           role: "assistant",
         },
-        parts:
-          responseText === null
-            ? []
-            : [
-                { type: "text", text: responseText },
-                { type: "meta", ignored: true },
-              ],
+        parts: response?.parts ?? [],
       };
     },
   };
@@ -45,7 +49,14 @@ function createFakeClient(responseText: string | null): {
 
 describe("OpencodeServerRunner", () => {
   test("extracts assistant text and emits history entry", async () => {
-    const { client, calls } = createFakeClient("hello");
+    const { client, calls } = createFakeClient([
+      {
+        parts: [
+          { type: "text", text: "hello" },
+          { type: "meta", ignored: true },
+        ],
+      },
+    ]);
     const runner = new OpencodeServerRunner(client);
     const result = await runner.run({
       job: {
@@ -95,7 +106,7 @@ describe("OpencodeServerRunner", () => {
   });
 
   test("returns empty result when assistant message has no text", async () => {
-    const { client } = createFakeClient(null);
+    const { client } = createFakeClient([{ parts: [] }]);
     const runner = new OpencodeServerRunner(client);
     const result = await runner.run({
       job: {
@@ -137,8 +148,135 @@ describe("OpencodeServerRunner", () => {
     expect(result.historyEntries).toBeUndefined();
   });
 
+  test("continues after tool-calls until text is available", async () => {
+    const { client, calls } = createFakeClient([
+      {
+        parts: [
+          { type: "tool", tool: "read", state: { status: "completed" } },
+          { type: "step-finish", reason: "tool-calls" },
+        ],
+      },
+      { parts: [{ type: "text", text: "final" }] },
+    ]);
+    const runner = new OpencodeServerRunner(client);
+    const result = await runner.run({
+      job: {
+        id: "job",
+        data: {
+          botId: "bot",
+          groupId: "group",
+          sessionId: "session",
+          userId: "user",
+          key: 0,
+          gateToken: "gate",
+        },
+      },
+      session: {
+        meta: {
+          sessionId: "session",
+          groupId: "group",
+          botId: "bot",
+          ownerId: "user",
+          key: 0,
+          status: "running",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        groupPath: "/tmp",
+        workspacePath: "/tmp",
+      },
+      history: [],
+      request: {
+        directory: "/tmp/workspace",
+        sessionId: "ses_test",
+        body: {
+          system: "sys",
+          parts: [{ type: "text", text: "user" }],
+        },
+      },
+    });
+
+    expect(result.output).toBe("final");
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.body).toMatchObject({
+      parts: [{ type: "text", text: " " }],
+    });
+  });
+
+  test("formats question tool as plain text and requests session reset", async () => {
+    const { client } = createFakeClient([
+      {
+        parts: [
+          {
+            type: "tool",
+            tool: "question",
+            state: {
+              status: "running",
+              input: {
+                questions: [
+                  {
+                    header: "设定补充需求",
+                    question: "请补充以下必要信息：",
+                    options: [
+                      {
+                        label: "世界基本设定",
+                        description: "类型/背景/一句话简介",
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ]);
+    const runner = new OpencodeServerRunner(client);
+    const result = await runner.run({
+      job: {
+        id: "job",
+        data: {
+          botId: "bot",
+          groupId: "group",
+          sessionId: "session",
+          userId: "user",
+          key: 0,
+          gateToken: "gate",
+        },
+      },
+      session: {
+        meta: {
+          sessionId: "session",
+          groupId: "group",
+          botId: "bot",
+          ownerId: "user",
+          key: 0,
+          status: "running",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        groupPath: "/tmp",
+        workspacePath: "/tmp",
+      },
+      history: [],
+      request: {
+        directory: "/tmp/workspace",
+        sessionId: "ses_test",
+        body: {
+          parts: [{ type: "text", text: "user" }],
+        },
+      },
+    });
+
+    expect(result.output).toContain("设定补充需求");
+    expect(result.output).toContain("世界基本设定");
+    expect(result.resetOpencodeSession).toBe(true);
+  });
+
   test("throws when aborted before start", async () => {
-    const { client } = createFakeClient("hello");
+    const { client } = createFakeClient([
+      { parts: [{ type: "text", text: "hello" }] },
+    ]);
     const runner = new OpencodeServerRunner(client);
     const controller = new AbortController();
     controller.abort();

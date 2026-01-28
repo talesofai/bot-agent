@@ -518,6 +518,16 @@ export class SessionProcessor {
       const output = resolveOutput(result.output);
       const auditedOutput = output ? redactSensitiveText(output) : undefined;
 
+      if (result.resetOpencodeSession) {
+        const nowIso = new Date().toISOString();
+        const updated = await this.sessionRepository.updateMeta({
+          ...sessionInfo.meta,
+          opencodeSessionId: undefined,
+          updatedAt: nowIso,
+        });
+        sessionInfo.meta = updated.meta;
+      }
+
       const responseOutput = auditedOutput;
       const syncResult = await batchSpan("sync_world_files", async () => {
         try {

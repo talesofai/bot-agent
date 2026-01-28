@@ -134,6 +134,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         void this.migrateWorldJoinChannels().catch((err) => {
           this.logger.warn({ err }, "World join channel migration failed");
         });
+        void this.migrateWorldAgents().catch((err) => {
+          this.logger.warn({ err }, "World agent migration failed");
+        });
       }
     });
 
@@ -2239,6 +2242,33 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
   }
 
+  private async migrateWorldAgents(): Promise<void> {
+    const ids = await this.worldStore.listWorldIds(200);
+    for (const id of ids) {
+      const meta = await this.worldStore.getWorld(id);
+      if (!meta) {
+        continue;
+      }
+      try {
+        await this.ensureWorldBuildGroupAgent({
+          worldId: meta.id,
+          worldName: meta.name,
+        });
+        if (meta.status !== "draft") {
+          await this.ensureWorldGroupAgent({
+            worldId: meta.id,
+            worldName: meta.name,
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          { err, worldId: meta.id, guildId: meta.homeGuildId },
+          "Failed to migrate world agents",
+        );
+      }
+    }
+  }
+
   private async ensureWorldJoinChannel(input: {
     guild: NonNullable<ChatInputCommandInteraction["guild"]>;
     meta: WorldActiveMeta;
@@ -2735,6 +2765,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       `1) 必须通过工具写入/编辑文件，不能只在聊天里输出。`,
       `2) 回复包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK，可发布/可关闭”。`,
       `3) 不要 roleplay，不要编造未给出的设定。`,
+      `4) 禁止使用任何交互式提问工具（例如 question）；需要补充信息请直接用文字列出问题。`,
       ``,
       `提示：创作者完成后在话题中执行 /world done（草稿会发布；已发布世界则仅关闭话题）。`,
       ``,
@@ -2798,6 +2829,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       `1) 必须通过工具写入/编辑文件，不能只在聊天里输出。`,
       `2) 禁止修改 world/world-card.md 与 world/rules.md（它们只读）。`,
       `3) 回复包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /character close。`,
+      `4) 禁止使用任何交互式提问工具（例如 question）；需要补充信息请直接用文字列出问题。`,
       ``,
       `角色：C${input.characterId} ${input.characterName}`,
       `世界：W${input.worldId} ${input.worldName}`,
@@ -3419,7 +3451,8 @@ function buildWorldBuildAgentPrompt(input: {
     `1) 设定原文在会话工作区的 \`world/source.md\`。`,
     `2) 规范化后的产物必须写入：\`world/world-card.md\` 与 \`world/rules.md\`。你必须使用工具写入/编辑文件，禁止只在回复里输出。`,
     `3) 每次回复都包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /world done。`,
-    `4) 你不是来写小说的，不要 roleplay。`,
+    `4) 禁止使用任何交互式提问工具（例如 question）；需要补充信息请直接在回复里列出问题。`,
+    `5) 你不是来写小说的，不要 roleplay。`,
     ``,
     `提示：你可以使用技能 \`world-design-card\` 来统一模板与字段。`,
     ``,
@@ -3449,7 +3482,8 @@ function buildCharacterBuildAgentPrompt(input: {
     `2) 角色卡产物必须写入：\`world/character-card.md\`。你必须使用工具写入/编辑文件，禁止只在回复里输出。`,
     `3) 禁止修改 \`world/world-card.md\` 与 \`world/rules.md\`（你写了也不会被保存）。`,
     `4) 每次回复都包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /character close。`,
-    `5) 你不是来写小说的，不要 roleplay。`,
+    `5) 禁止使用任何交互式提问工具（例如 question）；需要补充信息请直接在回复里列出问题。`,
+    `6) 你不是来写小说的，不要 roleplay。`,
     ``,
     `提示：你可以使用技能 \`character-card\` 来统一模板与字段。`,
     ``,

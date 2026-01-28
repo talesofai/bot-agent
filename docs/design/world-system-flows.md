@@ -19,7 +19,7 @@
 ### 0.3 未加入世界时：bot 必须响应
 
 - 对只读指令：正常返回。
-- 对写入类指令：**明确拒绝 + 引导 `/world join <id>`**。
+- 对写入类指令：明确拒绝 + 引导去该世界的 `#world-join` 频道执行 `/world join`（不需要 worldId）。
 - `/world join` 在非 `homeGuild` 执行：明确提示“入口在 homeGuild，需要加入该服务器后再 join”，不要“半加入”。
 
 ### 0.4 会话隔离（世界=虚拟 groupId）
@@ -40,8 +40,8 @@
 ### 输入
 
 - 触发：slash command `/world create`
-- 必填：世界名、设定文档（Attachment，txt/md/json/yaml）
-- 说明：后续补全通过 `#world-build` 多轮对话完成
+- 参数：无（不需要世界名/摘要；允许空输入）
+- 后续输入：在自动创建的私密话题中，创作者通过多轮对话补全信息（可直接发文字，也可上传 txt/md/docx）
 
 ### 前置条件
 
@@ -53,38 +53,65 @@
 
 ### 主流程
 
-1. 校验权限与参数（世界名非空，长度限制）。
-2. 分配 `worldId = INCR(world:next_id)`，并写入全局索引（例如 `SADD(world:ids, worldId)` + `ZADD(world:created_at, ts, worldId)`）。
-3. 创建 Discord Role：`World-{worldId}`。
-4. 创建 category：`[W{worldId}] {worldName}`。
-5. 创建频道：
-   - `#world-info`（@everyone 可读；不可写/可写按需）
-   - `#world-roleplay`（@everyone 只读；world role 可写）
-   - `#world-build`（仅创作者 + bot 可见/可写；用于世界卡/规则整理与补全）
-   - `#world-proposals`（@everyone 只读；world role 可写）
-   - `World Voice`（@everyone 可连/不可连按需；world role 可连）
-6. 写入 Redis `world:{worldId}:meta`（包含 `homeGuildId`、channelIds、roleId、creatorId、name、timestamps）。
-7. 写入路由映射：
-   - `channel:{roleplayChannelId}:world = worldId`（兼容推断 worldId）
-   - `channel:{roleplayChannelId}:group = world_{worldId}`（roleplay always-on）
-   - `channel:{buildChannelId}:group = world_{worldId}_build`（构建会话 always-on）
-8. 自动加入创作者：
-   - `SADD(world:{worldId}:members, creatorId)`
-   - 给创作者赋予 world role
-9. 初始化文件：
-   - `/data/worlds/{worldId}/world-card.md`
-   - `/data/worlds/{worldId}/rules.md`
-   - `/data/worlds/{worldId}/source.md`（上传设定文档的最新版本；历史副本在 `sources/`）
-   - `/data/worlds/{worldId}/events.jsonl`（append：world_created）
-10. 在 `#world-info` 发布世界入口信息（世界简介、规则链接、join 指令、统计入口）。
-11. 在 `#world-build` 自动触发一次 kickoff：让 AI 读取 `world/source.md`，生成/更新世界卡与规则，并提出待补充问题。
-12. 对执行者返回成功（优先 ephemeral，避免刷屏）。
+1. 校验权限（`world.createPolicy`）。
+2. 分配 `worldId = INCR(world:next_id)`，写入 Redis `world:{worldId}:meta`（`status=draft`；此时不进入 `/world list|search` 索引）。
+3. 初始化文件（文件系统持久化）：
+   - `/data/worlds/{worldId}/world-card.md`（初稿）
+   - `/data/worlds/{worldId}/rules.md`（初稿）
+   - `/data/worlds/{worldId}/source.md`（设定原文最新版本；历史副本在 `sources/`）
+   - `/data/worlds/{worldId}/events.jsonl`（append：world_draft_created / world_source_uploaded）
+4. 创建“世界构建私密会话”：
+   - 优先：在当前频道下创建 PrivateThread（仅创作者可见）
+   - 失败降级：创建 creator-only 临时频道
+   - 写入路由：`channel:{buildConversationChannelId}:group = world_{worldId}_build`（构建会话 always-on）
+5. 在私密会话中触发 kickoff：
+   - AI 必须读取 `world/source.md`
+   - AI 必须写入 `world/world-card.md` 与 `world/rules.md`
+   - 回复只包含：变更摘要 + 3-5 个待补充问题（或明确“已 OK，可发布”）
+6. 对执行者返回成功（ephemeral）并附私密话题链接；创作者在该话题执行 `/world done` 发布世界。
 
 ### 失败分支（必须明确）
 
 - bot 缺少 `Manage Roles/Channels`：返回“权限不足”并停止（不要创建半套资源）。
-- Discord 资源创建中途失败：至少保证 meta 里标记 `status=failed`，并提示管理员手工清理；后续可补 `/world repair`。
+- 私密话题创建失败：返回错误并提示“请联系管理员”；允许留下 `status=draft` 供后续手工修复/清理。
 - 写入 Redis/文件失败：提示“持久化失败”，不要继续创建更多资源。
+
+---
+
+## 1.1 `/world done`（发布世界 / 结束编辑话题）
+
+### 前置条件
+
+- 必须在世界构建/编辑私密话题内执行（该频道已被映射到 `groupId=world_{id}_build`）。
+- 仅世界创作者可执行。
+
+### 主流程
+
+1. 从当前频道推断 `worldId`（通过 `channel:{channelId}:group` 或 category/world 映射）。
+2. 读取 `world:{id}:meta`：
+   - 若 `status=draft`：执行发布
+   - 否则：仅结束当前话题（archive+lock）
+3. 发布（仅 `draft`）：
+   - 创建 Discord 子空间：Role + Category + Channels（`world-info/world-join/world-roleplay/world-proposals/voice/world-build`）
+   - 写入 `world:{id}:meta`（`status=active`，补齐 roleId/categoryId/channelIds，并写入索引）
+   - 自动拉创作者加入：赋 role + `SADD(world:{id}:members, creatorId)`（访客数口径）
+   - `channel:{roleplayChannelId}:world = worldId`（兼容推断）与 always-on 路由
+4. 结束话题：归档/锁定 thread（如果是 thread）；并返回结果（包含 join 入口与 roleplay 入口）。
+
+### 失败分支
+
+- 当前频道无法推断世界：返回“当前频道不属于世界构建会话”。
+- bot 无法创建子空间资源：返回错误并保持 `draft`，避免发布半残世界。
+
+---
+
+## 1.2 `/world edit <worldId>`（创建世界编辑话题）
+
+### 主流程
+
+1. 校验 world 存在且执行者是创作者。
+2. 创建编辑私密话题（优先 thread；失败降级 creator-only 临时频道），并映射到 `groupId=world_{id}_build`。
+3. 触发 kickoff（同 `/world create`）。
 
 ---
 
@@ -126,21 +153,22 @@
 
 ---
 
-## 5. `/world join <worldId>`（加入世界）
+## 5. `/world join`（加入世界，仅在 world-join 执行）
 
 ### 前置条件
 
 - 用户必须在该世界的 `homeGuild` 内执行此命令（否则无法赋 role）。
+- 必须在该世界子空间的 `#world-join` 频道内执行（不需要 worldId）。
 
 ### 主流程
 
-1. 校验 world 存在。
-2. 校验当前 guildId == `homeGuildId`：
-   - 否则返回：入口在 `homeGuildId`，请先加入该服务器。
-3. `SADD(world:{id}:members, userId)`（幂等）。
-4. 给用户赋予 world role。
+1. 从当前频道推断 `worldId`（category/world 映射或 joinChannelId 比对）。
+2. 校验当前频道确实是该世界的 join 入口：
+   - 否则返回：请到 `<#world-join>` 执行 `/world join`。
+3. 给用户赋予 world role。
+4. `SADD(world:{id}:members, userId)`（幂等，访客数口径）。
 5. append `events.jsonl`：world_joined。
-6. 返回成功（可提示“已获得进入权限，可以在 #world-roleplay 发言”）。
+6. 返回成功（提示 roleplay 入口频道）。
 
 ### 失败分支
 
@@ -173,7 +201,7 @@
 1. 解析 world 上下文：
    - 如果在 world 频道：由 `channel:{channelId}:world` 推断 `worldId`
    - 否则要求参数 `worldId`
-2. 校验成员资格；未加入则拒绝并提示 `/world join <id>`。
+2. 校验成员资格；未加入则拒绝并提示去该世界的 `#world-join` 执行 `/world join`。
 3. 分配 `characterId = INCR(character:next_id)`。
 4. 写入 `character:{characterId}:meta`：
    - `worldId creatorId name visibility=world status=active createdAt updatedAt`

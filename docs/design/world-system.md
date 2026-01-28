@@ -15,7 +15,7 @@
 1. **只做 Discord**（不考虑 QQ 适配）。
 2. **上下文/记忆只用 opencode session**：不再依赖 PostgreSQL 历史；PG 相关逻辑应被停用/注释（现已倾向 Noop history）。
 3. **世界全局共享**：`/world list`/`/world info` 不按 guild 分库；并先固定 **单 `homeGuild`**（世界子空间只存在于创建它的 guild）。
-4. 世界创建后自动生成 Discord “子空间”（category + 若干频道）；作者自动加入；其他人必须 `/world join <世界ID>` 才能“进入”游玩。
+4. 世界发布后自动生成 Discord “子空间”（category + 若干频道）；作者自动加入；其他人必须在该世界的 `#world-join` 频道执行 `/world join` 才能“进入”游玩。
 5. “能看到，只是不能进入”：所有人可查看世界卡与规则、可看世界进度；未 join 的人不能在世界子空间的入口频道发言/提案/游玩（用 World Role 做权限），但 bot 会对未 join 的世界相关操作**给出明确响应**（拒绝/引导 join），而不是装死。
 6. **计数必须有且可持久化**：
    - **访客数**：用 join 人数（members）定义即可。
@@ -257,7 +257,7 @@ guildId
 **未加入时 bot 的响应策略（你已确认：会响应）**
 
 - 只读命令（如 `/world info|rules|stats`）对所有人可用。
-- 写入类命令（如 `/character create`、`/submit`）未 join 则**明确拒绝并提示 `/world join <id>`**。
+- 写入类命令（如 `/character create`、`/submit`）未 join 则明确拒绝并引导去该世界的 `#world-join` 执行 `/world join`。
 - `/world join` 若在非 `homeGuild` 执行：应提示“该世界入口在 `homeGuild`，你需要加入该服务器后再 join”，不要在错误的 guild 里半 join 半失败。
 
 ---
@@ -336,7 +336,7 @@ world:
 | 世界列表   | `/world list`                | 找世界           | 否                                       | 所有人                                           | 否（读）                                             |
 | 世界详情   | `/world info <id>`           | 查看世界卡       | 否（直接读文件）                         | 所有人                                           | 否（读）                                             |
 | 世界规则   | `/world rules <id>`          | 世界底层逻辑     | 否（直接读文件）                         | 所有人                                           | 否（读）                                             |
-| 加入世界   | `/world join <id>`           | 进入游玩         | 否                                       | 所有人                                           | Redis(set)+events(+Discord role)                     |
+| 加入世界   | `/world join`                | 进入游玩         | 否                                       | 所有人（仅在 `#world-join` 执行）                | Redis(set)+events(+Discord role)                     |
 | 世界统计   | `/world stats <id>`          | 影响力可视化     | 否                                       | 所有人                                           | 读 Redis / events                                    |
 | 地图生成   | `/map generate <描述>`       | 可视化世界结构   | **是/外部 banana**                       | 世界创建者/管理员                                | 文件(map)+events                                     |
 | 地图更新   | `/map update <id> <变化>`    | 动态反映变化     | **是/外部 banana**                       | 世界创建者/管理员                                | 文件(map)+events                                     |

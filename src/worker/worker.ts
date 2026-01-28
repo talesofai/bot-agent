@@ -1,8 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import type { Logger } from "pino";
 
-import type { SessionJobData } from "../queue";
+import { BullmqSessionQueue, type SessionJobData } from "../queue";
 import { GroupFileRepository } from "../store/repository";
 import { SessionRepository } from "../session/repository";
 import type { HistoryStore } from "../session/history";
@@ -42,6 +43,12 @@ export class SessionWorker {
   private logger: Logger;
   private workerConnection: IORedis;
   private processor: SessionProcessor;
+  private sessionRepository: SessionRepository;
+  private bufferStore: SessionBufferStore;
+  private recoveryQueue: BullmqSessionQueue;
+  private recoveryTimer: ReturnType<typeof setInterval> | null = null;
+  private recoveryRunning = false;
+  private recoveryCursor = "0";
   private stalledIntervalMs: number;
   private maxStalledCount: number;
   private startPromise: Promise<void> | null = null;
@@ -63,6 +70,7 @@ export class SessionWorker {
       dataDir: options.dataDir,
       logger: this.logger,
     });
+    this.sessionRepository = sessionRepository;
     const historyStore = options.historyStore ?? new NoopHistoryStore();
     this.stalledIntervalMs = options.queue.stalledIntervalMs ?? 30_000;
     this.maxStalledCount = options.queue.maxStalledCount ?? 1;
@@ -76,6 +84,12 @@ export class SessionWorker {
       maxRetriesPerRequest: null,
     });
     const bufferStore = new SessionBufferStore({ redisUrl: options.redis.url });
+    this.bufferStore = bufferStore;
+    this.recoveryQueue = new BullmqSessionQueue({
+      redisUrl: options.redis.url,
+      queueName: options.queue.name,
+      prefix: options.queue.prefix,
+    });
     this.processor = new SessionProcessor({
       logger: this.logger,
       adapter: options.adapter,
@@ -134,14 +148,18 @@ export class SessionWorker {
           throw new Error("Worker exited before it was ready");
         }),
       ]);
+
+      this.startRecoveryLoop();
     })();
 
     return this.startPromise;
   }
 
   async stop(): Promise<void> {
+    this.stopRecoveryLoop();
     await this.worker.close();
     await this.workerConnection.quit();
+    await this.recoveryQueue.close();
     await this.processor.close();
   }
 
@@ -174,5 +192,191 @@ export class SessionWorker {
     assertSafePathSegment(jobData.gateToken, "gateToken");
     assertValidSessionKey(jobData.key);
     return jobData;
+  }
+
+  private startRecoveryLoop(): void {
+    if (this.recoveryTimer) {
+      return;
+    }
+    const intervalMs = 10_000;
+    this.recoveryTimer = setInterval(() => {
+      void this.recoverOrphanedBuffersOnce();
+    }, intervalMs);
+    void this.recoverOrphanedBuffersOnce();
+  }
+
+  private stopRecoveryLoop(): void {
+    if (!this.recoveryTimer) {
+      return;
+    }
+    clearInterval(this.recoveryTimer);
+    this.recoveryTimer = null;
+  }
+
+  private async recoverOrphanedBuffersOnce(): Promise<void> {
+    if (this.recoveryRunning) {
+      return;
+    }
+    this.recoveryRunning = true;
+    try {
+      const [nextCursor, keys] = await this.workerConnection.scan(
+        this.recoveryCursor,
+        "MATCH",
+        "session:buffer:*",
+        "COUNT",
+        "100",
+      );
+      this.recoveryCursor = nextCursor;
+
+      let recovered = 0;
+      for (const redisKey of keys) {
+        if (recovered >= 20) {
+          break;
+        }
+        const ok = await this.tryRecoverBufferKey(redisKey);
+        if (ok) {
+          recovered += 1;
+        }
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "Session buffer recovery scan failed");
+    } finally {
+      this.recoveryRunning = false;
+    }
+  }
+
+  private parseBufferKey(redisKey: string): {
+    botId: string;
+    groupId: string;
+    sessionId: string;
+  } | null {
+    const parts = redisKey.split(":");
+    if (parts.length !== 5) {
+      return null;
+    }
+    if (parts[0] !== "session" || parts[1] !== "buffer") {
+      return null;
+    }
+    const botId = parts[2]?.trim() ?? "";
+    const groupId = parts[3]?.trim() ?? "";
+    const sessionId = parts[4]?.trim() ?? "";
+    if (!botId || !groupId || !sessionId) {
+      return null;
+    }
+    try {
+      assertSafePathSegment(botId, "botId");
+      assertSafePathSegment(groupId, "groupId");
+      assertSafePathSegment(sessionId, "sessionId");
+    } catch {
+      return null;
+    }
+    return { botId, groupId, sessionId };
+  }
+
+  private async tryRecoverBufferKey(redisKey: string): Promise<boolean> {
+    const parsedKey = this.parseBufferKey(redisKey);
+    if (!parsedKey) {
+      return false;
+    }
+
+    const pending = await this.workerConnection.llen(redisKey);
+    if (pending <= 0) {
+      return false;
+    }
+
+    const first = await this.workerConnection.lindex(redisKey, 0);
+    if (!first) {
+      return false;
+    }
+    let userId = "";
+    let traceId: string | undefined;
+    try {
+      const parsed = JSON.parse(first) as unknown;
+      if (parsed && typeof parsed === "object") {
+        const record = parsed as Record<string, unknown>;
+        const rawUserId = record.userId;
+        if (typeof rawUserId === "string") {
+          userId = rawUserId.trim();
+        }
+        const extras = record.extras;
+        if (extras && typeof extras === "object") {
+          const rawTraceId = (extras as Record<string, unknown>).traceId;
+          if (typeof rawTraceId === "string" && rawTraceId.trim()) {
+            traceId = rawTraceId.trim();
+          }
+        }
+      }
+    } catch {
+      return false;
+    }
+    if (!userId) {
+      return false;
+    }
+
+    const sessionInfo = await this.sessionRepository.loadSession(
+      parsedKey.botId,
+      parsedKey.groupId,
+      userId,
+      parsedKey.sessionId,
+    );
+    if (!sessionInfo) {
+      this.logger.warn(
+        { redisKey, botId: parsedKey.botId, groupId: parsedKey.groupId },
+        "Orphaned session buffer has no session meta; dropping",
+      );
+      await this.workerConnection.del(redisKey);
+      return false;
+    }
+
+    const gateToken = randomBytes(12).toString("hex");
+    const claimed = await this.bufferStore.claimGate(
+      {
+        botId: parsedKey.botId,
+        groupId: parsedKey.groupId,
+        sessionId: parsedKey.sessionId,
+      },
+      gateToken,
+    );
+    if (!claimed) {
+      return false;
+    }
+
+    try {
+      await this.recoveryQueue.enqueue({
+        botId: parsedKey.botId,
+        groupId: parsedKey.groupId,
+        sessionId: parsedKey.sessionId,
+        userId: sessionInfo.meta.ownerId,
+        key: sessionInfo.meta.key,
+        gateToken,
+        traceId,
+        enqueuedAt: Date.now(),
+      });
+      this.logger.warn(
+        {
+          botId: parsedKey.botId,
+          groupId: parsedKey.groupId,
+          sessionId: parsedKey.sessionId,
+          userId: sessionInfo.meta.ownerId,
+          pending,
+        },
+        "Recovered orphaned session buffer by enqueuing job",
+      );
+      return true;
+    } catch (err) {
+      await this.bufferStore.releaseGate(
+        {
+          botId: parsedKey.botId,
+          groupId: parsedKey.groupId,
+          sessionId: parsedKey.sessionId,
+        },
+        gateToken,
+      );
+      this.logger.warn(
+        { err, botId: parsedKey.botId, groupId: parsedKey.groupId },
+        "Failed to enqueue recovery job",
+      );
+      return false;
+    }
   }
 }

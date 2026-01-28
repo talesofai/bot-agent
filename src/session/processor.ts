@@ -458,7 +458,7 @@ export class SessionProcessor {
         }
 
         const responseOutput = isAbort
-          ? "我这边生成回复超时了，请稍后再试。"
+          ? "我这边暂时没拿到输出，你可以直接再发一次。"
           : "我这边处理失败了，请稍后再试。";
         try {
           await batchSpan(

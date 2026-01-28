@@ -30,6 +30,7 @@
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
 - Discord：`/world join` 改为仅在 `world-join` 频道执行，不再接受 `world_id`
+- Discord：`/world create` 不再接收任何参数，改为直接进入“世界创建私密话题”，设定原文在话题内通过多轮消息/附件补全
 - Discord：除 help 外，Slash Commands 回复默认公开（non-ephemeral）
 - Discord：`/world info` 与 `world-info` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
@@ -41,6 +42,7 @@
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”
+- Worker：自动扫描 `session:buffer:*`，发现“有待处理消息但无 gate/job”的 orphan buffer 时自动补发 job，避免重启/丢 gate 后世界创建子话题卡死
 - Worker：移除本地 `OPENCODE_RUN_TIMEOUT_MS`（60s）硬超时，仅保留 `OPENCODE_SERVER_TIMEOUT_MS`（默认 10 分钟），避免 Discord 误报“生成超时”但 opencode web 已有输出
 - Opencode(Server)：`OpencodeServerRunner` 在 `tool-calls` 场景自动续跑到拿到 `text` 输出；遇到 `question` 交互工具时降级为纯文本问题并请求重置 session，避免 Discord 侧卡住/无回复
 - Router：移除 `ensureBotConfig()` 的 `ensuredBots` 内存缓存，避免配置文件被删/重建后留下假状态
@@ -49,6 +51,7 @@
 - Skills：`world-design-card` 输出仅保留必要模块，减少超长响应导致的超时
 - Discord：修复 `/character create` 的参数顺序导致 Slash Commands 注册失败（进而缺失 `/world`）
 - Discord：世界构建/编辑会话统一落在 creator-only 临时频道（可选 Thread），避免 parent channel 权限导致 bot 无法发言；并允许在该频道内执行 `/world done` 完成发布/关闭
+- Discord：生成的 `agent.md` frontmatter 修正为字符串版 `version`，避免解析告警刷屏飞书
 - Discord：当世界 Category 被手动删除/缺失时，`world-join` 频道补齐会降级为无 parent 创建，并支持通过已知频道 ID 推断世界，避免 `CHANNEL_PARENT_INVALID` 导致无法加入
 - Logging：飞书 `warn/error` 日志补齐 `guildId/worldId/characterId` 字段，便于快速定位是哪个世界/会话出问题
 - Discord：`world-join` 迁移仅在启用 Slash Commands 的进程执行，避免 adapter/worker 双进程重复补齐造成重复告警/重复创建

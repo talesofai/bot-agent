@@ -2242,10 +2242,37 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
     }
 
+    const resolvedCategoryId = input.meta.categoryId?.trim() ?? "";
+    let parentCategoryId: string | null = null;
+    if (resolvedCategoryId) {
+      const category = await input.guild.channels
+        .fetch(resolvedCategoryId)
+        .catch(() => null);
+      if (category && category.type === ChannelType.GuildCategory) {
+        parentCategoryId = category.id;
+      } else {
+        this.logger.warn(
+          {
+            worldId: input.meta.id,
+            guildId: input.meta.homeGuildId,
+            categoryId: resolvedCategoryId,
+          },
+          "World category is missing; creating join channel without parent",
+        );
+        await this.worldFiles.appendEvent(input.meta.id, {
+          type: "world_category_missing",
+          worldId: input.meta.id,
+          guildId: input.meta.homeGuildId,
+          categoryId: resolvedCategoryId,
+        });
+      }
+    }
+
     const cached = input.guild.channels.cache.find(
       (candidate) =>
         candidate.type === ChannelType.GuildText &&
-        candidate.parentId === input.meta.categoryId &&
+        Boolean(parentCategoryId) &&
+        candidate.parentId === parentCategoryId &&
         candidate.name === "world-join",
     );
     if (cached) {
@@ -2271,7 +2298,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const channel = await input.guild.channels.create({
       name: "world-join",
       type: ChannelType.GuildText,
-      parent: input.meta.categoryId,
+      parent: parentCategoryId ?? undefined,
       permissionOverwrites: overwrites.join,
       reason: `world join channel ensure W${input.meta.id}`,
     });
@@ -2325,6 +2352,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
     }
 
+    const baseChannelId =
+      channel &&
+      typeof channel === "object" &&
+      "id" in channel &&
+      typeof (channel as { id?: unknown }).id === "string"
+        ? (channel as { id: string }).id
+        : channelId;
+
     const categoryId =
       channel &&
       typeof channel === "object" &&
@@ -2335,6 +2370,31 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         ? (channel as { id: string }).id
         : (channel as { parentId?: unknown }).parentId;
     if (typeof categoryId !== "string" || !categoryId.trim()) {
+      const ids = await this.worldStore.listWorldIds(200);
+      for (const id of ids) {
+        const meta = await this.worldStore.getWorld(id);
+        if (!meta || meta.status === "draft") {
+          continue;
+        }
+        if (meta.joinChannelId && meta.joinChannelId === baseChannelId) {
+          return meta.id;
+        }
+        if (meta.infoChannelId === baseChannelId) {
+          return meta.id;
+        }
+        if (meta.roleplayChannelId === baseChannelId) {
+          return meta.id;
+        }
+        if (meta.proposalsChannelId === baseChannelId) {
+          return meta.id;
+        }
+        if (meta.buildChannelId && meta.buildChannelId === baseChannelId) {
+          return meta.id;
+        }
+        if (meta.voiceChannelId === baseChannelId) {
+          return meta.id;
+        }
+      }
       return null;
     }
     const mapped = await this.worldStore.getWorldIdByCategory(categoryId);

@@ -46,6 +46,8 @@
 - Skills：`world-design-card` 输出仅保留必要模块，减少超长响应导致的超时
 - Discord：修复 `/character create` 的参数顺序导致 Slash Commands 注册失败（进而缺失 `/world`）
 - Discord：世界构建/编辑会话统一落在 creator-only 临时频道（可选 Thread），避免 parent channel 权限导致 bot 无法发言；并允许在该频道内执行 `/world done` 完成发布/关闭
+- Discord：当世界 Category 被手动删除/缺失时，`world-join` 频道补齐会降级为无 parent 创建，并支持通过已知频道 ID 推断世界，避免 `CHANNEL_PARENT_INVALID` 导致无法加入
+- Logging：飞书 `warn/error` 日志补齐 `guildId/worldId/characterId` 字段，便于快速定位是哪个世界/会话出问题
 
 ## [0.0.30] - 2026-01-24
 

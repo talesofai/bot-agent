@@ -84,6 +84,9 @@ function buildLogger(): pino.Logger {
                 jobId:
                   (bindings["jobId"] as string | undefined) ??
                   (objectArg?.jobId as string | undefined),
+                guildId:
+                  (bindings["guildId"] as string | undefined) ??
+                  (objectArg?.guildId as string | undefined),
                 groupId:
                   (bindings["groupId"] as string | undefined) ??
                   (objectArg?.groupId as string | undefined),
@@ -96,6 +99,12 @@ function buildLogger(): pino.Logger {
                 userId:
                   (bindings["userId"] as string | undefined) ??
                   (objectArg?.userId as string | undefined),
+                worldId:
+                  (bindings["worldId"] as number | undefined) ??
+                  (objectArg?.worldId as number | undefined),
+                characterId:
+                  (bindings["characterId"] as number | undefined) ??
+                  (objectArg?.characterId as number | undefined),
                 errName: err?.name,
                 errMessage: err?.message,
               });

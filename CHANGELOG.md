@@ -9,14 +9,15 @@
 
 ### Added
 
-- Discord：新增世界系统（`/world create|list|search|canon|info|rules|stats|status|join|edit|close`），世界全局共享（单 `homeGuild`）
-- Discord：`/world create` 创建“世界草稿 + 子话题”，多轮补全后在子话题中执行 `/world close` 才会发布世界并创建子空间；世界构建会话 `groupId=world_{id}_build` 写回 `/data/worlds/{id}/world-card.md`、`rules.md` 与 `source.md`
+- Discord：新增世界系统（`/world create|list|search|canon|info|rules|stats|status|join|edit|done`），世界全局共享（单 `homeGuild`）
+- Discord：`/world create` 创建“世界草稿 + 私密话题”，允许空输入并支持上传 txt/md/docx 设定文档；多轮补全后在话题中执行 `/world done` 发布世界并创建子空间；世界构建会话 `groupId=world_{id}_build` 写回 `/data/worlds/{id}/world-card.md`、`rules.md` 与 `source.md`
 - Discord：`/world edit`（仅创作者）创建“世界编辑话题”，用于后续通过对话持续修改世界设定
-- Discord：世界子空间默认“未 join 不可见”：`world-roleplay/world-proposals/voice` 仅对 World Role 可见，`/world join` 后自动获得进入与发言权限
+- Discord：世界子空间默认“未 join 不可见”：`world-roleplay/world-proposals/voice` 仅对 World Role 可见；新增 `world-join`（所有人可见）用于执行 `/world join` 加入后获得进入与发言权限
+- Discord：发布/编辑结束后自动推送“世界卡 + 世界规则”快照到 `world-info`，便于所有人查看当前已确定设定
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
 - Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`），并可通过 `/character act` 让 bot 在世界入口频道扮演角色
 - Discord：`/character create` 自动创建“角色构建”话题（`groupId=world_{id}_character_{cid}_build`），并触发 kickoff 以多轮补全角色卡
-- Discord：新增 `/world close`、`/character close`（仅创作者）用于关闭构建话题（archive+lock）
+- Discord：新增 `/world done`、`/character close`（仅创作者）用于结束构建话题（archive+lock）
 - World：新增 `channelId -> worldId` 路由与 world roleplay 频道 always-on（绕过 mention/keyword 触发），会话隔离为 `groupId=world_{worldId}` 并注入 `world/world-card.md`、`world/rules.md`、`world/active-character.md`
 - 持久化：Redis 维护自增 ID / meta / 成员与角色集合；`/data/worlds/{worldId}` 落地世界卡/规则/角色卡/事件流
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
@@ -42,7 +43,7 @@
 - World：Redis 连接改为 lazy connect，避免测试环境出现 net 超时与 between-tests 未处理错误
 - Skills：`world-design-card` 输出仅保留必要模块，减少超长响应导致的超时
 - Discord：修复 `/character create` 的参数顺序导致 Slash Commands 注册失败（进而缺失 `/world`）
-- Discord：世界构建/编辑会话创建支持兜底：当无法创建 Thread 时回退到 creator-only 临时频道，并允许在该频道内执行 `/world close` 完成发布/关闭；同时补齐频道权限以支持线程内发言/创建线程
+- Discord：世界构建/编辑会话创建支持兜底：当无法创建 Thread 时回退到 creator-only 临时频道，并允许在该频道内执行 `/world done` 完成发布/关闭；同时补齐频道权限以支持线程内发言/创建线程
 
 ## [0.0.30] - 2026-01-24
 

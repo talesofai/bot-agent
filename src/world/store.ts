@@ -29,6 +29,7 @@ export type WorldActiveMeta = {
   roleId: string;
   categoryId: string;
   infoChannelId: string;
+  joinChannelId?: string;
   roleplayChannelId: string;
   proposalsChannelId: string;
   voiceChannelId: string;
@@ -150,6 +151,10 @@ export class WorldStore {
       proposalsChannelId: meta.proposalsChannelId,
       voiceChannelId: meta.voiceChannelId,
     };
+    const joinChannelId = meta.joinChannelId?.trim();
+    if (joinChannelId) {
+      payload.joinChannelId = joinChannelId;
+    }
     const buildChannelId = meta.buildChannelId?.trim();
     if (buildChannelId) {
       payload.buildChannelId = buildChannelId;
@@ -159,6 +164,7 @@ export class WorldStore {
     multi.hset(this.worldMetaKey(meta.id), payload);
     multi.sadd(this.key("world:ids"), String(meta.id));
     multi.zadd(this.key("world:created_at"), Date.now(), String(meta.id));
+    multi.set(this.categoryWorldKey(meta.categoryId), String(meta.id));
     // Route mapping is only required for roleplay channel.
     multi.set(this.channelWorldKey(meta.roleplayChannelId), String(meta.id));
     multi.set(
@@ -201,6 +207,35 @@ export class WorldStore {
     }
     const parsed = Number(raw);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  async getWorldIdByCategory(categoryId: string): Promise<WorldId | null> {
+    const safeCategoryId = categoryId.trim();
+    if (!safeCategoryId) {
+      return null;
+    }
+    const raw = await this.redis.get(this.categoryWorldKey(safeCategoryId));
+    if (!raw) {
+      return null;
+    }
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  async setCategoryWorldId(
+    categoryId: string,
+    worldId: WorldId,
+  ): Promise<void> {
+    const normalized = normalizeWorldId(worldId);
+    const safeCategoryId = categoryId.trim();
+    if (!safeCategoryId) {
+      throw new Error("categoryId is required");
+    }
+    assertSafePathSegment(safeCategoryId, "categoryId");
+    await this.redis.set(
+      this.categoryWorldKey(safeCategoryId),
+      String(normalized),
+    );
   }
 
   async setChannelGroupId(channelId: string, groupId: string): Promise<void> {
@@ -384,6 +419,15 @@ export class WorldStore {
     return this.key(`channel:${trimmed}:group`);
   }
 
+  private categoryWorldKey(categoryId: string): string {
+    const trimmed = categoryId.trim();
+    if (!trimmed) {
+      throw new Error("categoryId is required");
+    }
+    assertSafePathSegment(trimmed, "categoryId");
+    return this.key(`category:${trimmed}:world`);
+  }
+
   private characterMetaKey(characterId: number): string {
     return this.key(`character:${characterId}:meta`);
   }
@@ -454,6 +498,7 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
   }
 
   const buildChannelId = raw.buildChannelId?.trim() || undefined;
+  const joinChannelId = raw.joinChannelId?.trim() || undefined;
 
   return {
     id,
@@ -466,6 +511,7 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
     roleId: raw.roleId,
     categoryId: raw.categoryId,
     infoChannelId: raw.infoChannelId,
+    joinChannelId,
     roleplayChannelId: raw.roleplayChannelId,
     proposalsChannelId: raw.proposalsChannelId,
     voiceChannelId: raw.voiceChannelId,

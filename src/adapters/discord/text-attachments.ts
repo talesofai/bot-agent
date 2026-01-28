@@ -1,6 +1,7 @@
 import type { Attachment } from "discord.js";
 import type { Logger } from "pino";
 
+import { strFromU8, unzipSync } from "fflate";
 import { getConfig } from "../../config";
 import { createSsrfPolicy, fetchWithSsrfProtection } from "../../utils/ssrf";
 
@@ -11,6 +12,7 @@ const ALLOWED_EXTENSIONS = new Set([
   ".md",
   ".markdown",
   ".txt",
+  ".docx",
   ".json",
   ".yaml",
   ".yml",
@@ -100,7 +102,8 @@ export async function fetchDiscordTextAttachment(
       );
     }
 
-    const text = buffer.toString("utf8");
+    const text =
+      ext === ".docx" ? extractTextFromDocx(buffer) : buffer.toString("utf8");
     if (!text.trim()) {
       throw new Error("attachment is empty");
     }
@@ -137,4 +140,52 @@ function extensionFromFilename(filename: string): string | null {
     return null;
   }
   return basename.slice(idx).toLowerCase();
+}
+
+function extractTextFromDocx(buffer: Buffer): string {
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipSync(new Uint8Array(buffer));
+  } catch (err) {
+    throw new Error("docx unzip failed", { cause: err });
+  }
+  const xml = files["word/document.xml"];
+  if (!xml) {
+    throw new Error("docx missing word/document.xml");
+  }
+  const raw = strFromU8(xml);
+  return normalizeDocxXmlText(raw);
+}
+
+function normalizeDocxXmlText(xml: string): string {
+  const withBreaks = xml
+    .replace(/<w:tab\b[^>]*\/>/g, "\t")
+    .replace(/<w:br\b[^>]*\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<\/w:tr>/g, "\n")
+    .replace(/<\/w:tc>/g, "\t");
+  const withoutTags = withBreaks.replace(/<[^>]+>/g, "");
+  const decoded = decodeXmlEntities(withoutTags);
+  return decoded
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function decodeXmlEntities(input: string): string {
+  return input
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_match, hex) => {
+      const value = Number.parseInt(hex, 16);
+      return Number.isFinite(value) ? String.fromCodePoint(value) : "";
+    })
+    .replace(/&#(\d+);/g, (_match, dec) => {
+      const value = Number.parseInt(dec, 10);
+      return Number.isFinite(value) ? String.fromCodePoint(value) : "";
+    });
 }

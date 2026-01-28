@@ -23,7 +23,7 @@ import type {
   SessionEvent,
 } from "../../types/platform";
 import { logger as defaultLogger } from "../../logger";
-import { parseMessage } from "./parser";
+import { parseMessage, type DiscordMessageExtras } from "./parser";
 import { MessageSender } from "./sender";
 import type { BotMessageStore } from "../../store/bot-message-store";
 import { WorldStore, type CharacterVisibility } from "../../world/store";
@@ -196,10 +196,101 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       if (!parsed) {
         return;
       }
+      try {
+        await this.ingestWorldBuildAttachments(message, parsed);
+      } catch (err) {
+        this.logger.warn({ err }, "Failed to ingest world build attachments");
+      }
       this.logger.debug({ messageId: parsed.messageId }, "Message received");
       await this.emitEvent(parsed);
     } catch (err) {
       this.logger.error({ err }, "Failed to handle Discord message");
+    }
+  }
+
+  private async ingestWorldBuildAttachments(
+    message: Message,
+    session: SessionEvent<DiscordMessageExtras>,
+  ): Promise<void> {
+    if (!message.guildId) {
+      return;
+    }
+    if (!message.attachments || message.attachments.size === 0) {
+      return;
+    }
+
+    const groupId = await this.worldStore.getGroupIdByChannel(
+      message.channelId,
+    );
+    const parsed = groupId ? parseWorldGroup(groupId) : null;
+    if (!parsed || parsed.kind !== "build") {
+      return;
+    }
+
+    const uploaded: Array<{ filename: string; content: string }> = [];
+    const rejected: string[] = [];
+
+    for (const attachment of message.attachments.values()) {
+      try {
+        uploaded.push(
+          await fetchDiscordTextAttachment(attachment, { logger: this.logger }),
+        );
+      } catch {
+        rejected.push((attachment.name ?? "").trim() || "document");
+      }
+    }
+
+    if (uploaded.length === 0) {
+      if (rejected.length === 0) {
+        return;
+      }
+      await this.sendMessage(
+        session,
+        `不支持的设定文档类型：${rejected.join(", ")}\n仅支持：txt/md/docx/json/yaml/yml`,
+      );
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const merged =
+      uploaded.length === 1
+        ? uploaded[0].content
+        : uploaded
+            .map((doc) =>
+              [
+                `# 上传文档：${doc.filename}`,
+                `- 时间：${nowIso}`,
+                ``,
+                doc.content.trimEnd(),
+                ``,
+                `---`,
+                ``,
+              ].join("\n"),
+            )
+            .join("\n")
+            .trimEnd();
+    const filename =
+      uploaded.length === 1 ? uploaded[0].filename : "uploads.md";
+
+    await this.worldFiles.writeSourceDocument(parsed.worldId, {
+      filename,
+      content: merged,
+    });
+    for (const doc of uploaded) {
+      await this.worldFiles.appendEvent(parsed.worldId, {
+        type: "world_source_uploaded",
+        worldId: parsed.worldId,
+        guildId: message.guildId,
+        userId: message.author.id,
+        filename: doc.filename,
+        messageId: message.id,
+      });
+    }
+    if (rejected.length > 0) {
+      await this.sendMessage(
+        session,
+        `已读取并写入 world/source.md（${uploaded.length} 个文档）。以下文件被忽略（类型不支持）：${rejected.join(", ")}`,
+      );
     }
   }
 
@@ -483,8 +574,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     if (subcommand === "join") {
-      const worldId = interaction.options.getInteger("world_id", true);
-      await this.handleWorldJoin(interaction, worldId);
+      const worldId = interaction.options.getInteger("world_id") ?? undefined;
+      await this.handleWorldJoin(interaction, { worldId });
       return;
     }
     if (subcommand === "stats") {
@@ -511,8 +602,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.handleWorldEdit(interaction, { worldId, message, document });
       return;
     }
-    if (subcommand === "close") {
-      await this.handleWorldClose(interaction);
+    if (subcommand === "done") {
+      await this.handleWorldDone(interaction);
       return;
     }
     await safeReply(interaction, `未知子命令：/world ${subcommand}`, {
@@ -526,7 +617,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   ): Promise<void> {
     if (!interaction.guildId || !interaction.guild) {
       await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-        ephemeral: false,
+        ephemeral: true,
       });
       return;
     }
@@ -548,19 +639,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       messageLength: messageRaw.length,
       worldName: worldNameRaw,
     });
-    if (!messageRaw && !document) {
-      feishuLogJson({
-        event: "discord.world.create.invalid_input",
-        traceId,
-        interactionId: interaction.id,
-      });
-      await safeReply(
-        interaction,
-        "缺少设定内容：请提供 message 或上传 document。",
-        { ephemeral: false },
-      );
-      return;
-    }
 
     const groupPath = await this.groupRepository.ensureGroupDir(
       interaction.guildId,
@@ -592,14 +670,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(
         interaction,
         `无权限：当前 createPolicy=${policy}（默认 admin）。`,
-        { ephemeral: false },
+        { ephemeral: true },
       );
       return;
     }
 
     const guild = interaction.guild;
     await safeReply(interaction, "收到，正在创建世界草稿…", {
-      ephemeral: false,
+      ephemeral: true,
     });
 
     try {
@@ -619,8 +697,20 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         source = await fetchDiscordTextAttachment(document, {
           logger: this.logger,
         });
-      } else {
+      } else if (messageRaw) {
         source = { filename: "message.md", content: messageRaw };
+      } else {
+        source = {
+          filename: "source.md",
+          content: [
+            `# 设定原文（尚未提供）`,
+            ``,
+            `你可以：`,
+            `- 直接在本话题里发送设定内容（多轮对话补全也可以）`,
+            `- 上传 txt/md/json/yaml 等纯文本文件作为设定原文`,
+            ``,
+          ].join("\n"),
+        };
       }
 
       await this.worldStore.createWorldDraft({
@@ -773,9 +863,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         [
           `世界草稿已创建：W${worldId} ${worldName}`,
           `继续补全：${buildConversationMention}`,
-          `发布世界：在子话题中执行 /world close（发布后会自动创建子空间并把你拉进去）`,
+          `发布世界：在子话题中执行 /world done（发布后会自动创建子空间并把你拉进去）`,
         ].join("\n"),
-        { ephemeral: false },
+        { ephemeral: true },
       );
     } catch (err) {
       this.logger.error({ err }, "Failed to create world draft");
@@ -789,7 +879,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(
         interaction,
         `创建失败：${err instanceof Error ? err.message : String(err)}`,
-        { ephemeral: false },
+        { ephemeral: true },
       );
     }
   }
@@ -801,20 +891,20 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       interaction,
       [
         "世界系统指令：",
-        "- /world create [name:<世界名称>] [message:<设定摘要>] [document:<设定文档>]（默认仅管理员；可配置 world.createPolicy）",
-        "  - 创建后会自动创建子话题，多轮补全；在子话题里用 /world close 发布世界并创建子空间",
+        "- /world create [name:<世界名称>] [message:<设定摘要>] [document:<设定文档>]（默认仅管理员；可配置 world.createPolicy；允许空输入）",
+        "  - 创建后会自动创建私密话题，多轮补全；在话题里用 /world done 发布世界并创建子空间",
         "- /world list [limit:<1-100>]",
         "- /world search query:<关键词> [limit:<1-50>]",
         "- /world info world_id:<世界ID>",
         "- /world rules world_id:<世界ID>",
         "- /world canon query:<关键词> [world_id:<世界ID>]（搜索该世界正典：名称/世界卡/规则；可在入口频道省略 world_id）",
-        "- /world join world_id:<世界ID>（必须在入口服务器执行以赋予 World-<id> 角色）",
+        "- /world join [world_id:<世界ID>]（推荐在世界子空间执行，可省略 world_id）",
         "- /world stats world_id:<世界ID>（或 /world status）",
-        "- /world edit world_id:<世界ID>（仅创作者，创建编辑话题）",
-        "- /world close（仅创作者，关闭当前构建话题；草稿会在此时发布）",
+        "- /world edit world_id:<世界ID>（仅创作者，创建编辑话题；私密可见）",
+        "- /world done（仅创作者，结束当前构建/编辑话题；草稿会在此时发布）",
         "",
         "提示：",
-        "- 未加入世界时看不到子空间频道；加入后会自动获得进入权限",
+        "- 未加入世界时看不到 roleplay/proposals；加入后会自动获得进入权限",
         "- 访客数=join 人数；角色数=该世界角色数（均持久化）",
       ].join("\n"),
       { ephemeral: true },
@@ -863,12 +953,23 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     const card = await this.worldFiles.readWorldCard(meta.id);
+    const channels =
+      meta.status === "draft"
+        ? []
+        : [
+            `信息：<#${meta.infoChannelId}>`,
+            meta.joinChannelId
+              ? `加入：<#${meta.joinChannelId}>（执行 /world join）`
+              : `加入：/world join world_id:${meta.id}（兼容旧世界）`,
+            `入口：<#${meta.roleplayChannelId}>`,
+          ];
     const header = [
       `W${meta.id} ${meta.name}`,
       `入口 guild:${meta.homeGuildId}`,
       `状态：${meta.status === "draft" ? "draft(未发布)" : meta.status}`,
       `访客数：${await this.worldStore.memberCount(meta.id)}`,
       `角色数：${await this.worldStore.characterCount(meta.id)}`,
+      ...channels,
       ``,
     ].join("\n");
     const body = card?.trim() ? card.trim() : "(世界卡缺失)";
@@ -973,12 +1074,24 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
   private async handleWorldJoin(
     interaction: ChatInputCommandInteraction,
-    worldId: number,
+    input: { worldId?: number },
   ): Promise<void> {
-    const meta = await this.worldStore.getWorld(worldId);
+    const inferredWorldId =
+      input.worldId ??
+      (await this.inferWorldIdFromWorldSubspace(interaction).catch(() => null));
+    if (!inferredWorldId) {
+      await safeReply(
+        interaction,
+        "缺少 world_id：请在目标世界子空间内执行 /world join，或显式提供 world_id。",
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const meta = await this.worldStore.getWorld(inferredWorldId);
     if (!meta) {
-      await safeReply(interaction, `世界不存在：W${worldId}`, {
-        ephemeral: false,
+      await safeReply(interaction, `世界不存在：W${inferredWorldId}`, {
+        ephemeral: true,
       });
       return;
     }
@@ -986,7 +1099,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(
         interaction,
         `无法加入：世界尚未发布（W${meta.id} 当前状态=${meta.status}）`,
-        { ephemeral: false },
+        { ephemeral: true },
       );
       return;
     }
@@ -994,13 +1107,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(
         interaction,
         `无法加入：该世界入口在 guild:${meta.homeGuildId}（请先加入该服务器后再执行 /world join）。`,
-        { ephemeral: false },
+        { ephemeral: true },
       );
       return;
     }
     if (!interaction.guild) {
       await safeReply(interaction, "无法获取服务器信息，请稍后重试。", {
-        ephemeral: false,
+        ephemeral: true,
       });
       return;
     }
@@ -1021,13 +1134,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(
         interaction,
         `已加入世界：W${meta.id} ${meta.name}\n入口：<#${meta.roleplayChannelId}>`,
-        { ephemeral: false },
+        { ephemeral: true },
       );
     } catch (err) {
       await safeReply(
         interaction,
         `加入失败：${err instanceof Error ? err.message : String(err)}`,
-        { ephemeral: false },
+        { ephemeral: true },
       );
     }
   }
@@ -1144,20 +1257,20 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     });
     if (!interaction.guildId || !interaction.guild) {
       await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-        ephemeral: false,
+        ephemeral: true,
       });
       return;
     }
     const meta = await this.worldStore.getWorld(input.worldId);
     if (!meta) {
       await safeReply(interaction, `世界不存在：W${input.worldId}`, {
-        ephemeral: false,
+        ephemeral: true,
       });
       return;
     }
     if (meta.creatorId !== interaction.user.id) {
       await safeReply(interaction, "无权限：只有世界创作者可以编辑世界。", {
-        ephemeral: false,
+        ephemeral: true,
       });
       return;
     }
@@ -1165,7 +1278,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await safeReply(
         interaction,
         `请在世界入口服务器执行该指令：guild:${meta.homeGuildId}`,
-        { ephemeral: false },
+        { ephemeral: true },
       );
       return;
     }
@@ -1203,7 +1316,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         await safeReply(
           interaction,
           `补充设定文档读取失败：${err instanceof Error ? err.message : String(err)}`,
-          { ephemeral: false },
+          { ephemeral: true },
         );
         return;
       }
@@ -1338,14 +1451,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       [
         `已创建世界编辑话题：${buildConversationMention}`,
         meta.status === "draft"
-          ? "提示：该世界仍是草稿，完成后在话题中执行 /world close 发布。"
-          : "完成后在话题中执行 /world close 关闭。",
+          ? "提示：该世界仍是草稿，完成后在话题中执行 /world done 发布。"
+          : "完成后在话题中执行 /world done 结束编辑。",
       ].join("\n"),
-      { ephemeral: false },
+      { ephemeral: true },
     );
   }
 
-  private async handleWorldClose(
+  private async handleWorldDone(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
     if (!interaction.guildId || !interaction.guild) {
@@ -1399,7 +1512,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     ) {
       await safeReply(
         interaction,
-        "请在世界构建/编辑话题（Thread）内执行 /world close。当前频道用于承载话题，请先用 /world edit 创建话题。",
+        "请在世界构建/编辑话题（Thread）内执行 /world done。当前频道用于承载话题，请先用 /world edit 创建话题。",
         { ephemeral: false },
       );
       return;
@@ -1428,6 +1541,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           roleId: created.roleId,
           categoryId: created.categoryId,
           infoChannelId: created.infoChannelId,
+          joinChannelId: created.joinChannelId,
           roleplayChannelId: created.roleplayChannelId,
           proposalsChannelId: created.proposalsChannelId,
           voiceChannelId: created.voiceChannelId,
@@ -1463,7 +1577,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
         const intro = [
           `世界已发布：W${world.id} ${resolvedName}`,
-          `- 加入：/world join world_id:${world.id}`,
+          `- 加入：在 <#${created.joinChannelId}> 执行 /world join（可省略 world_id）`,
           `- 状态：/world status world_id:${world.id}`,
           `- 角色：/character create（在 <#${created.roleplayChannelId}> 内可省略 world_id）`,
         ].join("\n");
@@ -1477,6 +1591,29 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         } catch {
           // ignore
         }
+        try {
+          await this.sendLongTextToChannel({
+            guildId: world.homeGuildId,
+            channelId: created.joinChannelId,
+            content: [
+              `欢迎来到：W${world.id} ${resolvedName}`,
+              `在本频道执行 /world join 加入世界（可省略 world_id）。`,
+            ].join("\n"),
+          });
+        } catch {
+          // ignore
+        }
+        try {
+          await this.pushWorldInfoSnapshot({
+            guildId: world.homeGuildId,
+            worldId: world.id,
+            worldName: resolvedName,
+            infoChannelId: created.infoChannelId,
+            joinChannelId: created.joinChannelId,
+          });
+        } catch {
+          // ignore
+        }
 
         await safeReply(
           interaction,
@@ -1484,7 +1621,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             `世界已发布：W${world.id} ${resolvedName}`,
             `入口：<#${created.roleplayChannelId}>`,
             `信息：<#${created.infoChannelId}>`,
-            `加入指令：/world join world_id:${world.id}`,
+            `加入：<#${created.joinChannelId}>（执行 /world join，可省略 world_id）`,
           ].join("\n"),
           { ephemeral: false },
         );
@@ -1502,6 +1639,17 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         `已关闭世界构建话题：W${world.id} ${world.name}`,
         { ephemeral: false },
       );
+      try {
+        await this.pushWorldInfoSnapshot({
+          guildId: world.homeGuildId,
+          worldId: world.id,
+          worldName: world.name,
+          infoChannelId: world.infoChannelId,
+          joinChannelId: world.joinChannelId,
+        });
+      } catch {
+        // ignore
+      }
     }
 
     if (isThread) {
@@ -1628,7 +1776,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!isMember) {
       await safeReply(
         interaction,
-        `你尚未加入该世界：请先 /world join world_id:${world.id}`,
+        `你尚未加入该世界：请先在该世界子空间执行 /world join`,
         { ephemeral: false },
       );
       return;
@@ -2068,6 +2216,164 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     return { id: channel.id };
   }
 
+  private async inferWorldIdFromWorldSubspace(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<number | null> {
+    const channelId = interaction.channelId?.trim();
+    if (!channelId || !interaction.guild) {
+      return null;
+    }
+
+    const direct = await this.worldStore.getWorldIdByChannel(channelId);
+    if (direct) {
+      return direct;
+    }
+
+    const base = await interaction.guild.channels.fetch(channelId).catch(() => {
+      return null;
+    });
+    if (!base) {
+      return null;
+    }
+
+    let channel: unknown = base;
+    const isThread =
+      channel &&
+      typeof channel === "object" &&
+      "isThread" in channel &&
+      typeof (channel as { isThread?: () => boolean }).isThread ===
+        "function" &&
+      (channel as { isThread: () => boolean }).isThread();
+    if (isThread) {
+      const parentId = (channel as { parentId?: unknown }).parentId;
+      if (typeof parentId === "string" && parentId.trim()) {
+        const fetched = await interaction.guild.channels
+          .fetch(parentId)
+          .catch(() => null);
+        if (fetched) {
+          channel = fetched;
+        }
+      }
+    }
+
+    const categoryId =
+      channel &&
+      typeof channel === "object" &&
+      "type" in channel &&
+      (channel as { type?: unknown }).type === ChannelType.GuildCategory &&
+      "id" in channel &&
+      typeof (channel as { id?: unknown }).id === "string"
+        ? (channel as { id: string }).id
+        : (channel as { parentId?: unknown }).parentId;
+    if (typeof categoryId !== "string" || !categoryId.trim()) {
+      return null;
+    }
+    const mapped = await this.worldStore.getWorldIdByCategory(categoryId);
+    if (mapped) {
+      return mapped;
+    }
+
+    const ids = await this.worldStore.listWorldIds(200);
+    for (const id of ids) {
+      const meta = await this.worldStore.getWorld(id);
+      if (
+        meta &&
+        meta.status !== "draft" &&
+        "categoryId" in meta &&
+        meta.categoryId === categoryId
+      ) {
+        await this.worldStore.setCategoryWorldId(categoryId, meta.id);
+        return meta.id;
+      }
+    }
+    return null;
+  }
+
+  private async sendLongTextToChannel(input: {
+    guildId: string;
+    channelId: string;
+    content: string;
+    traceId?: string;
+  }): Promise<void> {
+    const botId = this.botUserId?.trim() ?? this.client.user?.id ?? "";
+    if (!botId) {
+      return;
+    }
+    const chunks = splitDiscordMessage(input.content, 1800);
+    if (chunks.length === 0) {
+      return;
+    }
+    const session: SessionEvent = {
+      type: "message",
+      platform: "discord",
+      selfId: botId,
+      userId: botId,
+      guildId: input.guildId,
+      channelId: input.channelId,
+      messageId: `synthetic-channel-send-${Date.now()}`,
+      content: "",
+      elements: [],
+      timestamp: Date.now(),
+      extras: {
+        traceId: input.traceId,
+        synthetic: true,
+        commandName: "world.info.snapshot",
+        channelId: input.channelId,
+        guildId: input.guildId,
+        userId: botId,
+      },
+    };
+    for (const chunk of chunks) {
+      await this.sendMessage(session, chunk);
+    }
+  }
+
+  private async pushWorldInfoSnapshot(input: {
+    guildId: string;
+    worldId: number;
+    worldName: string;
+    infoChannelId: string;
+    joinChannelId?: string;
+    traceId?: string;
+  }): Promise<void> {
+    const nowIso = new Date().toISOString();
+    const [card, rules, members, characters] = await Promise.all([
+      this.worldFiles.readWorldCard(input.worldId),
+      this.worldFiles.readRules(input.worldId),
+      this.worldStore.memberCount(input.worldId),
+      this.worldStore.characterCount(input.worldId),
+    ]);
+    const joinHint = input.joinChannelId
+      ? `加入：<#${input.joinChannelId}>（执行 /world join）`
+      : `加入：/world join world_id:${input.worldId}`;
+    const header = [
+      `【世界信息】W${input.worldId} ${input.worldName}`,
+      `更新时间：${nowIso}`,
+      `访客数：${members} 角色数：${characters}`,
+      joinHint,
+      ``,
+    ].join("\n");
+
+    await this.sendLongTextToChannel({
+      guildId: input.guildId,
+      channelId: input.infoChannelId,
+      content: header,
+      traceId: input.traceId,
+    });
+    await this.sendLongTextToChannel({
+      guildId: input.guildId,
+      channelId: input.infoChannelId,
+      content: card?.trim() ? card.trim() : "(世界卡缺失)",
+      traceId: input.traceId,
+    });
+    await this.sendLongTextToChannel({
+      guildId: input.guildId,
+      channelId: input.infoChannelId,
+      content: rules?.trim() ? rules.trim() : "(规则缺失)",
+      traceId: input.traceId,
+    });
+  }
+
   private async createWorldSubspace(input: {
     guild: ChatInputCommandInteraction["guild"];
     worldId: number;
@@ -2077,6 +2383,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     roleId: string;
     categoryId: string;
     infoChannelId: string;
+    joinChannelId: string;
     roleplayChannelId: string;
     proposalsChannelId: string;
     voiceChannelId: string;
@@ -2108,6 +2415,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: baseOverwrites.info,
+      reason: `world publish by ${input.creatorUserId}`,
+    });
+    const joinChannel = await input.guild.channels.create({
+      name: "world-join",
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: baseOverwrites.join,
       reason: `world publish by ${input.creatorUserId}`,
     });
     const roleplayChannel = await input.guild.channels.create({
@@ -2152,6 +2466,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       roleId: role.id,
       categoryId: category.id,
       infoChannelId: infoChannel.id,
+      joinChannelId: joinChannel.id,
       roleplayChannelId: roleplayChannel.id,
       proposalsChannelId: proposalsChannel.id,
       voiceChannelId: voiceChannel.id,
@@ -2162,6 +2477,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       roleId: role.id,
       categoryId: category.id,
       infoChannelId: infoChannel.id,
+      joinChannelId: joinChannel.id,
       roleplayChannelId: roleplayChannel.id,
       proposalsChannelId: proposalsChannel.id,
       voiceChannelId: voiceChannel.id,
@@ -2233,7 +2549,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       `2) 回复包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK，可发布/可关闭”。`,
       `3) 不要 roleplay，不要编造未给出的设定。`,
       ``,
-      `提示：创作者完成后在话题中执行 /world close（草稿会发布；已发布世界则仅关闭话题）。`,
+      `提示：创作者完成后在话题中执行 /world done（草稿会发布；已发布世界则仅关闭话题）。`,
       ``,
       `世界：W${input.worldId} ${input.worldName}`,
     ].join("\n");
@@ -2434,7 +2750,7 @@ function buildSlashCommands() {
         sub
           .setName("create")
           .setDescription(
-            "创建世界（先进入子话题多轮补全，/world close 后发布）",
+            "创建世界（会创建私密话题多轮补全，/world done 后发布）",
           )
           .addStringOption((option) =>
             option
@@ -2453,7 +2769,7 @@ function buildSlashCommands() {
           .addAttachmentOption((option) =>
             option
               .setName("document")
-              .setDescription("设定文档（txt/md/json/yaml，建议 <= 1MB）")
+              .setDescription("设定文档（txt/md/docx/json/yaml，建议 <= 1MB）")
               .setRequired(false),
           ),
       )
@@ -2520,13 +2836,13 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("join")
-          .setDescription("加入世界（需在入口服务器执行）")
+          .setDescription("加入世界（推荐在世界子空间执行）")
           .addIntegerOption((option) =>
             option
               .setName("world_id")
-              .setDescription("世界ID")
+              .setDescription("世界ID（在世界子空间内可省略）")
               .setMinValue(1)
-              .setRequired(true),
+              .setRequired(false),
           ),
       )
       .addSubcommand((sub) =>
@@ -2596,12 +2912,16 @@ function buildSlashCommands() {
           .addAttachmentOption((option) =>
             option
               .setName("document")
-              .setDescription("补充设定文档（可选，会写入 world/source.md）")
+              .setDescription(
+                "补充设定文档（txt/md/docx/json/yaml，可选，会写入 world/source.md）",
+              )
               .setRequired(false),
           ),
       )
       .addSubcommand((sub) =>
-        sub.setName("close").setDescription("关闭当前世界构建话题（仅创作者）"),
+        sub
+          .setName("done")
+          .setDescription("结束当前世界构建/编辑话题（仅创作者）"),
       )
       .toJSON(),
     new SlashCommandBuilder()
@@ -2679,6 +2999,7 @@ function buildWorldBaseOverwrites(input: {
   botUserId: string;
 }): {
   info: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
+  join: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
   roleplay: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
   proposals: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
   voice: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
@@ -2712,6 +3033,10 @@ function buildWorldBaseOverwrites(input: {
     allow: [view, readHistory],
     deny: [send],
   };
+  const everyoneWritable = {
+    id: input.everyoneRoleId,
+    allow: [view, readHistory, send],
+  };
   const everyoneHidden = {
     id: input.everyoneRoleId,
     deny: [view],
@@ -2728,6 +3053,7 @@ function buildWorldBaseOverwrites(input: {
 
   return {
     info: [everyoneReadOnly, worldReadOnly, ...allowBot],
+    join: [everyoneWritable, worldWritable, ...allowBot],
     roleplay: [everyoneHidden, worldWritable, ...allowBot],
     proposals: [everyoneHidden, worldWritable, ...allowBot],
     voice: [
@@ -2850,7 +3176,7 @@ function buildWorldBuildAgentPrompt(input: {
     `硬性规则：`,
     `1) 设定原文在会话工作区的 \`world/source.md\`。`,
     `2) 规范化后的产物必须写入：\`world/world-card.md\` 与 \`world/rules.md\`。你必须使用工具写入/编辑文件，禁止只在回复里输出。`,
-    `3) 每次回复都包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /world close。`,
+    `3) 每次回复都包含：变更摘要 +（如信息不足）3-5 个需要创作者补充的问题；如果信息已足够则明确说明“已 OK”，并提醒创作者执行 /world done。`,
     `4) 你不是来写小说的，不要 roleplay。`,
     ``,
     `提示：你可以使用技能 \`world-design-card\` 来统一模板与字段。`,

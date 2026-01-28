@@ -13,6 +13,7 @@
 - Discord：`/world create` 创建“世界草稿 + 私密话题”，允许空输入并支持上传 txt/md/docx 设定文档；多轮补全后在话题中执行 `/world done` 发布世界并创建子空间；世界构建会话 `groupId=world_{id}_build` 写回 `/data/worlds/{id}/world-card.md`、`rules.md` 与 `source.md`
 - Discord：`/world edit`（仅创作者）创建“世界编辑话题”，用于后续通过对话持续修改世界设定
 - Discord：世界子空间默认“未 join 不可见”：`world-roleplay/world-proposals/voice` 仅对 World Role 可见；新增 `world-join`（所有人可见）用于执行 `/world join` 加入后获得进入与发言权限
+- Discord：启动时自动为旧世界补齐 `world-join` 并回填 `joinChannelId`，避免旧 world meta 缺字段导致无法加入
 - Discord：发布/编辑结束后自动推送“世界卡 + 世界规则”快照到 `world-info`，便于所有人查看当前已确定设定
 - Discord：新增 `/world help`、`/character help`，展示各子命令用法与关键提示
 - Discord：新增角色系统（`/character create|view|act`），支持 visibility（`world/public/private`，默认 `world`），并可通过 `/character act` 让 bot 在世界入口频道扮演角色
@@ -28,6 +29,7 @@
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
+- Discord：`/world join` 改为仅在 `world-join` 频道执行，不再接受 `world_id`
 - Discord：除 help 外，Slash Commands 回复默认公开（non-ephemeral）
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
@@ -37,13 +39,13 @@
 
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
-- Worker：`opencode_run` 增加硬超时（`OPENCODE_RUN_TIMEOUT_MS`，默认 60s）与失败兜底，避免会话长期占用 session gate 导致“不回复/看起来没反应”
+- Worker：`opencode_run` 增加硬超时（`OPENCODE_RUN_TIMEOUT_MS`，默认 60s）与失败兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”
 - Router：移除 `ensureBotConfig()` 的 `ensuredBots` 内存缓存，避免配置文件被删/重建后留下假状态
 - Opencode：`ensureOpencodeSkills()` 增加 workspace 同步哨兵，未变化时跳过全量 rm+cp，降低批处理 I/O
 - World：Redis 连接改为 lazy connect，避免测试环境出现 net 超时与 between-tests 未处理错误
 - Skills：`world-design-card` 输出仅保留必要模块，减少超长响应导致的超时
 - Discord：修复 `/character create` 的参数顺序导致 Slash Commands 注册失败（进而缺失 `/world`）
-- Discord：世界构建/编辑会话创建支持兜底：当无法创建 Thread 时回退到 creator-only 临时频道，并允许在该频道内执行 `/world done` 完成发布/关闭；同时补齐频道权限以支持线程内发言/创建线程
+- Discord：世界构建/编辑会话统一落在 creator-only 临时频道（可选 Thread），避免 parent channel 权限导致 bot 无法发言；并允许在该频道内执行 `/world done` 完成发布/关闭
 
 ## [0.0.30] - 2026-01-24
 

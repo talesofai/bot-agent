@@ -184,6 +184,22 @@ export class WorldStore {
     return parsed && parsed.id === normalized ? parsed : null;
   }
 
+  async setJoinChannelId(
+    worldId: WorldId,
+    joinChannelId: string,
+  ): Promise<void> {
+    const normalized = normalizeWorldId(worldId);
+    const trimmed = joinChannelId.trim();
+    if (!trimmed) {
+      throw new Error("joinChannelId is required");
+    }
+    assertSafePathSegment(trimmed, "joinChannelId");
+    await this.redis.hset(this.worldMetaKey(normalized), {
+      joinChannelId: trimmed,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   async listWorldIds(limit = 50): Promise<WorldId[]> {
     const capped = Math.max(1, Math.min(200, Math.floor(limit)));
     const ids = await this.redis.zrevrange(

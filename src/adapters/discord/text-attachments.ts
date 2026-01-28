@@ -8,15 +8,7 @@ import { createSsrfPolicy, fetchWithSsrfProtection } from "../../utils/ssrf";
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-const ALLOWED_EXTENSIONS = new Set([
-  ".md",
-  ".markdown",
-  ".txt",
-  ".docx",
-  ".json",
-  ".yaml",
-  ".yml",
-]);
+const ALLOWED_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".docx"]);
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -46,8 +38,6 @@ export async function fetchDiscordTextAttachment(
 
   const hasAllowedType =
     (contentType && contentType.startsWith("text/")) ||
-    contentType.includes("json") ||
-    contentType.includes("yaml") ||
     contentType.includes("markdown");
   const hasAllowedExt = ext ? ALLOWED_EXTENSIONS.has(ext) : false;
   if (!hasAllowedType && !hasAllowedExt) {

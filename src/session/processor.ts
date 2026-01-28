@@ -315,17 +315,88 @@ export class SessionProcessor {
     const historyKey = resolveHistoryKey(mergedWithTrace);
     const stopTyping = this.startTyping(mergedWithTrace, runtime.log);
     try {
-      const { history, request, promptBytes } = await this.buildPromptContext(
-        runtime.jobData.groupId,
-        sessionInfo,
-        promptInput,
-        {
-          traceId: runtime.traceId,
-          jobId: runtime.jobId,
-          logger: runtime.log,
-          message: batchMessage,
-        },
-      );
+      let promptContext: {
+        history: HistoryEntry[];
+        request: OpencodeRequestSpec;
+        promptBytes: number;
+      };
+      try {
+        promptContext = await this.buildPromptContext(
+          runtime.jobData.groupId,
+          sessionInfo,
+          promptInput,
+          {
+            traceId: runtime.traceId,
+            jobId: runtime.jobId,
+            logger: runtime.log,
+            message: batchMessage,
+          },
+        );
+      } catch (err) {
+        const errMessage = err instanceof Error ? err.message : String(err);
+        const isAbort = isAbortError(err);
+
+        runtime.log.warn(
+          { err, isAbort },
+          "Failed to build opencode prompt context",
+        );
+
+        if (isAbort) {
+          try {
+            const nowIso = new Date().toISOString();
+            const updated = await this.sessionRepository.updateMeta({
+              ...sessionInfo.meta,
+              opencodeSessionId: undefined,
+              updatedAt: nowIso,
+            });
+            sessionInfo.meta = updated.meta;
+          } catch (metaErr) {
+            runtime.log.warn(
+              { err: metaErr },
+              "Failed to reset opencodeSessionId after prompt context failure",
+            );
+          }
+        }
+
+        const responseOutput = isAbort
+          ? "我这边初始化会话超时了，请稍后再试。"
+          : "我这边初始化会话失败了，请稍后再试。";
+        try {
+          await batchSpan(
+            "send_response",
+            async () => this.sendResponse(mergedWithTrace, responseOutput),
+            {
+              outputBytes: Buffer.byteLength(responseOutput, "utf8"),
+              outputPreview: responseOutput,
+              outputPreviewTruncated: false,
+              promptContextBuildFailed: true,
+            },
+          );
+        } catch (sendErr) {
+          runtime.log.error(
+            { err: sendErr },
+            "Failed to send fallback response",
+          );
+        }
+        await batchSpan("append_history", async () =>
+          this.appendHistoryFromJob(
+            sessionInfo,
+            mergedWithTrace,
+            historyKey,
+            undefined,
+            undefined,
+            responseOutput,
+            { stderr: errMessage },
+          ),
+        );
+        await batchSpan("record_activity", async () =>
+          this.recordActivity(sessionInfo, runtime.log),
+        );
+
+        return "continue";
+      }
+
+      const { history, request, promptBytes } = promptContext;
 
       const config = getConfig();
       const opencodeTimeoutMs = config.OPENCODE_RUN_TIMEOUT_MS;
@@ -402,17 +473,24 @@ export class SessionProcessor {
         const responseOutput = isAbort
           ? "我这边生成回复超时了，请稍后再试。"
           : "我这边处理失败了，请稍后再试。";
-        await batchSpan(
-          "send_response",
-          async () => this.sendResponse(mergedWithTrace, responseOutput),
-          {
-            outputBytes: Buffer.byteLength(responseOutput, "utf8"),
-            outputPreview: responseOutput,
-            outputPreviewTruncated: false,
-            opencodeTimedOut,
-            opencodeTimeoutMs,
-          },
-        );
+        try {
+          await batchSpan(
+            "send_response",
+            async () => this.sendResponse(mergedWithTrace, responseOutput),
+            {
+              outputBytes: Buffer.byteLength(responseOutput, "utf8"),
+              outputPreview: responseOutput,
+              outputPreviewTruncated: false,
+              opencodeTimedOut,
+              opencodeTimeoutMs,
+            },
+          );
+        } catch (sendErr) {
+          runtime.log.error(
+            { err: sendErr },
+            "Failed to send fallback response",
+          );
+        }
         await batchSpan("append_history", async () =>
           this.appendHistoryFromJob(
             sessionInfo,
@@ -1230,7 +1308,14 @@ function isAbortError(err: unknown): boolean {
     return false;
   }
   const name = (err as { name?: unknown }).name;
-  if (name === "AbortError") {
+  if (name === "AbortError" || name === "TimeoutError") {
+    return true;
+  }
+  const message = (err as { message?: unknown }).message;
+  if (
+    typeof message === "string" &&
+    message.toLowerCase().includes("timed out")
+  ) {
     return true;
   }
   return false;

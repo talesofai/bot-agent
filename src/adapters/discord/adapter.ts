@@ -26,7 +26,11 @@ import { logger as defaultLogger } from "../../logger";
 import { parseMessage, type DiscordMessageExtras } from "./parser";
 import { MessageSender } from "./sender";
 import type { BotMessageStore } from "../../store/bot-message-store";
-import { WorldStore, type CharacterVisibility } from "../../world/store";
+import {
+  WorldStore,
+  type CharacterVisibility,
+  type WorldActiveMeta,
+} from "../../world/store";
 import { WorldFileStore } from "../../world/file-store";
 import {
   buildWorldBuildGroupId,
@@ -125,6 +129,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
       this.logger.info({ botId: user.id }, "Discord client ready");
       this.emit("connect");
+      void this.migrateWorldJoinChannels().catch((err) => {
+        this.logger.warn({ err }, "World join channel migration failed");
+      });
     });
 
     this.client.on("messageCreate", (message) => {
@@ -246,7 +253,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
       await this.sendMessage(
         session,
-        `不支持的设定文档类型：${rejected.join(", ")}\n仅支持：txt/md/docx/json/yaml/yml`,
+        `不支持的设定文档类型：${rejected.join(", ")}\n仅支持：txt/md/docx`,
       );
       return;
     }
@@ -574,8 +581,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     if (subcommand === "join") {
-      const worldId = interaction.options.getInteger("world_id") ?? undefined;
-      await this.handleWorldJoin(interaction, { worldId });
+      await this.handleWorldJoin(interaction);
       return;
     }
     if (subcommand === "stats") {
@@ -694,9 +700,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
 
       if (document) {
-        source = await fetchDiscordTextAttachment(document, {
-          logger: this.logger,
-        });
+        try {
+          source = await fetchDiscordTextAttachment(document, {
+            logger: this.logger,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("unsupported attachment type")) {
+            throw new Error("设定文档类型不支持：仅支持 txt/md/docx", {
+              cause: err,
+            });
+          }
+          throw new Error(`设定文档读取失败：${msg}`, { cause: err });
+        }
       } else if (messageRaw) {
         source = { filename: "message.md", content: messageRaw };
       } else {
@@ -707,7 +723,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             ``,
             `你可以：`,
             `- 直接在本话题里发送设定内容（多轮对话补全也可以）`,
-            `- 上传 txt/md/json/yaml 等纯文本文件作为设定原文`,
+            `- 上传 txt/md/docx 等文档作为设定原文`,
             ``,
           ].join("\n"),
         };
@@ -749,78 +765,26 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
       let buildConversationChannelId: string | null = null;
       let buildConversationMention = "(创建话题失败)";
-      const threadName = worldNameRaw
-        ? `世界创建 W${worldId} ${worldNameRaw}`
-        : `世界创建 W${worldId}`;
       try {
-        const created = await this.tryCreatePrivateThread({
+        const channel = await this.createCreatorOnlyChannel({
           guild,
-          parentChannelId: interaction.channelId,
-          name: threadName,
+          name: `world-build-w${worldId}`,
+          creatorUserId: interaction.user.id,
           reason: `world draft by ${interaction.user.id}`,
-          memberUserId: interaction.user.id,
         });
-        if (created) {
-          buildConversationChannelId = created.threadId;
-          buildConversationMention = `<#${created.threadId}>`;
-          await this.worldStore.setChannelGroupId(
-            created.threadId,
-            buildWorldBuildGroupId(worldId),
-          );
-          await this.worldFiles.appendEvent(worldId, {
-            type: "world_draft_thread_created",
-            worldId,
-            guildId: interaction.guildId,
-            userId: interaction.user.id,
-            threadId: created.threadId,
-            parentChannelId: created.parentChannelId,
-          });
-        } else {
-          const fallbackChannel = await this.createCreatorOnlyChannel({
-            guild,
-            name: `world-build-draft-w${worldId}`,
-            creatorUserId: interaction.user.id,
-            reason: `world draft by ${interaction.user.id}`,
-          });
-          const fallbackThread = await this.tryCreatePrivateThread({
-            guild,
-            parentChannelId: fallbackChannel.id,
-            name: threadName,
-            reason: `world draft by ${interaction.user.id}`,
-            memberUserId: interaction.user.id,
-          });
-          if (fallbackThread) {
-            buildConversationChannelId = fallbackThread.threadId;
-            buildConversationMention = `<#${fallbackThread.threadId}>`;
-            await this.worldStore.setChannelGroupId(
-              fallbackThread.threadId,
-              buildWorldBuildGroupId(worldId),
-            );
-            await this.worldFiles.appendEvent(worldId, {
-              type: "world_draft_thread_created",
-              worldId,
-              guildId: interaction.guildId,
-              userId: interaction.user.id,
-              threadId: fallbackThread.threadId,
-              parentChannelId: fallbackThread.parentChannelId,
-              fallbackParentChannelId: fallbackChannel.id,
-            });
-          } else {
-            buildConversationChannelId = fallbackChannel.id;
-            buildConversationMention = `<#${fallbackChannel.id}>`;
-            await this.worldStore.setChannelGroupId(
-              fallbackChannel.id,
-              buildWorldBuildGroupId(worldId),
-            );
-            await this.worldFiles.appendEvent(worldId, {
-              type: "world_draft_build_channel_created",
-              worldId,
-              guildId: interaction.guildId,
-              userId: interaction.user.id,
-              channelId: fallbackChannel.id,
-            });
-          }
-        }
+        buildConversationChannelId = channel.id;
+        buildConversationMention = `<#${channel.id}>`;
+        await this.worldStore.setChannelGroupId(
+          channel.id,
+          buildWorldBuildGroupId(worldId),
+        );
+        await this.worldFiles.appendEvent(worldId, {
+          type: "world_draft_build_channel_created",
+          worldId,
+          guildId: interaction.guildId,
+          userId: interaction.user.id,
+          channelId: channel.id,
+        });
       } catch (err) {
         this.logger.warn({ err }, "Failed to create world build conversation");
       }
@@ -898,7 +862,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         "- /world info world_id:<世界ID>",
         "- /world rules world_id:<世界ID>",
         "- /world canon query:<关键词> [world_id:<世界ID>]（搜索该世界正典：名称/世界卡/规则；可在入口频道省略 world_id）",
-        "- /world join [world_id:<世界ID>]（推荐在世界子空间执行，可省略 world_id）",
+        "- /world join（仅在世界子空间的 world-join 频道执行）",
         "- /world stats world_id:<世界ID>（或 /world status）",
         "- /world edit world_id:<世界ID>（仅创作者，创建编辑话题；私密可见）",
         "- /world done（仅创作者，结束当前构建/编辑话题；草稿会在此时发布）",
@@ -953,14 +917,31 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     const card = await this.worldFiles.readWorldCard(meta.id);
+    let joinChannelId: string | undefined;
+    if (meta.status !== "draft") {
+      joinChannelId = meta.joinChannelId;
+      if (
+        meta.status === "active" &&
+        interaction.guild &&
+        interaction.guildId === meta.homeGuildId
+      ) {
+        const ensured = await this.ensureWorldJoinChannel({
+          guild: interaction.guild,
+          meta,
+        }).catch(() => null);
+        if (ensured) {
+          joinChannelId = ensured;
+        }
+      }
+    }
     const channels =
       meta.status === "draft"
         ? []
         : [
             `信息：<#${meta.infoChannelId}>`,
-            meta.joinChannelId
-              ? `加入：<#${meta.joinChannelId}>（执行 /world join）`
-              : `加入：/world join world_id:${meta.id}（兼容旧世界）`,
+            joinChannelId
+              ? `加入：<#${joinChannelId}>（在该频道执行 /world join）`
+              : `加入入口：未配置`,
             `入口：<#${meta.roleplayChannelId}>`,
           ];
     const header = [
@@ -1074,15 +1055,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
   private async handleWorldJoin(
     interaction: ChatInputCommandInteraction,
-    input: { worldId?: number },
   ): Promise<void> {
-    const inferredWorldId =
-      input.worldId ??
-      (await this.inferWorldIdFromWorldSubspace(interaction).catch(() => null));
+    const inferredWorldId = await this.inferWorldIdFromWorldSubspace(
+      interaction,
+    ).catch(() => null);
     if (!inferredWorldId) {
       await safeReply(
         interaction,
-        "缺少 world_id：请在目标世界子空间内执行 /world join，或显式提供 world_id。",
+        "请在目标世界子空间的 world-join 频道执行 /world join（不需要 world_id）。",
         { ephemeral: true },
       );
       return;
@@ -1117,6 +1097,30 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       return;
     }
+
+    const joinChannelId = await this.ensureWorldJoinChannel({
+      guild: interaction.guild,
+      meta,
+    });
+    if (!joinChannelId) {
+      await safeReply(
+        interaction,
+        "加入入口未配置或创建失败，请联系管理员/创作者修复。",
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const baseChannelId = await this.resolveBaseChannelId(interaction);
+    if (!baseChannelId || baseChannelId !== joinChannelId) {
+      await safeReply(
+        interaction,
+        `请在 <#${joinChannelId}> 执行 /world join（不需要 world_id）。`,
+        { ephemeral: true },
+      );
+      return;
+    }
+
     try {
       const member = await interaction.guild.members.fetch(interaction.user.id);
       await member.roles.add(meta.roleId, "world join");
@@ -1313,11 +1317,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           errName: err instanceof Error ? err.name : "Error",
           errMessage: err instanceof Error ? err.message : String(err),
         });
-        await safeReply(
-          interaction,
-          `补充设定文档读取失败：${err instanceof Error ? err.message : String(err)}`,
-          { ephemeral: true },
-        );
+        const msg = err instanceof Error ? err.message : String(err);
+        const userMessage = msg.includes("unsupported attachment type")
+          ? "补充设定文档类型不支持：仅支持 txt/md/docx"
+          : `补充设定文档读取失败：${msg}`;
+        await safeReply(interaction, userMessage, { ephemeral: true });
         return;
       }
     } else if (note) {
@@ -1348,54 +1352,22 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     const guild = interaction.guild;
-    const parentChannelId =
-      meta.status === "draft"
-        ? interaction.channelId
-        : (meta.buildChannelId ?? interaction.channelId);
     let buildConversationChannelId: string | null = null;
     let buildConversationMention = "(创建话题失败)";
     try {
-      const created = await this.tryCreatePrivateThread({
-        guild,
-        parentChannelId,
-        name: `世界编辑 W${meta.id}`,
-        reason: `world edit by ${interaction.user.id}`,
-        memberUserId: interaction.user.id,
-      });
-      if (created) {
-        buildConversationChannelId = created.threadId;
-        buildConversationMention = `<#${created.threadId}>`;
-        await this.worldStore.setChannelGroupId(
-          created.threadId,
-          buildWorldBuildGroupId(meta.id),
-        );
-        await this.worldFiles.appendEvent(meta.id, {
-          type: "world_edit_thread_created",
-          worldId: meta.id,
-          guildId: interaction.guildId,
-          userId: interaction.user.id,
-          threadId: created.threadId,
-          parentChannelId: created.parentChannelId,
-        });
-      } else {
-        const fallbackChannel = await this.createCreatorOnlyChannel({
+      if (meta.status !== "draft" && meta.buildChannelId) {
+        const created = await this.tryCreatePrivateThread({
           guild,
-          name: `world-edit-w${meta.id}`,
-          creatorUserId: interaction.user.id,
-          reason: `world edit by ${interaction.user.id}`,
-        });
-        const fallbackThread = await this.tryCreatePrivateThread({
-          guild,
-          parentChannelId: fallbackChannel.id,
+          parentChannelId: meta.buildChannelId,
           name: `世界编辑 W${meta.id}`,
           reason: `world edit by ${interaction.user.id}`,
           memberUserId: interaction.user.id,
         });
-        if (fallbackThread) {
-          buildConversationChannelId = fallbackThread.threadId;
-          buildConversationMention = `<#${fallbackThread.threadId}>`;
+        if (created) {
+          buildConversationChannelId = created.threadId;
+          buildConversationMention = `<#${created.threadId}>`;
           await this.worldStore.setChannelGroupId(
-            fallbackThread.threadId,
+            created.threadId,
             buildWorldBuildGroupId(meta.id),
           );
           await this.worldFiles.appendEvent(meta.id, {
@@ -1403,25 +1375,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             worldId: meta.id,
             guildId: interaction.guildId,
             userId: interaction.user.id,
-            threadId: fallbackThread.threadId,
-            parentChannelId: fallbackThread.parentChannelId,
-            fallbackParentChannelId: fallbackChannel.id,
-          });
-        } else {
-          buildConversationChannelId = fallbackChannel.id;
-          buildConversationMention = `<#${fallbackChannel.id}>`;
-          await this.worldStore.setChannelGroupId(
-            fallbackChannel.id,
-            buildWorldBuildGroupId(meta.id),
-          );
-          await this.worldFiles.appendEvent(meta.id, {
-            type: "world_edit_build_channel_created",
-            worldId: meta.id,
-            guildId: interaction.guildId,
-            userId: interaction.user.id,
-            channelId: fallbackChannel.id,
+            threadId: created.threadId,
+            parentChannelId: created.parentChannelId,
           });
         }
+      }
+
+      if (!buildConversationChannelId) {
+        const channel = await this.createCreatorOnlyChannel({
+          guild,
+          name: `world-edit-w${meta.id}`,
+          creatorUserId: interaction.user.id,
+          reason: `world edit by ${interaction.user.id}`,
+        });
+        buildConversationChannelId = channel.id;
+        buildConversationMention = `<#${channel.id}>`;
+        await this.worldStore.setChannelGroupId(
+          channel.id,
+          buildWorldBuildGroupId(meta.id),
+        );
+        await this.worldFiles.appendEvent(meta.id, {
+          type: "world_edit_build_channel_created",
+          worldId: meta.id,
+          guildId: interaction.guildId,
+          userId: interaction.user.id,
+          channelId: channel.id,
+        });
       }
     } catch (err) {
       this.logger.warn({ err }, "Failed to create world edit thread");
@@ -1577,7 +1556,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
         const intro = [
           `世界已发布：W${world.id} ${resolvedName}`,
-          `- 加入：在 <#${created.joinChannelId}> 执行 /world join（可省略 world_id）`,
+          `- 加入：在 <#${created.joinChannelId}> 执行 /world join`,
           `- 状态：/world status world_id:${world.id}`,
           `- 角色：/character create（在 <#${created.roleplayChannelId}> 内可省略 world_id）`,
         ].join("\n");
@@ -1597,7 +1576,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             channelId: created.joinChannelId,
             content: [
               `欢迎来到：W${world.id} ${resolvedName}`,
-              `在本频道执行 /world join 加入世界（可省略 world_id）。`,
+              `在本频道执行 /world join 加入世界。`,
             ].join("\n"),
           });
         } catch {
@@ -1621,7 +1600,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             `世界已发布：W${world.id} ${resolvedName}`,
             `入口：<#${created.roleplayChannelId}>`,
             `信息：<#${created.infoChannelId}>`,
-            `加入：<#${created.joinChannelId}>（执行 /world join，可省略 world_id）`,
+            `加入：<#${created.joinChannelId}>（执行 /world join）`,
           ].join("\n"),
           { ephemeral: false },
         );
@@ -1639,13 +1618,23 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         `已关闭世界构建话题：W${world.id} ${world.name}`,
         { ephemeral: false },
       );
+      let joinChannelId = world.joinChannelId;
+      if (world.status === "active") {
+        const ensured = await this.ensureWorldJoinChannel({
+          guild: interaction.guild,
+          meta: world,
+        }).catch(() => null);
+        if (ensured) {
+          joinChannelId = ensured;
+        }
+      }
       try {
         await this.pushWorldInfoSnapshot({
           guildId: world.homeGuildId,
           worldId: world.id,
           worldName: world.name,
           infoChannelId: world.infoChannelId,
-          joinChannelId: world.joinChannelId,
+          joinChannelId,
         });
       } catch {
         // ignore
@@ -1774,11 +1763,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       interaction.user.id,
     );
     if (!isMember) {
-      await safeReply(
-        interaction,
-        `你尚未加入该世界：请先在该世界子空间执行 /world join`,
-        { ephemeral: false },
-      );
+      const joinHint = world.joinChannelId
+        ? `你尚未加入该世界：请先在 <#${world.joinChannelId}> 执行 /world join`
+        : "你尚未加入该世界：请先在该世界子空间的 world-join 频道执行 /world join";
+      await safeReply(interaction, joinHint, { ephemeral: false });
       return;
     }
     if (!interaction.guildId || !interaction.guild) {
@@ -2216,6 +2204,87 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     return { id: channel.id };
   }
 
+  private async migrateWorldJoinChannels(): Promise<void> {
+    const ids = await this.worldStore.listWorldIds(200);
+    for (const id of ids) {
+      const meta = await this.worldStore.getWorld(id);
+      if (!meta || meta.status !== "active") {
+        continue;
+      }
+      const guild = await this.client.guilds
+        .fetch(meta.homeGuildId)
+        .catch(() => null);
+      if (!guild) {
+        continue;
+      }
+      try {
+        await this.ensureWorldJoinChannel({ guild, meta });
+      } catch (err) {
+        this.logger.warn(
+          { err, worldId: meta.id, guildId: meta.homeGuildId },
+          "Failed to ensure world join channel",
+        );
+      }
+    }
+  }
+
+  private async ensureWorldJoinChannel(input: {
+    guild: NonNullable<ChatInputCommandInteraction["guild"]>;
+    meta: WorldActiveMeta;
+  }): Promise<string | null> {
+    const existingId = input.meta.joinChannelId?.trim();
+    if (existingId) {
+      const existing = await input.guild.channels
+        .fetch(existingId)
+        .catch(() => null);
+      if (existing) {
+        return existingId;
+      }
+    }
+
+    const cached = input.guild.channels.cache.find(
+      (candidate) =>
+        candidate.type === ChannelType.GuildText &&
+        candidate.parentId === input.meta.categoryId &&
+        candidate.name === "world-join",
+    );
+    if (cached) {
+      await this.worldStore.setJoinChannelId(input.meta.id, cached.id);
+      await this.worldFiles.appendEvent(input.meta.id, {
+        type: "world_join_channel_detected",
+        worldId: input.meta.id,
+        guildId: input.meta.homeGuildId,
+        joinChannelId: cached.id,
+      });
+      return cached.id;
+    }
+
+    const botId = this.botUserId ?? this.client.user?.id ?? "";
+    if (!botId) {
+      return null;
+    }
+    const overwrites = buildWorldBaseOverwrites({
+      everyoneRoleId: input.guild.roles.everyone.id,
+      worldRoleId: input.meta.roleId,
+      botUserId: botId,
+    });
+    const channel = await input.guild.channels.create({
+      name: "world-join",
+      type: ChannelType.GuildText,
+      parent: input.meta.categoryId,
+      permissionOverwrites: overwrites.join,
+      reason: `world join channel ensure W${input.meta.id}`,
+    });
+    await this.worldStore.setJoinChannelId(input.meta.id, channel.id);
+    await this.worldFiles.appendEvent(input.meta.id, {
+      type: "world_join_channel_created",
+      worldId: input.meta.id,
+      guildId: input.meta.homeGuildId,
+      joinChannelId: channel.id,
+    });
+    return channel.id;
+  }
+
   private async inferWorldIdFromWorldSubspace(
     interaction: ChatInputCommandInteraction,
   ): Promise<number | null> {
@@ -2289,6 +2358,33 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     return null;
   }
 
+  private async resolveBaseChannelId(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<string | null> {
+    const channelId = interaction.channelId?.trim();
+    if (!channelId || !interaction.guild) {
+      return null;
+    }
+    const channel = await interaction.guild.channels
+      .fetch(channelId)
+      .catch(() => null);
+    if (!channel) {
+      return channelId;
+    }
+    const isThread =
+      "isThread" in channel &&
+      typeof (channel as { isThread?: () => boolean }).isThread ===
+        "function" &&
+      (channel as { isThread: () => boolean }).isThread();
+    if (!isThread) {
+      return channelId;
+    }
+    const parentId = (channel as { parentId?: unknown }).parentId;
+    return typeof parentId === "string" && parentId.trim()
+      ? parentId
+      : channelId;
+  }
+
   private async sendLongTextToChannel(input: {
     guildId: string;
     channelId: string;
@@ -2345,7 +2441,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     ]);
     const joinHint = input.joinChannelId
       ? `加入：<#${input.joinChannelId}>（执行 /world join）`
-      : `加入：/world join world_id:${input.worldId}`;
+      : `加入入口：未配置`;
     const header = [
       `【世界信息】W${input.worldId} ${input.worldName}`,
       `更新时间：${nowIso}`,
@@ -2769,7 +2865,7 @@ function buildSlashCommands() {
           .addAttachmentOption((option) =>
             option
               .setName("document")
-              .setDescription("设定文档（txt/md/docx/json/yaml，建议 <= 1MB）")
+              .setDescription("设定文档（txt/md/docx，建议 <= 1MB）")
               .setRequired(false),
           ),
       )
@@ -2836,14 +2932,7 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("join")
-          .setDescription("加入世界（推荐在世界子空间执行）")
-          .addIntegerOption((option) =>
-            option
-              .setName("world_id")
-              .setDescription("世界ID（在世界子空间内可省略）")
-              .setMinValue(1)
-              .setRequired(false),
-          ),
+          .setDescription("加入世界（仅在 world-join 频道执行）"),
       )
       .addSubcommand((sub) =>
         sub
@@ -2913,7 +3002,7 @@ function buildSlashCommands() {
             option
               .setName("document")
               .setDescription(
-                "补充设定文档（txt/md/docx/json/yaml，可选，会写入 world/source.md）",
+                "补充设定文档（txt/md/docx，可选，会写入 world/source.md）",
               )
               .setRequired(false),
           ),

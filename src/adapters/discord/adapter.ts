@@ -35,10 +35,12 @@ import {
   parseWorldGroup,
 } from "../../world/ids";
 import { getConfig } from "../../config";
+import { feishuLogJson } from "../../feishu/webhook";
 import { GroupFileRepository } from "../../store/repository";
 import { fetchDiscordTextAttachment } from "./text-attachments";
 import path from "node:path";
 import { writeFile, mkdir, rename } from "node:fs/promises";
+import { createTraceId } from "../../telemetry";
 
 export interface DiscordAdapterOptions {
   token?: string;
@@ -55,6 +57,7 @@ export interface DiscordInteractionExtras {
   userId: string;
   isGuildOwner?: boolean;
   isGuildAdmin?: boolean;
+  traceId?: string;
 }
 
 export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
@@ -520,7 +523,24 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const worldNameRaw = interaction.options.getString("name")?.trim() ?? "";
     const messageRaw = interaction.options.getString("message")?.trim() ?? "";
     const document = interaction.options.getAttachment("document");
+    const traceId = createTraceId();
+    feishuLogJson({
+      event: "discord.world.create.start",
+      traceId,
+      interactionId: interaction.id,
+      guildId: interaction.guildId,
+      channelId: interaction.channelId,
+      userId: interaction.user.id,
+      hasDocument: Boolean(document),
+      messageLength: messageRaw.length,
+      worldName: worldNameRaw,
+    });
     if (!messageRaw && !document) {
+      feishuLogJson({
+        event: "discord.world.create.invalid_input",
+        traceId,
+        interactionId: interaction.id,
+      });
       await safeReply(
         interaction,
         "缺少设定内容：请提供 message 或上传 document。",
@@ -547,6 +567,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       isGuildAdmin ||
       (policy === "whitelist" && isWhitelisted);
     if (!allowed) {
+      feishuLogJson({
+        event: "discord.world.create.denied",
+        traceId,
+        interactionId: interaction.id,
+        policy,
+        isConfiguredAdmin,
+        isGuildAdmin,
+        isWhitelisted,
+      });
       await safeReply(
         interaction,
         `无权限：当前 createPolicy=${policy}（默认 admin）。`,
@@ -565,6 +594,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const nowIso = new Date().toISOString();
       const worldId = await this.worldStore.nextWorldId();
       const worldName = worldNameRaw || `World-${worldId}`;
+      feishuLogJson({
+        event: "discord.world.create.draft_id_allocated",
+        traceId,
+        interactionId: interaction.id,
+        worldId,
+        worldName,
+      });
 
       if (document) {
         source = await fetchDiscordTextAttachment(document, {
@@ -687,15 +723,38 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
 
       if (buildConversationChannelId) {
+        feishuLogJson({
+          event: "discord.world.create.build_conversation_ready",
+          traceId,
+          interactionId: interaction.id,
+          worldId,
+          channelId: buildConversationChannelId,
+        });
         await this.emitSyntheticWorldBuildKickoff({
           guildId: interaction.guildId,
           channelId: buildConversationChannelId,
           userId: interaction.user.id,
           worldId,
           worldName,
+          traceId,
+        });
+        feishuLogJson({
+          event: "discord.world.create.kickoff_emitted",
+          traceId,
+          interactionId: interaction.id,
+          worldId,
+          channelId: buildConversationChannelId,
         });
       }
 
+      feishuLogJson({
+        event: "discord.world.create.success",
+        traceId,
+        interactionId: interaction.id,
+        worldId,
+        worldName,
+        buildConversationChannelId,
+      });
       await safeReply(
         interaction,
         [
@@ -707,6 +766,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       );
     } catch (err) {
       this.logger.error({ err }, "Failed to create world draft");
+      feishuLogJson({
+        event: "discord.world.create.error",
+        traceId,
+        interactionId: interaction.id,
+        errName: err instanceof Error ? err.name : "Error",
+        errMessage: err instanceof Error ? err.message : String(err),
+      });
       await safeReply(
         interaction,
         `创建失败：${err instanceof Error ? err.message : String(err)}`,
@@ -1048,6 +1114,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     input: { worldId: number; message?: string; document?: Attachment },
   ): Promise<void> {
+    const traceId = createTraceId();
+    feishuLogJson({
+      event: "discord.world.edit.start",
+      traceId,
+      interactionId: interaction.id,
+      guildId: interaction.guildId,
+      channelId: interaction.channelId,
+      userId: interaction.user.id,
+      worldId: input.worldId,
+      hasDocument: Boolean(input.document),
+      messageLength: input.message?.trim().length ?? 0,
+    });
     if (!interaction.guildId || !interaction.guild) {
       await safeReply(interaction, "该指令仅支持在服务器内使用。", {
         ephemeral: false,
@@ -1098,6 +1176,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           filename: uploaded.filename,
         });
       } catch (err) {
+        feishuLogJson({
+          event: "discord.world.edit.document_error",
+          traceId,
+          interactionId: interaction.id,
+          worldId: input.worldId,
+          errName: err instanceof Error ? err.name : "Error",
+          errMessage: err instanceof Error ? err.message : String(err),
+        });
         await safeReply(
           interaction,
           `补充设定文档读取失败：${err instanceof Error ? err.message : String(err)}`,
@@ -1219,9 +1305,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         userId: interaction.user.id,
         worldId: meta.id,
         worldName: meta.name,
+        traceId,
       });
     }
 
+    feishuLogJson({
+      event: "discord.world.edit.success",
+      traceId,
+      interactionId: interaction.id,
+      worldId: meta.id,
+      status: meta.status,
+      buildConversationChannelId,
+    });
     await safeReply(
       interaction,
       [
@@ -1479,8 +1574,24 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       );
       return;
     }
+    const traceId = createTraceId();
+    feishuLogJson({
+      event: "discord.character.create.start",
+      traceId,
+      interactionId: interaction.id,
+      guildId: interaction.guildId,
+      channelId: interaction.channelId,
+      userId: interaction.user.id,
+      worldId,
+    });
     const world = await this.worldStore.getWorld(worldId);
     if (!world) {
+      feishuLogJson({
+        event: "discord.character.create.world_missing",
+        traceId,
+        interactionId: interaction.id,
+        worldId,
+      });
       await safeReply(interaction, `世界不存在：W${worldId}`, {
         ephemeral: false,
       });
@@ -1618,6 +1729,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
     } catch (err) {
       this.logger.warn({ err }, "Failed to create character build thread");
+      feishuLogJson({
+        event: "discord.character.create.thread_error",
+        traceId,
+        interactionId: interaction.id,
+        worldId: world.id,
+        characterId,
+        errName: err instanceof Error ? err.name : "Error",
+        errMessage: err instanceof Error ? err.message : String(err),
+      });
     }
 
     if (buildConversationChannelId) {
@@ -1629,9 +1749,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         worldName: world.name,
         characterId,
         characterName: name,
+        traceId,
       });
     }
 
+    feishuLogJson({
+      event: "discord.character.create.success",
+      traceId,
+      interactionId: interaction.id,
+      worldId: world.id,
+      characterId,
+      visibility,
+      buildConversationChannelId,
+    });
     await safeReply(
       interaction,
       [
@@ -2066,6 +2196,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     userId: string;
     worldId: number;
     worldName: string;
+    traceId?: string;
   }): Promise<void> {
     if (this.listenerCount("event") === 0) {
       return;
@@ -2105,6 +2236,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       elements: [{ type: "text", text: content }],
       timestamp: Date.now(),
       extras: {
+        traceId: input.traceId,
         interactionId: messageId,
         commandName: "world.create.kickoff",
         channelId: input.channelId,
@@ -2122,6 +2254,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     worldName: string;
     characterId: number;
     characterName: string;
+    traceId?: string;
   }): Promise<void> {
     if (this.listenerCount("event") === 0) {
       return;
@@ -2164,6 +2297,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       elements: [{ type: "text", text: content }],
       timestamp: Date.now(),
       extras: {
+        traceId: input.traceId,
         interactionId: messageId,
         commandName: "character.create.kickoff",
         channelId: input.channelId,

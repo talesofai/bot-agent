@@ -75,6 +75,14 @@ spec:
                   name: llbot-secrets
                   key: OPENCODE_SERVER_PASSWORD
                   optional: true
+            - name: FEISHU_LOG_ENABLED
+              value: "true"
+            - name: FEISHU_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: FEISHU_WEBHOOK_URL
+                  optional: true
           resources:
             requests:
               cpu: 200m

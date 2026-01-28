@@ -8,6 +8,7 @@ tmp
 coverage
 data
 sessions
+example
 .env
 .env.*
 configs/.env

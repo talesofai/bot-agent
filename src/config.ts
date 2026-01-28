@@ -46,6 +46,12 @@ const envSchema = z.object({
     .default(500_000),
   LOG_LEVEL: z.string().default("info"),
   LOG_FORMAT: z.string().default("json"),
+  FEISHU_WEBHOOK_URL: z.string().url().optional(),
+  FEISHU_LOG_ENABLED: zEnvBoolean(false),
+  FEISHU_LOG_MAX_BYTES: z.coerce.number().int().min(200).default(4000),
+  FEISHU_LOG_QUEUE_SIZE: z.coerce.number().int().min(1).default(2000),
+  FEISHU_LOG_MIN_INTERVAL_MS: z.coerce.number().int().min(0).default(200),
+  FEISHU_LOG_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(5_000),
   MCP_TALESOFAI_URL: z.string().url().optional(),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   /** Optional BullMQ key prefix (must match producer/consumer). */

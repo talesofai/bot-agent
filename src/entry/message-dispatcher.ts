@@ -23,6 +23,7 @@ import {
   setTraceIdOnExtras,
   withTelemetrySpan,
 } from "../telemetry";
+import { redactSensitiveText } from "../utils/redact";
 import {
   authorizeDispatch,
   type DispatchEnvelope,
@@ -101,6 +102,10 @@ export class MessageDispatcher {
   async dispatch(message: SessionEvent): Promise<void> {
     const runtime = await this.createDispatchRuntime(message);
     try {
+      const contentPreview = truncateTextByBytes(
+        redactSensitiveText(runtime.message.content ?? ""),
+        800,
+      );
       await withTelemetrySpan(
         runtime.log,
         {
@@ -109,6 +114,11 @@ export class MessageDispatcher {
           step: "dispatch",
           component: "message-dispatcher",
           message: runtime.baseSpanMessage,
+          attrs: {
+            contentLength: runtime.message.content?.length ?? 0,
+            contentPreview,
+            elementsCount: runtime.message.elements.length,
+          },
         },
         async () => this.dispatchRuntime(runtime),
       );
@@ -1089,6 +1099,22 @@ export class MessageDispatcher {
     }
     return message;
   }
+}
+
+function truncateTextByBytes(content: string, maxBytes: number): string {
+  if (maxBytes <= 0) {
+    return "";
+  }
+  const trimmed = String(content ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  const buffer = Buffer.from(trimmed, "utf8");
+  if (buffer.byteLength <= maxBytes) {
+    return trimmed;
+  }
+  const sliced = buffer.toString("utf8", 0, maxBytes);
+  return `${sliced}\n\n[truncated]`;
 }
 
 function resolveResetTargetUserId(message: SessionEvent): {

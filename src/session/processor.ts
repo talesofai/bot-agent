@@ -16,11 +16,7 @@ import {
 } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/default-system-prompt";
 import type { OpencodeStreamEvent } from "../opencode/output";
-import type {
-  OpencodeRequestSpec,
-  OpencodeRunner,
-  OpencodeRunResult,
-} from "../worker/runner";
+import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { runSessionGateLoop } from "./gate-loop";
@@ -319,7 +315,7 @@ export class SessionProcessor {
     const historyKey = resolveHistoryKey(mergedWithTrace);
     const stopTyping = this.startTyping(mergedWithTrace, runtime.log);
     try {
-      const { history, request } = await this.buildPromptContext(
+      const { history, request, promptBytes } = await this.buildPromptContext(
         runtime.jobData.groupId,
         sessionInfo,
         promptInput,
@@ -331,24 +327,22 @@ export class SessionProcessor {
         },
       );
 
-      let result: OpencodeRunResult | null = null;
-      let runError: unknown = null;
-      try {
-        result = await batchSpan(
-          "opencode_run",
-          async () =>
-            this.runner.run({
-              job: this.mapJob(runtime.job),
-              session: sessionInfo,
-              history,
-              request,
-            }),
-          { historyEntries: history.length },
-        );
-      } catch (err) {
-        runError = err;
-        runtime.log.error({ err }, "Opencode run failed");
-      }
+      const result = await batchSpan(
+        "opencode_run",
+        async () =>
+          this.runner.run({
+            job: this.mapJob(runtime.job),
+            session: sessionInfo,
+            history,
+            request,
+          }),
+        {
+          historyEntries: history.length,
+          promptBytes,
+          modelProvider: request.body.model?.providerID,
+          modelId: request.body.model?.modelID,
+        },
+      );
 
       const stillOwnerAfterRun = await this.bufferStore.claimGate(
         runtime.bufferKey,
@@ -369,28 +363,10 @@ export class SessionProcessor {
         return "lost_gate";
       }
 
-      if (runError) {
-        const message = formatOpencodeRunError(runError);
-        await batchSpan("send_response_error", async () =>
-          this.adapter.sendMessage(mergedWithTrace, `（系统）${message}`),
-        );
-        await batchSpan("append_history", async () =>
-          this.appendHistoryFromJob(sessionInfo, mergedWithTrace, historyKey),
-        );
-        await batchSpan("record_activity", async () =>
-          this.recordActivity(sessionInfo, runtime.log),
-        );
-        return "continue";
-      }
-
-      if (!result) {
-        throw new Error("Opencode run returned no result");
-      }
-
       const output = resolveOutput(result.output);
       const auditedOutput = output ? redactSensitiveText(output) : undefined;
 
-      let responseOutput = auditedOutput;
+      const responseOutput = auditedOutput;
       const syncResult = await batchSpan("sync_world_files", async () => {
         try {
           const changed = await this.syncWorldFilesFromWorkspace(sessionInfo);
@@ -400,23 +376,23 @@ export class SessionProcessor {
         }
       });
       if (!syncResult.ok) {
-        const message = `世界文件写回失败：${
-          syncResult.err instanceof Error
-            ? syncResult.err.message
-            : String(syncResult.err)
-        }`;
         runtime.log.error({ err: syncResult.err }, "World file sync failed");
-        if (responseOutput) {
-          responseOutput = `${responseOutput}\n\n（系统）${message}`;
-        } else {
-          await batchSpan("sync_world_files_notify", async () =>
-            this.adapter.sendMessage(mergedWithTrace, `（系统）${message}`),
-          );
-        }
       }
 
-      await batchSpan("send_response", async () =>
-        this.sendResponse(mergedWithTrace, responseOutput),
+      const responseOutputBytes = responseOutput
+        ? Buffer.byteLength(responseOutput, "utf8")
+        : 0;
+      const responseOutputPreview = responseOutput
+        ? truncateTextByBytes(responseOutput, 2000)
+        : { content: "", truncated: false };
+      await batchSpan(
+        "send_response",
+        async () => this.sendResponse(mergedWithTrace, responseOutput),
+        {
+          outputBytes: responseOutputBytes,
+          outputPreview: responseOutputPreview.content,
+          outputPreviewTruncated: responseOutputPreview.truncated,
+        },
       );
       await batchSpan("append_history", async () =>
         this.appendHistoryFromJob(
@@ -459,6 +435,7 @@ export class SessionProcessor {
   ): Promise<{
     history: HistoryEntry[];
     request: OpencodeRequestSpec;
+    promptBytes: number;
   }> {
     const span = async <T>(
       step: string,
@@ -549,7 +526,7 @@ export class SessionProcessor {
       },
     };
 
-    return { history: [], request };
+    return { history: [], request, promptBytes };
   }
 
   private async ensureWorldWorkspace(sessionInfo: SessionInfo): Promise<void> {
@@ -1147,15 +1124,6 @@ function buildOpencodeSessionTitle(sessionInfo: SessionInfo): string {
   const groupId = sessionInfo.meta.groupId;
   const location = groupId === "0" ? "dm:0" : `group:${groupId}`;
   return `${location} user:${sessionInfo.meta.ownerId} bot:${sessionInfo.meta.botId} sid:${sessionInfo.meta.sessionId} key:${sessionInfo.meta.key}`;
-}
-
-function formatOpencodeRunError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err ?? "");
-  const normalized = raw.toLowerCase();
-  if (normalized.includes("timeout") || normalized.includes("timed out")) {
-    return "生成超时，请稍后重试。";
-  }
-  return "生成失败，请稍后重试。";
 }
 
 function isLikelyOpencodeSessionId(value: string): boolean {

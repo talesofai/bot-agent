@@ -59,6 +59,7 @@ export interface DiscordInteractionExtras {
   isGuildOwner?: boolean;
   isGuildAdmin?: boolean;
   traceId?: string;
+  synthetic?: boolean;
 }
 
 export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
@@ -2253,6 +2254,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       timestamp: Date.now(),
       extras: {
         traceId: input.traceId,
+        synthetic: true,
         interactionId: messageId,
         commandName: "world.create.kickoff",
         channelId: input.channelId,
@@ -2314,6 +2316,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       timestamp: Date.now(),
       extras: {
         traceId: input.traceId,
+        synthetic: true,
         interactionId: messageId,
         commandName: "character.create.kickoff",
         channelId: input.channelId,

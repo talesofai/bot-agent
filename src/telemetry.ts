@@ -9,7 +9,6 @@ import {
   trace,
 } from "@opentelemetry/api";
 import { getConfig } from "./config";
-import { feishuLogJson } from "./feishu/webhook";
 import { getOtelTracer, isOtelStarted } from "./otel";
 
 const TRACE_ID_RE = /^[a-f0-9]{32}$/;
@@ -137,7 +136,6 @@ export async function withTelemetrySpan<T>(
 
   const startedAt = Date.now();
   const startedHr = process.hrtime.bigint();
-  emitFeishuSpanStart(input, startedAt);
   const otelParentContext = isOtelStarted() ? getOtelParent(input) : null;
   const otelSpan = otelParentContext
     ? startOtelSpan(input, startedAt, otelParentContext)
@@ -169,12 +167,6 @@ export async function withTelemetrySpan<T>(
       },
       "telemetry.span",
     );
-    emitFeishuSpanEnd({
-      input,
-      startedAt,
-      durationMs,
-      ok: true,
-    });
     return result;
   } catch (err) {
     const durationMs = Number(process.hrtime.bigint() - startedHr) / 1e6;
@@ -203,61 +195,8 @@ export async function withTelemetrySpan<T>(
       },
       "telemetry.span",
     );
-    emitFeishuSpanEnd({
-      input,
-      startedAt,
-      durationMs,
-      ok: false,
-      errName: error.name,
-      errMessage: error.message,
-    });
     throw err;
   }
-}
-
-function emitFeishuSpanStart(
-  input: TelemetrySpanInput,
-  startedAt: number,
-): void {
-  const service = process.env.OTEL_SERVICE_NAME ?? "opencode-bot-agent";
-  feishuLogJson({
-    event: "telemetry.span.start",
-    service,
-    traceId: input.traceId,
-    phase: input.phase,
-    step: input.step,
-    component: input.component,
-    startedAt,
-    ...flattenTelemetryContext(input),
-  });
-}
-
-function emitFeishuSpanEnd(input: {
-  input: TelemetrySpanInput;
-  startedAt: number;
-  durationMs: number;
-  ok: boolean;
-  errName?: string;
-  errMessage?: string;
-}): void {
-  const service = process.env.OTEL_SERVICE_NAME ?? "opencode-bot-agent";
-  const endedAt = Date.now();
-  feishuLogJson({
-    event: "telemetry.span",
-    service,
-    traceId: input.input.traceId,
-    phase: input.input.phase,
-    step: input.input.step,
-    component: input.input.component,
-    startedAt: input.startedAt,
-    endedAt,
-    durationMs: input.durationMs,
-    ok: input.ok,
-    ...(input.ok
-      ? {}
-      : { errName: input.errName ?? "Error", errMessage: input.errMessage }),
-    ...flattenTelemetryContext(input.input),
-  });
 }
 
 function getOtelParent(input: TelemetrySpanInput) {

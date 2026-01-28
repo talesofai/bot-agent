@@ -135,6 +135,9 @@ export function feishuLogText(text: string): void {
 
 export function feishuLogJson(value: unknown): void {
   try {
+    if (isRecord(value) && !shouldSendToFeishu(value)) {
+      return;
+    }
     feishuLogText(formatLogLine(value));
   } catch (err) {
     feishuLogText(
@@ -148,6 +151,36 @@ export function feishuLogJson(value: unknown): void {
       ),
     );
   }
+}
+
+function shouldSendToFeishu(record: Record<string, unknown>): boolean {
+  const event = typeof record.event === "string" ? record.event.trim() : "";
+  if (!event) {
+    return false;
+  }
+
+  if (record.ok === false) {
+    return true;
+  }
+  if (
+    (typeof record.errName === "string" && record.errName.trim()) ||
+    (typeof record.errMessage === "string" && record.errMessage.trim())
+  ) {
+    return true;
+  }
+
+  // Only keep: warn/error + all message I/O (Discord only for now).
+  if (event === "log.warn" || event === "log.error") {
+    return true;
+  }
+  if (event === "io.recv" || event === "io.send") {
+    return true;
+  }
+  if (event === "discord.command.start" || event === "discord.command.reply") {
+    return true;
+  }
+
+  return false;
 }
 
 function formatLogLine(value: unknown): string {

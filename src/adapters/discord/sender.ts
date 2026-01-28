@@ -8,6 +8,8 @@ import { Client, type MessageCreateOptions } from "discord.js";
 import { resolveDiscordImageAttachments } from "./image-attachments";
 import { getTraceIdFromExtras } from "../../telemetry";
 import type { BotMessageStore } from "../../store/bot-message-store";
+import { feishuLogJson } from "../../feishu/webhook";
+import { redactSensitiveText } from "../../utils/redact";
 
 export class MessageSender {
   private client: Client;
@@ -76,6 +78,18 @@ export class MessageSender {
           messageId,
         });
       }
+      feishuLogJson({
+        event: "io.send",
+        platform: session.platform,
+        traceId: traceId ?? undefined,
+        channelId: session.channelId,
+        botId: session.selfId ?? undefined,
+        messageId,
+        contentPreview: previewTextForLog(payload.content ?? "", 1200),
+        contentLength: payload.content?.length ?? 0,
+        hasFiles: Boolean(payload.files && payload.files.length > 0),
+        hasEmbeds: Boolean(payload.embeds && payload.embeds.length > 0),
+      });
       log.debug({ channelId: session.channelId }, "Message sent");
     } catch (err) {
       log.error({ err, channelId: session.channelId }, "Send failed");
@@ -262,4 +276,20 @@ function isScheduledPushEvent(extras: unknown): boolean {
   }
   const record = extras as Record<string, unknown>;
   return record["isScheduledPush"] === true;
+}
+
+function previewTextForLog(text: string, maxBytes: number): string {
+  const trimmed = redactSensitiveText(String(text ?? "")).trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (maxBytes <= 0) {
+    return "";
+  }
+  const buffer = Buffer.from(trimmed, "utf8");
+  if (buffer.byteLength <= maxBytes) {
+    return trimmed;
+  }
+  const sliced = buffer.toString("utf8", 0, maxBytes);
+  return `${sliced}\n\n[truncated]`;
 }

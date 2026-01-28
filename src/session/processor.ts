@@ -327,22 +327,115 @@ export class SessionProcessor {
         },
       );
 
-      const result = await batchSpan(
-        "opencode_run",
-        async () =>
-          this.runner.run({
-            job: this.mapJob(runtime.job),
-            session: sessionInfo,
-            history,
-            request,
-          }),
-        {
-          historyEntries: history.length,
-          promptBytes,
-          modelProvider: request.body.model?.providerID,
-          modelId: request.body.model?.modelID,
-        },
-      );
+      const config = getConfig();
+      const opencodeTimeoutMs = config.OPENCODE_RUN_TIMEOUT_MS;
+      const opencodeController = new AbortController();
+      let opencodeTimedOut = false;
+      const opencodeTimeout = setTimeout(() => {
+        opencodeTimedOut = true;
+        opencodeController.abort();
+      }, opencodeTimeoutMs);
+
+      let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
+      try {
+        result = await batchSpan(
+          "opencode_run",
+          async () =>
+            this.runner.run({
+              job: this.mapJob(runtime.job),
+              session: sessionInfo,
+              history,
+              request,
+              signal: opencodeController.signal,
+            }),
+          {
+            historyEntries: history.length,
+            promptBytes,
+            modelProvider: request.body.model?.providerID,
+            modelId: request.body.model?.modelID,
+            opencodeTimeoutMs,
+          },
+        );
+      } catch (err) {
+        const errMessage = err instanceof Error ? err.message : String(err);
+        const isAbort = opencodeTimedOut || isAbortError(err);
+
+        runtime.log.warn(
+          {
+            err,
+            opencodeTimedOut,
+            opencodeTimeoutMs,
+          },
+          "Opencode run failed",
+        );
+
+        try {
+          const syncResult = await batchSpan("sync_world_files", async () => {
+            try {
+              const changed =
+                await this.syncWorldFilesFromWorkspace(sessionInfo);
+              return { ok: true as const, changed };
+            } catch (syncErr) {
+              return { ok: false as const, err: syncErr };
+            }
+          });
+          if (!syncResult.ok) {
+            runtime.log.error(
+              { err: syncResult.err },
+              "World file sync failed",
+            );
+          }
+        } catch (syncErr) {
+          runtime.log.error({ err: syncErr }, "World file sync failed");
+        }
+
+        if (isAbort) {
+          const nowIso = new Date().toISOString();
+          const updated = await this.sessionRepository.updateMeta({
+            ...sessionInfo.meta,
+            opencodeSessionId: undefined,
+            updatedAt: nowIso,
+          });
+          sessionInfo.meta = updated.meta;
+        }
+
+        const responseOutput = isAbort
+          ? "我这边生成回复超时了，请稍后再试。"
+          : "我这边处理失败了，请稍后再试。";
+        await batchSpan(
+          "send_response",
+          async () => this.sendResponse(mergedWithTrace, responseOutput),
+          {
+            outputBytes: Buffer.byteLength(responseOutput, "utf8"),
+            outputPreview: responseOutput,
+            outputPreviewTruncated: false,
+            opencodeTimedOut,
+            opencodeTimeoutMs,
+          },
+        );
+        await batchSpan("append_history", async () =>
+          this.appendHistoryFromJob(
+            sessionInfo,
+            mergedWithTrace,
+            historyKey,
+            undefined,
+            undefined,
+            responseOutput,
+            {
+              stderr: opencodeTimedOut
+                ? `opencode_run_timeout_ms=${opencodeTimeoutMs}`
+                : errMessage,
+            },
+          ),
+        );
+        await batchSpan("record_activity", async () =>
+          this.recordActivity(sessionInfo, runtime.log),
+        );
+
+        return "continue";
+      } finally {
+        clearTimeout(opencodeTimeout);
+      }
 
       const stillOwnerAfterRun = await this.bufferStore.claimGate(
         runtime.bufferKey,
@@ -1130,6 +1223,17 @@ function isLikelyOpencodeSessionId(value: string): boolean {
   return (
     /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/.test(value) || value.startsWith("ses_")
   );
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  const name = (err as { name?: unknown }).name;
+  if (name === "AbortError") {
+    return true;
+  }
+  return false;
 }
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {

@@ -16,6 +16,7 @@ import { buildWorldGroupId } from "../world/ids";
 import { EchoTracker } from "./echo";
 import { isSafePathSegment } from "../utils/path";
 import type { SessionBuffer } from "../session/buffer";
+import { feishuLogJson } from "../feishu/webhook";
 import {
   type TelemetrySpanInput,
   createTraceId,
@@ -403,6 +404,25 @@ export class MessageDispatcher {
     groupConfig: GroupConfig;
     routing: Extract<DispatchRoutingPlan, { kind: "command" }>;
   }): Promise<void> {
+    if (!hasDiscordInteractionId(input.runtime.message.extras)) {
+      feishuLogJson({
+        event: "io.recv",
+        platform: input.runtime.message.platform,
+        command: input.routing.command.type,
+        traceId: input.runtime.traceId,
+        guildId: input.runtime.message.guildId ?? undefined,
+        groupId: input.envelope.groupId,
+        channelId: input.runtime.message.channelId,
+        userId: input.runtime.message.userId,
+        messageId: input.runtime.message.messageId,
+        contentPreview: truncateTextByBytes(
+          redactSensitiveText(input.runtime.message.content ?? ""),
+          1200,
+        ),
+        contentLength: input.runtime.message.content?.length ?? 0,
+      });
+    }
+
     input.runtime.log.info(
       {
         id: input.runtime.message.messageId,
@@ -452,6 +472,24 @@ export class MessageDispatcher {
     envelope: DispatchEnvelope;
     routing: Extract<DispatchRoutingPlan, { kind: "enqueue" }>;
   }): Promise<void> {
+    if (!hasDiscordInteractionId(input.runtime.message.extras)) {
+      feishuLogJson({
+        event: "io.recv",
+        platform: input.runtime.message.platform,
+        traceId: input.runtime.traceId,
+        guildId: input.runtime.message.guildId ?? undefined,
+        groupId: input.envelope.groupId,
+        channelId: input.runtime.message.channelId,
+        userId: input.runtime.message.userId,
+        messageId: input.runtime.message.messageId,
+        contentPreview: truncateTextByBytes(
+          redactSensitiveText(input.runtime.message.content ?? ""),
+          1200,
+        ),
+        contentLength: input.runtime.message.content?.length ?? 0,
+      });
+    }
+
     input.runtime.log.info(
       {
         id: input.runtime.message.messageId,
@@ -1115,6 +1153,18 @@ function truncateTextByBytes(content: string, maxBytes: number): string {
   }
   const sliced = buffer.toString("utf8", 0, maxBytes);
   return `${sliced}\n\n[truncated]`;
+}
+
+function hasDiscordInteractionId(extras: unknown): boolean {
+  if (!extras || typeof extras !== "object") {
+    return false;
+  }
+  const record = extras as Record<string, unknown>;
+  if (record["synthetic"] === true) {
+    return false;
+  }
+  const interactionId = record["interactionId"];
+  return typeof interactionId === "string" && interactionId.trim().length > 0;
 }
 
 function resolveResetTargetUserId(message: SessionEvent): {

@@ -241,6 +241,7 @@ function emitFeishuSpanEnd(input: {
   errMessage?: string;
 }): void {
   const service = process.env.OTEL_SERVICE_NAME ?? "opencode-bot-agent";
+  const endedAt = Date.now();
   feishuLogJson({
     event: "telemetry.span",
     service,
@@ -249,6 +250,7 @@ function emitFeishuSpanEnd(input: {
     step: input.input.step,
     component: input.input.component,
     startedAt: input.startedAt,
+    endedAt,
     durationMs: input.durationMs,
     ok: input.ok,
     ...(input.ok

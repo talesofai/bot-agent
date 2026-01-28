@@ -135,13 +135,12 @@ export function feishuLogText(text: string): void {
 
 export function feishuLogJson(value: unknown): void {
   try {
-    const raw = JSON.stringify(value, null, 2);
-    feishuLogText(raw);
+    feishuLogText(formatLogLine(value));
   } catch (err) {
     feishuLogText(
       JSON.stringify(
         {
-          event: "feishu.log.json_failed",
+          event: "feishu.log.format_failed",
           err: err instanceof Error ? err.message : String(err),
         },
         null,
@@ -149,6 +148,125 @@ export function feishuLogJson(value: unknown): void {
       ),
     );
   }
+}
+
+function formatLogLine(value: unknown): string {
+  const ts = new Date().toISOString();
+  if (isRecord(value)) {
+    return `${ts} ${formatLogfmt(value)}`;
+  }
+  const raw = redactSensitiveText(String(value ?? ""));
+  const trimmed = raw.trim();
+  return trimmed ? `${ts} ${trimmed}` : ts;
+}
+
+function formatLogfmt(record: Record<string, unknown>): string {
+  const ordered = orderKeys(record);
+  const parts = ordered.flatMap((key) => {
+    const value = record[key];
+    const rendered = renderLogfmtValue(key, value);
+    return rendered === null ? [] : [`${key}=${rendered}`];
+  });
+  return parts.length > 0 ? parts.join(" ") : "-";
+}
+
+function orderKeys(record: Record<string, unknown>): string[] {
+  const preferred = [
+    "event",
+    "action",
+    "service",
+    "traceId",
+    "phase",
+    "step",
+    "component",
+    "ok",
+    "durationMs",
+    "startedAt",
+    "endedAt",
+    "jobId",
+    "platform",
+    "command",
+    "subcommand",
+    "interactionId",
+    "messageId",
+    "guildId",
+    "groupId",
+    "channelId",
+    "userId",
+    "worldId",
+    "characterId",
+  ];
+
+  const keys = Object.keys(record).filter((key) => {
+    const value = record[key];
+    return value !== undefined && value !== null && String(value).trim() !== "";
+  });
+
+  const preferredIndex = new Map<string, number>();
+  preferred.forEach((key, idx) => preferredIndex.set(key, idx));
+
+  return keys.sort((a, b) => {
+    const ai = preferredIndex.get(a);
+    const bi = preferredIndex.get(b);
+    if (ai !== undefined && bi !== undefined) {
+      return ai - bi;
+    }
+    if (ai !== undefined) {
+      return -1;
+    }
+    if (bi !== undefined) {
+      return 1;
+    }
+    return a.localeCompare(b);
+  });
+}
+
+function renderLogfmtValue(key: string, value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : null;
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "string") {
+    const normalized = redactSensitiveText(value)
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .replace(/\n+/g, "\\n")
+      .trim();
+    if (!normalized) {
+      return null;
+    }
+    const capped = truncateTextByBytes(normalized, capBytesForKey(key));
+    return JSON.stringify(capped);
+  }
+
+  try {
+    const raw = redactSensitiveText(JSON.stringify(value));
+    const normalized = raw.replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return null;
+    }
+    const capped = truncateTextByBytes(normalized, capBytesForKey(key));
+    return JSON.stringify(capped);
+  } catch {
+    return JSON.stringify(String(value));
+  }
+}
+
+function capBytesForKey(key: string): number {
+  const lowered = key.toLowerCase();
+  if (lowered.includes("preview")) {
+    return 1200;
+  }
+  if (lowered.includes("message")) {
+    return 800;
+  }
+  return 400;
 }
 
 function sanitizeFeishuText(text: string, maxBytes: number): string {
@@ -175,4 +293,8 @@ function truncateTextByBytes(content: string, maxBytes: number): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

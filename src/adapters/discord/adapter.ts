@@ -41,6 +41,7 @@ import { fetchDiscordTextAttachment } from "./text-attachments";
 import path from "node:path";
 import { writeFile, mkdir, rename } from "node:fs/promises";
 import { createTraceId } from "../../telemetry";
+import { redactSensitiveText } from "../../utils/redact";
 
 export interface DiscordAdapterOptions {
   token?: string;
@@ -223,6 +224,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     const commandName = interaction.commandName;
+    feishuLogJson({
+      event: "discord.command.start",
+      command: buildInteractionCommand(interaction),
+      interactionId: interaction.id,
+      userId: interaction.user.id,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+    });
     const isGuildOwner = Boolean(
       interaction.guildId &&
       interaction.guild &&
@@ -532,6 +541,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       channelId: interaction.channelId,
       userId: interaction.user.id,
       hasDocument: Boolean(document),
+      documentName: document?.name,
+      documentSize: document?.size,
+      messagePreview: previewTextForLog(messageRaw, 1200),
       messageLength: messageRaw.length,
       worldName: worldNameRaw,
     });
@@ -1124,6 +1136,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       userId: interaction.user.id,
       worldId: input.worldId,
       hasDocument: Boolean(input.document),
+      documentName: input.document?.name,
+      documentSize: input.document?.size,
+      messagePreview: previewTextForLog(input.message?.trim() ?? "", 1200),
       messageLength: input.message?.trim().length ?? 0,
     });
     if (!interaction.guildId || !interaction.guild) {
@@ -1759,6 +1774,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       interactionId: interaction.id,
       worldId: world.id,
       characterId,
+      characterName: name,
       visibility,
       buildConversationChannelId,
     });
@@ -2984,6 +3000,17 @@ async function safeReply(
   content: string,
   options: { ephemeral: boolean },
 ): Promise<void> {
+  feishuLogJson({
+    event: "discord.command.reply",
+    command: buildInteractionCommand(interaction),
+    interactionId: interaction.id,
+    userId: interaction.user.id,
+    guildId: interaction.guildId ?? undefined,
+    channelId: interaction.channelId,
+    ephemeral: options.ephemeral,
+    contentPreview: previewTextForLog(content, 1200),
+    contentLength: content.length,
+  });
   try {
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({ content, ephemeral: options.ephemeral });
@@ -2993,4 +3020,34 @@ async function safeReply(
   } catch {
     // ignore
   }
+}
+
+function buildInteractionCommand(
+  interaction: ChatInputCommandInteraction,
+): string {
+  const base = `/${interaction.commandName}`;
+  try {
+    const group = interaction.options.getSubcommandGroup(false)?.trim() ?? "";
+    const sub = interaction.options.getSubcommand(false)?.trim() ?? "";
+    const parts = [base, group, sub].filter(Boolean);
+    return parts.join(" ");
+  } catch {
+    return base;
+  }
+}
+
+function previewTextForLog(text: string, maxBytes: number): string {
+  const trimmed = redactSensitiveText(String(text ?? "")).trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (maxBytes <= 0) {
+    return "";
+  }
+  const buffer = Buffer.from(trimmed, "utf8");
+  if (buffer.byteLength <= maxBytes) {
+    return trimmed;
+  }
+  const sliced = buffer.toString("utf8", 0, maxBytes);
+  return `${sliced}\n\n[truncated]`;
 }

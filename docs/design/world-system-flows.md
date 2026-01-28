@@ -13,7 +13,7 @@
 
 ### 0.2 “能看到但不能进入”的定义（落地到 Discord 权限）
 
-- **能看到**：所有人可以执行只读指令（`/world info|rules|stats|list|canon`），并且在 `homeGuild` 内 `#world-info` 对 @everyone 可读。
+- **能看到**：所有人可以执行只读指令（`/world info|rules|stats|list|canon`），并且在 `homeGuild` 内 `#world-announcements`（公告区）对 @everyone 可读。
 - **不能进入**：未加入（未 `/world join`）的人无法在 `#world-roleplay/#world-proposals/Voice` 发言/提案/连接（由 World Role + channel overwrites 强制）。
 
 ### 0.3 未加入世界时：bot 必须响应
@@ -92,7 +92,7 @@
    - 若 `status=draft`：执行发布
    - 否则：仅结束当前话题（archive+lock）
 3. 发布（仅 `draft`）：
-   - 创建 Discord 子空间：Role + Category + Channels（`world-info/world-join/world-roleplay/world-proposals/voice/world-build`）
+   - 创建 Discord 子空间：Role + Category + Channels（`world-announcements/world-join/world-discussion/world-roleplay/world-proposals/voice/world-build`）
    - 写入 `world:{id}:meta`（`status=active`，补齐 roleId/categoryId/channelIds，并写入索引）
    - 自动拉创作者加入：赋 role + `SADD(world:{id}:members, creatorId)`（访客数口径）
    - `channel:{roleplayChannelId}:world = worldId`（兼容推断）与 always-on 路由
@@ -251,7 +251,7 @@
 ### `/chronicle add <event>`
 
 - 权限：仅世界创作者/管理员。
-- 流程：写入世界编年史（文件）→ 记录事件 → 可选同步一条到 `#world-info`。
+- 流程：写入世界编年史（文件）→ 记录事件 → 可选同步一条到公告区 `#world-announcements`。
 
 ### `/check <设定>`
 

@@ -31,6 +31,7 @@
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
 - Discord：`/world join` 改为仅在 `world-join` 频道执行，不再接受 `world_id`
 - Discord：`/world create` 不再接收任何参数，改为直接进入“世界创建私密话题”，设定原文在话题内通过多轮消息/附件补全
+- Discord：世界子空间 `world-info` 重命名为 `world-announcements`（公告区，世界背景/正典内容放此处），并新增 `world-discussion`（讨论区）
 - Discord：除 help 外，Slash Commands 回复默认公开（non-ephemeral）
 - Discord：`/world info` 与 `world-info` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
@@ -53,6 +54,7 @@
 - Discord：世界构建/编辑会话统一落在 creator-only 临时频道（可选 Thread），避免 parent channel 权限导致 bot 无法发言；并允许在该频道内执行 `/world done` 完成发布/关闭
 - Discord：生成的 `agent.md` frontmatter 修正为字符串版 `version`，避免解析告警刷屏飞书
 - Discord：当世界 Category 被手动删除/缺失时，`world-join` 频道补齐会降级为无 parent 创建，并支持通过已知频道 ID 推断世界，避免 `CHANNEL_PARENT_INVALID` 导致无法加入
+- Discord：`/world create` 私密话题会先发送“世界创建规则”，再进入多轮补全，降低新用户上手成本
 - Logging：飞书 `warn/error` 日志补齐 `guildId/worldId/characterId` 字段，便于快速定位是哪个世界/会话出问题
 - Discord：`world-join` 迁移仅在启用 Slash Commands 的进程执行，避免 adapter/worker 双进程重复补齐造成重复告警/重复创建
 

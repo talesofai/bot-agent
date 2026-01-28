@@ -135,6 +135,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         void this.migrateWorldJoinChannels().catch((err) => {
           this.logger.warn({ err }, "World join channel migration failed");
         });
+        void this.migrateWorldSubspaceChannels().catch((err) => {
+          this.logger.warn({ err }, "World subspace channel migration failed");
+        });
         void this.migrateWorldAgents().catch((err) => {
           this.logger.warn({ err }, "World agent migration failed");
         });
@@ -804,6 +807,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
 
       if (buildConversationChannelId) {
+        await this.sendWorldCreateRules({
+          guildId: interaction.guildId,
+          channelId: buildConversationChannelId,
+          worldId,
+          traceId,
+        });
         feishuLogJson({
           event: "discord.world.create.build_conversation_ready",
           traceId,
@@ -841,7 +850,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         [
           `世界创建已开始：W${worldId}`,
           `继续创建（私密话题）：${buildConversationMention}`,
-          `发布世界：在子话题中执行 /world done（发布后会自动创建子空间并把你拉进去）`,
+          `下一步：在私密话题里阅读规则后，直接发设定原文/上传文档；完成后执行 /world done 发布世界`,
         ].join("\n"),
         { ephemeral: true },
       );
@@ -870,7 +879,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       [
         "世界系统指令：",
         "- /world create（默认仅管理员；可配置 world.createPolicy）",
-        "  - 执行后会进入私密话题：你在里面粘贴/上传设定原文，多轮补全；用 /world done 发布世界并创建子空间",
+        "  - 执行后会进入私密话题：先阅读规则，再粘贴/上传设定原文，多轮补全；用 /world done 发布世界并创建子空间",
         "- /world list [limit:<1-100>]",
         "- /world search query:<关键词> [limit:<1-50>]",
         "- /world info world_id:<世界ID>",
@@ -882,7 +891,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         "- /world done（仅创作者，结束当前构建/编辑话题；草稿会在此时发布）",
         "",
         "提示：",
-        "- 未加入世界时看不到 roleplay/proposals；加入后会自动获得进入权限",
+        "- 未加入世界时看不到讨论区/roleplay/提案区；加入后会自动获得进入权限",
         "- 访客数=join 人数；角色数=该世界角色数（均持久化）",
       ].join("\n"),
       { ephemeral: true },
@@ -957,11 +966,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       meta.status === "draft"
         ? []
         : [
-            `信息：<#${meta.infoChannelId}>`,
+            `公告：<#${meta.infoChannelId}>`,
             joinChannelId
               ? `加入：<#${joinChannelId}>（在该频道执行 /world join）`
               : `加入入口：未配置`,
-            `入口：<#${meta.roleplayChannelId}>`,
+            `入口：<#${meta.roleplayChannelId}>（roleplay）`,
+            ...(interaction.guild &&
+            interaction.guildId === meta.homeGuildId &&
+            meta.status === "active"
+              ? await this.tryResolveWorldDiscussionChannelMention({
+                  guild: interaction.guild,
+                  meta,
+                })
+              : []),
           ];
     const header = [
       `W${meta.id} ${meta.name}`,
@@ -1580,9 +1597,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
         const intro = [
           `世界已发布：W${world.id} ${resolvedName}`,
+          `- 公告：<#${created.infoChannelId}>`,
           `- 加入：在 <#${created.joinChannelId}> 执行 /world join`,
+          `- 讨论：<#${created.discussionChannelId}>`,
           `- 状态：/world status world_id:${world.id}`,
-          `- 角色：/character create（在 <#${created.roleplayChannelId}> 内可省略 world_id）`,
+          `- Roleplay：<#${created.roleplayChannelId}>（/character create 可省略 world_id）`,
+          `- 提案区：<#${created.proposalsChannelId}>`,
         ].join("\n");
         try {
           const info = await interaction.guild.channels.fetch(
@@ -1623,7 +1643,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           [
             `世界已发布：W${world.id} ${resolvedName}`,
             `入口：<#${created.roleplayChannelId}>`,
-            `信息：<#${created.infoChannelId}>`,
+            `公告：<#${created.infoChannelId}>`,
+            `讨论：<#${created.discussionChannelId}>`,
             `加入：<#${created.joinChannelId}>（执行 /world join）`,
           ].join("\n"),
           { ephemeral: false },
@@ -2639,6 +2660,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     categoryId: string;
     infoChannelId: string;
     joinChannelId: string;
+    discussionChannelId: string;
     roleplayChannelId: string;
     proposalsChannelId: string;
     voiceChannelId: string;
@@ -2666,7 +2688,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     });
 
     const infoChannel = await input.guild.channels.create({
-      name: "world-info",
+      name: "world-announcements",
       type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: baseOverwrites.info,
@@ -2677,6 +2699,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       type: ChannelType.GuildText,
       parent: category.id,
       permissionOverwrites: baseOverwrites.join,
+      reason: `world publish by ${input.creatorUserId}`,
+    });
+    const discussionChannel = await input.guild.channels.create({
+      name: "world-discussion",
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: baseOverwrites.roleplay,
       reason: `world publish by ${input.creatorUserId}`,
     });
     const roleplayChannel = await input.guild.channels.create({
@@ -2722,6 +2751,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       categoryId: category.id,
       infoChannelId: infoChannel.id,
       joinChannelId: joinChannel.id,
+      discussionChannelId: discussionChannel.id,
       roleplayChannelId: roleplayChannel.id,
       proposalsChannelId: proposalsChannel.id,
       voiceChannelId: voiceChannel.id,
@@ -2733,11 +2763,141 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       categoryId: category.id,
       infoChannelId: infoChannel.id,
       joinChannelId: joinChannel.id,
+      discussionChannelId: discussionChannel.id,
       roleplayChannelId: roleplayChannel.id,
       proposalsChannelId: proposalsChannel.id,
       voiceChannelId: voiceChannel.id,
       buildChannelId: buildChannel.id,
     };
+  }
+
+  private async sendWorldCreateRules(input: {
+    guildId: string;
+    channelId: string;
+    worldId: number;
+    traceId?: string;
+  }): Promise<void> {
+    await this.sendLongTextToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      traceId: input.traceId,
+      content: [
+        `【世界创建规则】（W${input.worldId} 私密会话）`,
+        ``,
+        `1) 这是一段私密会话：仅你与 bot 可见；你在这里发的任何内容都会被当作“对 bot 的输入”，不需要 @。`,
+        `2) 你可以用两种方式提供设定原文：`,
+        `   - 直接粘贴/分段发送（多轮对话补全）`,
+        `   - 或上传 txt/md/docx（会自动写入 world/source.md）`,
+        `3) bot 会把设定整理为两份正典文件（可反复修改）：`,
+        `   - world/world-card.md（世界背景/势力/地点/历史等）`,
+        `   - world/rules.md（硬规则：初始金额/装备/底层逻辑/禁止事项等）`,
+        `4) 规则与世界卡是“正典”：没写到的部分允许后续补全，但不要自相矛盾。`,
+        `5) 当你确认已经 OK：在本话题执行 /world done 发布世界；发布后会创建子空间（公告/讨论/提案/roleplay 等）。`,
+        ``,
+      ].join("\n"),
+    });
+  }
+
+  private async tryResolveWorldDiscussionChannelMention(input: {
+    guild: Guild;
+    meta: WorldActiveMeta;
+  }): Promise<string[]> {
+    const categoryId = input.meta.categoryId?.trim();
+    if (!categoryId) {
+      return [];
+    }
+    const channels = input.guild.channels.cache.filter(
+      (candidate) =>
+        candidate.type === ChannelType.GuildText &&
+        candidate.parentId === categoryId &&
+        candidate.name === "world-discussion",
+    );
+    const first = channels.first();
+    return first ? [`讨论：<#${first.id}>`] : [];
+  }
+
+  private async migrateWorldSubspaceChannels(): Promise<void> {
+    const ids = await this.worldStore.listWorldIds(200);
+    const botId = this.botUserId ?? this.client.user?.id ?? "";
+    for (const id of ids) {
+      const meta = await this.worldStore.getWorld(id);
+      if (!meta || meta.status !== "active") {
+        continue;
+      }
+      const guild = await this.client.guilds
+        .fetch(meta.homeGuildId)
+        .catch(() => null);
+      if (!guild) {
+        continue;
+      }
+
+      const categoryId = meta.categoryId?.trim() ?? "";
+      if (!categoryId) {
+        continue;
+      }
+      const category = await guild.channels.fetch(categoryId).catch(() => null);
+      if (!category || category.type !== ChannelType.GuildCategory) {
+        continue;
+      }
+
+      // Ensure announcements channel name (best-effort).
+      try {
+        const info = await guild.channels
+          .fetch(meta.infoChannelId)
+          .catch(() => null);
+        if (
+          info &&
+          info.type === ChannelType.GuildText &&
+          info.name !== "world-announcements"
+        ) {
+          await (
+            info as unknown as {
+              setName: (name: string, reason?: string) => Promise<unknown>;
+            }
+          ).setName("world-announcements", "world announcements rename");
+        }
+      } catch (err) {
+        this.logger.warn(
+          { err, worldId: meta.id, guildId: meta.homeGuildId },
+          "Failed to migrate world announcements channel name",
+        );
+      }
+
+      // Ensure discussion channel exists (best-effort).
+      const cachedDiscussion = guild.channels.cache.find(
+        (candidate) =>
+          candidate.type === ChannelType.GuildText &&
+          candidate.parentId === category.id &&
+          candidate.name === "world-discussion",
+      );
+      if (cachedDiscussion) {
+        continue;
+      }
+      try {
+        const overwrites = buildWorldBaseOverwrites({
+          everyoneRoleId: guild.roles.everyone.id,
+          worldRoleId: meta.roleId,
+          botUserId: botId,
+        });
+        await guild.channels.create({
+          name: "world-discussion",
+          type: ChannelType.GuildText,
+          parent: category.id,
+          permissionOverwrites: overwrites.roleplay,
+          reason: `world discussion ensure W${meta.id}`,
+        });
+        await this.worldFiles.appendEvent(meta.id, {
+          type: "world_discussion_channel_created",
+          worldId: meta.id,
+          guildId: meta.homeGuildId,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { err, worldId: meta.id, guildId: meta.homeGuildId },
+          "Failed to ensure world discussion channel",
+        );
+      }
+    }
   }
 
   private async ensureWorldGroupAgent(input: {

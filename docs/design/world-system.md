@@ -220,7 +220,7 @@ guildId
 创建世界后自动创建：
 
 - Category：`[WorldName]`（建议带 ID：`[W12] WorldName`，避免重名）
-- `#world-info`：世界卡、规则、地图、统计（所有人可读）
+- `#world-announcements`：世界卡、规则、地图、统计（所有人可读；世界背景/正典内容放这里）
 - `#world-roleplay`：主要对话区（准入控制）
 - `#world-proposals`：正典提案/剧情变化/地图更新申请
 - `World Voice`：语音（可选）
@@ -233,7 +233,7 @@ guildId
 
 落到 Discord 体验上：
 
-- `#world-info`：所有人可读（世界展示面）
+- `#world-announcements`：所有人可读（世界展示面；世界背景/正典内容放这里）
 - `#world-roleplay` / `#world-proposals` / Voice：仅成员可发言/提交/连接（世界入口）
 
 **方案 A：只做 bot 层准入（最简单）**

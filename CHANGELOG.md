@@ -42,8 +42,10 @@
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
 - Config：新增 `DISCORD_HOME_GUILD_ID`（可选：锁定世界系统只允许在单一 homeGuild 创建世界）
+- Config：新增 `SESSION_WORKER_CONCURRENCY`（每个 worker 实例并行处理会话数；同用户会话仍串行）
 - K8s：`llbot`（QQ）StatefulSet 默认 `replicas=0`（默认不启用，需要时再手动 scale）
 - K8s：`opencode-bot-agent` adapter/worker 直配 `FEISHU_WEBHOOK_URL`；worker 移除 `DATABASE_URL`（不再依赖 Postgres）
+- K8s：新增 `opencode-bot-agent-worker` HPA（CPU+内存自动扩缩容；scaleDown 保持 10 分钟）
 
 ### Fixed
 

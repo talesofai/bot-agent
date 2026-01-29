@@ -114,6 +114,7 @@ async function main(): Promise<void> {
     queue: {
       name: sessionQueueName,
       prefix: config.BULLMQ_PREFIX,
+      concurrency: config.SESSION_WORKER_CONCURRENCY,
     },
     runner: new OpencodeServerRunner(opencodeClient),
     logger,

@@ -931,11 +931,16 @@ export class SessionProcessor {
       telemetry?.message?.messageId && telemetry.message.messageId.trim()
         ? telemetry.message.messageId.trim()
         : undefined;
+    const opencodeMessageId = upstreamMessageId
+      ? upstreamMessageId.startsWith("msg")
+        ? upstreamMessageId
+        : `msg_${upstreamMessageId}`
+      : undefined;
     const request: OpencodeRequestSpec = {
       directory: sessionInfo.workspacePath,
       sessionId: opencodeSessionId,
       body: {
-        messageID: upstreamMessageId,
+        messageID: opencodeMessageId,
         system,
         model: resolveModelRef({
           groupOverride: groupConfig.model,

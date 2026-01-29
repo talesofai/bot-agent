@@ -79,6 +79,7 @@
 - Security：K8s 部署不再硬编码 `FEISHU_WEBHOOK_URL`，改为从 `llbot-secrets` 读取（避免 webhook 泄露）
 - World：`/world publish` 与 `/world list|search` 支持从“表格型世界卡”解析世界名称/一句话简介（兼容 `world-design-card` 输出）
 - Worker：opencode 超时兜底返回前仍会尝试同步 workspace 产物到 `/data/worlds/*`，避免“世界卡已生成但 /world info 仍为空模板”
+- Worker：opencode 请求体 `messageID` 会自动补齐 `msg_` 前缀（兼容 Discord messageId），避免 `400 invalid_format` 导致世界构建会话直接失败
 
 ## [0.0.30] - 2026-01-24
 

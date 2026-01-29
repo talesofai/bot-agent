@@ -1239,4 +1239,87 @@ describe("SessionProcessor", () => {
       ].join("\n"),
     ]);
   });
+
+  test("prefixes upstream messageId for opencode messageID", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const opencodeClient = new FakeOpencodeClient();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    class CapturingRunner implements OpencodeRunner {
+      messageIds: Array<string | undefined> = [];
+
+      async run(input: OpencodeRunInput): Promise<OpencodeRunResult> {
+        this.messageIds.push(input.request.body.messageID);
+        return { output: "ok" };
+      }
+    }
+    const runner = new CapturingRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+    });
+
+    try {
+      const message: SessionEvent = {
+        type: "message",
+        platform: "qq",
+        selfId: "123",
+        userId: jobData.userId,
+        guildId: jobData.groupId,
+        channelId: jobData.groupId,
+        messageId: "1466335703628779635",
+        content: "hello",
+        elements: [{ type: "text", text: "hello" }],
+        timestamp: Date.now(),
+        extras: {},
+      };
+      const acquired = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        message,
+        jobData.gateToken,
+      );
+      expect(acquired).toBe(jobData.gateToken);
+
+      await processor.process({ id: 0, data: jobData }, jobData);
+
+      expect(runner.messageIds).toEqual(["msg_1466335703628779635"]);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

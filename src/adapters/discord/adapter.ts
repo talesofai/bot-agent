@@ -4057,10 +4057,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       content: [
         `【角色卡创建指南】（C${input.characterId}）`,
         ``,
-        `1) 你在这里发的任何内容都会被当作“对 bot 的输入”，不需要 @。`,
-        `2) 角色卡文件位于会话工作区：character/character-card.md（可写）。`,
-        `3) bot 会把你的描述整理成标准角色卡；如果信息不足，会追问你补充。`,
-        `4) 本话题会长期保留；后续继续修改用 /character open character_id:${input.characterId}。`,
+        `1) bot 会把你的描述整理成标准角色卡；如果信息不足，会追问你补充。`,
+        `2) 本话题会长期保留以供后续继续修改用`,
         ``,
       ].join("\n"),
     });

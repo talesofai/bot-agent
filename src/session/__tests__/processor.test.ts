@@ -1232,6 +1232,11 @@ describe("SessionProcessor", () => {
     }
 
     expect(runner.runs).toBe(3);
-    expect(adapter.messages).toEqual(["我这边处理失败了，请稍后再试。"]);
+    expect(adapter.messages).toEqual([
+      [
+        "我这次没能输出结果。",
+        "你不需要重发；可以继续补充，我会接着处理。",
+      ].join("\n"),
+    ]);
   });
 });

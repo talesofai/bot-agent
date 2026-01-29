@@ -75,7 +75,11 @@ spec:
             - name: FEISHU_LOG_ENABLED
               value: "true"
             - name: FEISHU_WEBHOOK_URL
-              value: "https://open.feishu.cn/open-apis/bot/v2/hook/c2bc5a32-7574-4f6c-a3fe-4452c4c55dfd"
+              valueFrom:
+                secretKeyRef:
+                  name: llbot-secrets
+                  key: FEISHU_WEBHOOK_URL
+                  optional: true
           resources:
             requests:
               cpu: 200m

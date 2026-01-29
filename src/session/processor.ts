@@ -367,7 +367,10 @@ export class SessionProcessor {
           }
         }
 
-        const responseOutput = "我这边暂时处理不过来，请稍后再试。";
+        const responseOutput = [
+          "我这次没能继续处理。",
+          "你不需要重发；可以继续补充，我会接着处理。",
+        ].join("\n");
         try {
           await batchSpan(
             "send_response",
@@ -473,11 +476,9 @@ export class SessionProcessor {
 
             if (!sentPendingUpdate) {
               const pendingText = [
-                "我还在整理你的设定内容：",
-                "- 正在生成世界卡与世界规则",
-                "- 正在把原始设定补充进资料库",
+                "我还在整理你刚才的内容。",
                 "",
-                "你不需要重发；也可以继续补充设定，我会一起合并。",
+                "你不需要重发；也可以继续补充，我会一起处理。",
               ].join("\n");
               try {
                 await batchSpan(
@@ -522,8 +523,8 @@ export class SessionProcessor {
               "Opencode run timed out without output",
             );
             const responseOutput = [
-              "我这边还在继续整理你的设定（耗时比预期长）。",
-              "你可以继续补充信息；我会接着处理并在这里输出结果。",
+              "我这边还在继续处理（这次耗时稍长）。",
+              "你可以继续补充，我会接着处理并在这里输出结果。",
             ].join("\n");
             try {
               await batchSpan(
@@ -634,7 +635,10 @@ export class SessionProcessor {
             runtime.log.error({ err: syncErr }, "Workspace file sync failed");
           }
 
-          const responseOutput = "我这边处理失败了，请稍后再试。";
+          const responseOutput = [
+            "我这次没能输出结果。",
+            "你不需要重发；可以继续补充，我会接着处理。",
+          ].join("\n");
           try {
             await batchSpan(
               "send_response",

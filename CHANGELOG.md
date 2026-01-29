@@ -75,6 +75,8 @@
 - Logging：飞书 `warn/error` 日志补齐 `guildId/worldId/characterId` 字段，便于快速定位是哪个世界/会话出问题
 - Logging：当 `webfetch` 抓取失败（403/404/526 等）时，飞书会记录失败 URL 与状态码，便于定位“为什么查资料失败”
 - Discord：世界子空间迁移仅在启用 Slash Commands 的进程执行，避免 adapter/worker 双进程重复迁移造成重复告警/重复创建
+- UX：兜底回复不再暴露内部状态（如“没拿到输出/请重发/处理失败”），改为进度式体验文案并自动继续尝试获取输出
+- Security：K8s 部署不再硬编码 `FEISHU_WEBHOOK_URL`，改为从 `llbot-secrets` 读取（避免 webhook 泄露）
 
 ## [0.0.30] - 2026-01-24
 

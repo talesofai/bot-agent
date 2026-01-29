@@ -420,104 +420,158 @@ export class SessionProcessor {
       });
 
       let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
-      try {
-        result = await batchSpan(
-          "opencode_run",
-          async () =>
-            this.runner.run({
-              job: this.mapJob(runtime.job),
-              session: sessionInfo,
-              history,
-              request,
-            }),
-          {
-            historyEntries: history.length,
-            promptBytes,
-            modelProvider: request.body.model?.providerID,
-            modelId: request.body.model?.modelID,
-          },
-        );
-      } catch (err) {
-        const errMessage = err instanceof Error ? err.message : String(err);
-        const isAbort = isAbortError(err);
-
-        runtime.log.warn(
-          {
-            err,
-          },
-          "Opencode run failed",
-        );
-
+      const maxRunAttempts = 3;
+      let runAttempt = 0;
+      for (;;) {
+        runAttempt += 1;
         try {
-          const syncResult = await batchSpan(
-            "sync_workspace_files",
-            async () => {
-              try {
-                const changed =
-                  await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
-                return { ok: true as const, changed };
-              } catch (syncErr) {
-                return { ok: false as const, err: syncErr };
-              }
+          result = await batchSpan(
+            "opencode_run",
+            async () =>
+              this.runner.run({
+                job: this.mapJob(runtime.job),
+                session: sessionInfo,
+                history,
+                request,
+              }),
+            {
+              historyEntries: history.length,
+              promptBytes,
+              modelProvider: request.body.model?.providerID,
+              modelId: request.body.model?.modelID,
+              attempt: runAttempt,
             },
           );
-          if (!syncResult.ok) {
+          break;
+        } catch (err) {
+          const errMessage = err instanceof Error ? err.message : String(err);
+          const isAbort = isAbortError(err);
+          const status = readHttpStatusCode(err);
+          const shouldResetOpencodeSession = status === 404;
+
+          if (!isAbort && runAttempt < maxRunAttempts) {
+            runtime.log.debug(
+              { err, attempt: runAttempt, status },
+              "Opencode run failed; retrying",
+            );
+            if (shouldResetOpencodeSession) {
+              const nowIso = new Date().toISOString();
+              const cleared = await this.sessionRepository.updateMeta({
+                ...sessionInfo.meta,
+                opencodeSessionId: undefined,
+                updatedAt: nowIso,
+              });
+              sessionInfo.meta = cleared.meta;
+              const newId = await this.ensureOpencodeSessionId(
+                sessionInfo,
+                buildOpencodeSessionTitle(sessionInfo),
+                {
+                  logger: runtime.log,
+                  traceId: runtime.traceId,
+                  jobId: runtime.jobId,
+                  message: runtime.spanMessage,
+                },
+              );
+              request.sessionId = newId;
+            }
+            continue;
+          }
+
+          runtime.log.warn(
+            {
+              err,
+              attempt: runAttempt,
+              status,
+            },
+            "Opencode run failed",
+          );
+
+          try {
+            const syncResult = await batchSpan(
+              "sync_workspace_files",
+              async () => {
+                try {
+                  const changed =
+                    await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
+                  return { ok: true as const, changed };
+                } catch (syncErr) {
+                  return { ok: false as const, err: syncErr };
+                }
+              },
+            );
+            if (!syncResult.ok) {
+              runtime.log.error(
+                { err: syncResult.err },
+                "Workspace file sync failed",
+              );
+            }
+          } catch (syncErr) {
+            runtime.log.error({ err: syncErr }, "Workspace file sync failed");
+          }
+
+          if (isAbort) {
+            const nowIso = new Date().toISOString();
+            const updated = await this.sessionRepository.updateMeta({
+              ...sessionInfo.meta,
+              opencodeSessionId: undefined,
+              updatedAt: nowIso,
+            });
+            sessionInfo.meta = updated.meta;
+          }
+
+          const responseOutput = isAbort
+            ? "我这边暂时没拿到输出，你可以直接再发一次。"
+            : "我这边处理失败了，请稍后再试。";
+          try {
+            await batchSpan(
+              "send_response",
+              async () => this.sendResponse(mergedWithTrace, responseOutput),
+              {
+                outputBytes: Buffer.byteLength(responseOutput, "utf8"),
+                outputPreview: responseOutput,
+                outputPreviewTruncated: false,
+              },
+            );
+          } catch (sendErr) {
             runtime.log.error(
-              { err: syncResult.err },
-              "Workspace file sync failed",
+              { err: sendErr },
+              "Failed to send fallback response",
             );
           }
-        } catch (syncErr) {
-          runtime.log.error({ err: syncErr }, "Workspace file sync failed");
-        }
-
-        if (isAbort) {
-          const nowIso = new Date().toISOString();
-          const updated = await this.sessionRepository.updateMeta({
-            ...sessionInfo.meta,
-            opencodeSessionId: undefined,
-            updatedAt: nowIso,
+          feishuLogJson({
+            event: "ai.finish",
+            traceId: runtime.traceId,
+            platform: mergedWithTrace.platform,
+            guildId: mergedWithTrace.guildId,
+            channelId: mergedWithTrace.channelId,
+            messageId: mergedWithTrace.messageId,
+            groupId: sessionInfo.meta.groupId,
+            sessionId: sessionInfo.meta.sessionId,
+            userId: sessionInfo.meta.ownerId,
+            key: sessionInfo.meta.key,
+            worldId: parsedWorld?.worldId,
+            characterId: parsedCharacter?.characterId,
+            outputPreview: responseOutput,
           });
-          sessionInfo.meta = updated.meta;
-        }
-
-        const responseOutput = isAbort
-          ? "我这边暂时没拿到输出，你可以直接再发一次。"
-          : "我这边处理失败了，请稍后再试。";
-        try {
-          await batchSpan(
-            "send_response",
-            async () => this.sendResponse(mergedWithTrace, responseOutput),
-            {
-              outputBytes: Buffer.byteLength(responseOutput, "utf8"),
-              outputPreview: responseOutput,
-              outputPreviewTruncated: false,
-            },
+          await batchSpan("append_history", async () =>
+            this.appendHistoryFromJob(
+              sessionInfo,
+              mergedWithTrace,
+              historyKey,
+              undefined,
+              undefined,
+              responseOutput,
+              {
+                stderr: isAbort ? "opencode_run_aborted" : errMessage,
+              },
+            ),
           );
-        } catch (sendErr) {
-          runtime.log.error(
-            { err: sendErr },
-            "Failed to send fallback response",
+          await batchSpan("record_activity", async () =>
+            this.recordActivity(sessionInfo, runtime.log),
           );
-        }
-        await batchSpan("append_history", async () =>
-          this.appendHistoryFromJob(
-            sessionInfo,
-            mergedWithTrace,
-            historyKey,
-            undefined,
-            undefined,
-            responseOutput,
-            {
-              stderr: isAbort ? "opencode_run_aborted" : errMessage,
-            },
-          ),
-        );
-        await batchSpan("record_activity", async () =>
-          this.recordActivity(sessionInfo, runtime.log),
-        );
 
-        return "continue";
+          return "continue";
+        }
       }
 
       const stillOwnerAfterRun = await this.bufferStore.claimGate(
@@ -1447,6 +1501,14 @@ function buildLanguageDirective(language: UserLanguage | null): string {
     ].join("\n");
   }
   return "";
+}
+
+function readHttpStatusCode(err: unknown): number | null {
+  if (!err || typeof err !== "object") {
+    return null;
+  }
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" && Number.isFinite(status) ? status : null;
 }
 
 function parseWebfetchStatusCode(message: string | undefined): number | null {

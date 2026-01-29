@@ -442,9 +442,27 @@ export class SessionProcessor {
       const maxRunAttempts = 3;
       let runAttempt = 0;
       const opencodeRunStartedAtMs = Date.now();
+      const waitConfig = getConfig();
+      const progressHeartbeatMs = waitConfig.OPENCODE_PROGRESS_HEARTBEAT_MS;
+      const pendingText = [
+        "我还在整理你刚才的内容。",
+        "",
+        "你不需要重发；也可以继续补充，我会一起处理。",
+      ].join("\n");
+      let lastProgressSentAtMs = 0;
       let sentPendingUpdate = false;
       for (;;) {
         runAttempt += 1;
+        const stopProgressHeartbeat = this.startProgressHeartbeat({
+          session: mergedWithTrace,
+          log: runtime.log,
+          intervalMs: progressHeartbeatMs,
+          message: pendingText,
+          onSend: () => {
+            sentPendingUpdate = true;
+            lastProgressSentAtMs = Date.now();
+          },
+        });
         try {
           result = await batchSpan(
             "opencode_run",
@@ -488,11 +506,6 @@ export class SessionProcessor {
             }
 
             if (!sentPendingUpdate) {
-              const pendingText = [
-                "我还在整理你刚才的内容。",
-                "",
-                "你不需要重发；也可以继续补充，我会一起处理。",
-              ].join("\n");
               try {
                 await batchSpan(
                   "send_pending_update",
@@ -510,6 +523,7 @@ export class SessionProcessor {
                 );
               }
               sentPendingUpdate = true;
+              lastProgressSentAtMs = Date.now();
             }
 
             const waited = await batchSpan(
@@ -521,8 +535,14 @@ export class SessionProcessor {
                   requestBody: request.body,
                   minCreatedAtMs: opencodeRunStartedAtMs - 60_000,
                   deadlineMs:
-                    Date.now() + getConfig().OPENCODE_SERVER_WAIT_TIMEOUT_MS,
+                    Date.now() + waitConfig.OPENCODE_SERVER_WAIT_TIMEOUT_MS,
                   logger: runtime.log,
+                  progress: {
+                    session: mergedWithTrace,
+                    intervalMs: progressHeartbeatMs,
+                    message: pendingText,
+                    lastSentAtMs: lastProgressSentAtMs,
+                  },
                 }),
               { attempt: runAttempt },
             );
@@ -775,6 +795,8 @@ export class SessionProcessor {
           );
 
           return "continue";
+        } finally {
+          stopProgressHeartbeat();
         }
       }
 
@@ -1625,6 +1647,45 @@ export class SessionProcessor {
     };
   }
 
+  private startProgressHeartbeat(input: {
+    session: SessionEvent;
+    log: Logger;
+    intervalMs: number;
+    message: string;
+    onSend?: () => void;
+  }): () => void {
+    const intervalMs =
+      typeof input.intervalMs === "number" && Number.isFinite(input.intervalMs)
+        ? Math.max(0, Math.floor(input.intervalMs))
+        : 0;
+    const message = input.message?.trim() ?? "";
+    if (!message || intervalMs <= 0) {
+      return () => {};
+    }
+
+    const trigger = () => {
+      void this.sendResponse(input.session, message)
+        .then(() => {
+          input.onSend?.();
+        })
+        .catch((err) => {
+          input.log.debug(
+            {
+              err,
+              platform: input.session.platform,
+              channelId: input.session.channelId,
+              messageId: input.session.messageId,
+            },
+            "Failed to send progress heartbeat",
+          );
+        });
+    };
+    const timer = setInterval(trigger, intervalMs);
+    return () => {
+      clearInterval(timer);
+    };
+  }
+
   private async tryRecoverOpencodeOutputFromServer(input: {
     directory: string;
     opencodeSessionId: string;
@@ -1669,12 +1730,46 @@ export class SessionProcessor {
     minCreatedAtMs: number;
     deadlineMs: number;
     logger: Logger;
+    progress?: {
+      session: SessionEvent;
+      intervalMs: number;
+      message: string;
+      lastSentAtMs: number;
+    };
   }): Promise<WaitForOpencodeOutputResult> {
     const continuedAfter = new Set<string>();
     let backoffMs = 2_000;
     const config = getConfig();
+    const progress = input.progress;
+    const progressMessage = progress?.message?.trim() ?? "";
+    const progressIntervalMs =
+      typeof progress?.intervalMs === "number" &&
+      Number.isFinite(progress.intervalMs)
+        ? Math.max(0, Math.floor(progress.intervalMs))
+        : 0;
+    let lastProgressSentAtMs =
+      typeof progress?.lastSentAtMs === "number" &&
+      Number.isFinite(progress.lastSentAtMs) &&
+      progress.lastSentAtMs > 0
+        ? progress.lastSentAtMs
+        : Date.now();
 
     while (Date.now() < input.deadlineMs) {
+      if (progress && progressMessage && progressIntervalMs > 0) {
+        const nowMs = Date.now();
+        if (nowMs - lastProgressSentAtMs >= progressIntervalMs) {
+          try {
+            await this.sendResponse(progress.session, progressMessage);
+            lastProgressSentAtMs = nowMs;
+          } catch (err) {
+            input.logger.debug(
+              { err, opencodeSessionId: input.opencodeSessionId },
+              "Failed to send progress heartbeat during wait loop",
+            );
+          }
+        }
+      }
+
       let messages: OpencodeMessageWithParts[];
       try {
         messages = await this.opencodeClient.listMessages({

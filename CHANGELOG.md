@@ -12,6 +12,7 @@
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
 - Config：新增 `OPENCODE_SERVER_WAIT_TIMEOUT_MS`（超时恢复阶段的等待上限）与 `OPENCODE_TOOL_STUCK_TIMEOUT_MS`（工具调用卡住判定阈值）
+- Config：新增 `OPENCODE_PROGRESS_HEARTBEAT_MS`（长耗时任务的进度心跳回复间隔）
 - Opencode：server client 新增 `deleteSession`（用于清理卡死会话）
 - Discord：`/world create` 创建世界草稿并创建私密话题（Thread，位于 `world-workshop-{userId}`），支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
 - World：世界构建会话会把创作者多轮文本与附件持续追加写入 `world/source.md`（避免只依赖对话历史或覆盖丢失）
@@ -33,6 +34,8 @@
 
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - Discord：`/onboard` 不再发 DM；改为在 homeGuild 内创建持久化私密话题（`玩家新手指导`/`创作者新手指导`），并把话题内输入视为 `@bot`（无需显式 mention）
+- Discord：世界构建附件读取支持 `json`，默认单文件上限提升至 8MB（用于容纳较大的设定原文）
+- Discord：`/world info|rules`、`/character view` 与世界公告快照改为 embed 卡片化展示（不使用附件，避免刷屏式长 Markdown）
 - Discord：精简角色卡创建指南提示文案，减少噪音并避免误导
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引
@@ -58,6 +61,7 @@
 - World：当世界子空间的 Category 被手动删除/缺失时，worldId 推断逻辑会降级为按已知频道 ID 匹配并回填 `channel->worldId`，避免 `/world info|rules|stats|join` 无法识别当前世界
 - Discord：`/world info|rules|stats|status` 在世界子空间频道内可省略 `world_id`
 - Discord：新增 `/world remove`（管理员）清理世界 meta/集合与 worlds 文件，并 best-effort 删除 Discord 资源
+- Discord：世界构建仅上传无效附件时不再触发 opencode 入队（避免重复回复“缺设定”），并区分“文件过大/类型不支持/内容为空”提示
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”

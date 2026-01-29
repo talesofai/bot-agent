@@ -5,10 +5,17 @@ import { strFromU8, unzipSync } from "fflate";
 import { getConfig } from "../../config";
 import { createSsrfPolicy, fetchWithSsrfProtection } from "../../utils/ssrf";
 
-const DEFAULT_MAX_BYTES = 1024 * 1024;
+export const DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-const ALLOWED_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".docx"]);
+const ALLOWED_EXTENSIONS = new Set([
+  ".md",
+  ".markdown",
+  ".txt",
+  ".json",
+  ".docx",
+]);
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 

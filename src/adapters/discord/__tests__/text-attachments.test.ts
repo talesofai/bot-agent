@@ -6,6 +6,62 @@ import { resetConfig } from "../../../config";
 import { fetchDiscordTextAttachment } from "../text-attachments";
 
 describe("fetchDiscordTextAttachment", () => {
+  test("accepts json attachments by extension", async () => {
+    const prevEnabled = process.env.SSRF_ALLOWLIST_ENABLED;
+    const prevHosts = process.env.SSRF_ALLOWLIST_HOSTS;
+    process.env.SSRF_ALLOWLIST_ENABLED = "true";
+    process.env.SSRF_ALLOWLIST_HOSTS = "example.com";
+    resetConfig();
+
+    try {
+      const bodyText = JSON.stringify({ hello: "world" });
+      const attachment = {
+        url: "https://example.com/world.json",
+        name: "world.json",
+        contentType: "application/json",
+        size: Buffer.byteLength(bodyText, "utf8"),
+      } as unknown as Attachment;
+      const fetchFn = async () =>
+        new Response(bodyText, {
+          status: 200,
+          headers: { "content-length": String(bodyText.length) },
+        });
+
+      const result = await fetchDiscordTextAttachment(attachment, {
+        fetchFn,
+        timeoutMs: 2000,
+      });
+
+      expect(result.filename).toBe("world.json");
+      expect(result.content).toContain(`"hello"`);
+    } finally {
+      if (typeof prevEnabled === "string") {
+        process.env.SSRF_ALLOWLIST_ENABLED = prevEnabled;
+      } else {
+        delete process.env.SSRF_ALLOWLIST_ENABLED;
+      }
+      if (typeof prevHosts === "string") {
+        process.env.SSRF_ALLOWLIST_HOSTS = prevHosts;
+      } else {
+        delete process.env.SSRF_ALLOWLIST_HOSTS;
+      }
+      resetConfig();
+    }
+  });
+
+  test("rejects attachments larger than maxBytes", async () => {
+    const attachment = {
+      url: "https://example.com/too-big.txt",
+      name: "too-big.txt",
+      contentType: "text/plain",
+      size: 16,
+    } as unknown as Attachment;
+
+    await expect(
+      fetchDiscordTextAttachment(attachment, { maxBytes: 8 }),
+    ).rejects.toThrow(/attachment too large/i);
+  });
+
   test("parses docx as plain text", async () => {
     const prevEnabled = process.env.SSRF_ALLOWLIST_ENABLED;
     const prevHosts = process.env.SSRF_ALLOWLIST_HOSTS;

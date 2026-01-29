@@ -35,6 +35,7 @@
 
 ### Changed
 
+- 文档：更新世界系统 TODO，地图/NPC 功能优先走 opencode skill（暂不做独立 slash command）
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - Discord：`/onboard` 不再发 DM；改为在 homeGuild 内创建持久化私密话题（`玩家新手指导`/`创作者新手指导`），并把话题内输入视为 `@bot`（无需显式 mention）
 - Discord：世界构建附件读取支持 `json`，默认单文件上限提升至 8MB（用于容纳较大的设定原文）

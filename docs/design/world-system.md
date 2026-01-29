@@ -380,10 +380,10 @@ world:
 
 1. 定义 World/Character 的 zod schema（meta）与 Redis key 约定（写死，别模糊）。
 2. 新增 WorldStore（Redis）+ WorldFileStore（/data/worlds）抽象，写入采用原子 rename。
-3. Discord slash commands：
+3. Discord slash commands（只做“世界/角色核心闭环”，别把指令做成垃圾桶）：
    - `/world create|list|info|rules|join|stats`
    - `/character create|view|update|migrate|history`
-   - `/map generate|update`
+   - 地图/NPC：先不要做独立 slash command，优先用 opencode skill（调用 talesofai MCP / banana）按需生成并落盘。
 4. Discord 子空间创建：category + channels + world role；落库映射 `channelId -> worldId`。
 5. Dispatch 路由改造：识别 world channel 并重写 `groupId = world_{worldId}`。
 6. Trigger 改造：world roleplay channel **always-on**（不依赖 mention/keyword）。

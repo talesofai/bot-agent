@@ -151,6 +151,7 @@ status: active
 
 - 世界任务系统：世界通用任务 / 剧本 / 世界新闻（从 `world-proposals` 或后台配置触发）。
 - 正典系统：玩家提案 → 初审核 → 创作者确认 → 写入世界历史（chronicle）。
-- 世界地图：`/map generate`（banana 生成）与 `/map update`（按剧情改图），并把图/说明落盘与公告。
+- 世界地图：优先走 opencode skill（经 talesofai MCP / banana 生成/改图），并把图/说明落盘与公告；暂不做独立 slash command。
+- NPC 代理：加入 TODO；优先走 opencode skill（先做按需生成/扮演，不做 24 小时常驻）。
 - 数据面板：`/world stats` 扩展（访客趋势、角色数趋势、浏览数等），并在 Web UI 可视化。
 - Onboarding：新用户加入 homeGuild 后引导阅读规则 → 创建角色卡 → 选择世界进入。

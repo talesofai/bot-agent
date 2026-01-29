@@ -7,6 +7,7 @@ import { GroupFileRepository } from "../store/repository";
 import type { GroupRouteStore } from "../store/group-route-store";
 import type { SessionEvent } from "../types/platform";
 import { isSafePathSegment } from "../utils/path";
+import { buildHotPushPrompt } from "../texts";
 
 export interface GroupHotPushSchedulerOptions {
   groupsDataDir: string;
@@ -140,14 +141,7 @@ function buildHotPushEvent(input: {
   selfId: string;
   channelId: string;
 }): SessionEvent {
-  const prompt = [
-    "定时推送任务：请通过 TalesOfAI MCP 获取今天的热点内容（热榜/热门话题/热门作品/热门角色等）。",
-    "要求：",
-    "1) 用中文输出；",
-    "2) 精选 5 条（每条 1-2 句），最后给一句总结；",
-    "3) 不要输出任何 token/key/密码/内部链接等敏感信息；",
-    "4) 如果 MCP 不可用，直接说明无法获取并给出原因。",
-  ].join("\n");
+  const prompt = buildHotPushPrompt(null);
 
   return {
     type: "message",

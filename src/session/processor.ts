@@ -14,7 +14,6 @@ import {
   buildBufferedInput,
   buildOpencodeSystemContext,
 } from "../opencode/prompt";
-import { buildSystemPrompt } from "../opencode/default-system-prompt";
 import type { OpencodeStreamEvent } from "../opencode/output";
 import type { OpencodeToolCall } from "../opencode/output";
 import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
@@ -41,6 +40,14 @@ import {
   selectOpencodeModelId,
 } from "../opencode/model-ids";
 import { UserStateStore, type UserLanguage } from "../user/state-store";
+import {
+  buildLanguageDirective,
+  buildSessionOpencodeRunFailedReply,
+  buildSessionOpencodeTimeoutReply,
+  buildSessionProgressHeartbeatText,
+  buildSessionPromptContextFailedReply,
+  buildSystemPrompt,
+} from "../texts";
 import {
   type TelemetrySpanInput,
   resolveTraceId,
@@ -341,6 +348,7 @@ export class SessionProcessor {
         history: HistoryEntry[];
         request: OpencodeRequestSpec;
         promptBytes: number;
+        language: UserLanguage | null;
       };
       try {
         promptContext = await this.buildPromptContext(
@@ -380,10 +388,10 @@ export class SessionProcessor {
           }
         }
 
-        const responseOutput = [
-          "我这次没能继续处理。",
-          "你不需要重发；可以继续补充，我会接着处理。",
-        ].join("\n");
+        const language = await this.userState
+          .getLanguage(sessionInfo.meta.ownerId)
+          .catch(() => null);
+        const responseOutput = buildSessionPromptContextFailedReply(language);
         try {
           await batchSpan(
             "send_response",
@@ -419,7 +427,7 @@ export class SessionProcessor {
         return "continue";
       }
 
-      const { history, request, promptBytes } = promptContext;
+      const { history, request, promptBytes, language } = promptContext;
 
       const parsedWorld = parseWorldGroup(sessionInfo.meta.groupId);
       const parsedCharacter = parseCharacterGroup(sessionInfo.meta.groupId);
@@ -444,11 +452,7 @@ export class SessionProcessor {
       const opencodeRunStartedAtMs = Date.now();
       const waitConfig = getConfig();
       const progressHeartbeatMs = waitConfig.OPENCODE_PROGRESS_HEARTBEAT_MS;
-      const pendingText = [
-        "我还在整理你刚才的内容。",
-        "",
-        "你不需要重发；也可以继续补充，我会一起处理。",
-      ].join("\n");
+      const pendingText = buildSessionProgressHeartbeatText(language);
       let lastProgressSentAtMs = 0;
       let sentPendingUpdate = false;
       for (;;) {
@@ -472,6 +476,7 @@ export class SessionProcessor {
                 session: sessionInfo,
                 history,
                 request,
+                language,
               }),
             {
               historyEntries: history.length,
@@ -629,10 +634,7 @@ export class SessionProcessor {
               { err, attempt: runAttempt, status },
               "Opencode run timed out without output",
             );
-            const responseOutput = [
-              "我这边还在继续处理（这次耗时稍长）。",
-              "你可以继续补充，我会接着处理并在这里输出结果。",
-            ].join("\n");
+            const responseOutput = buildSessionOpencodeTimeoutReply(language);
             try {
               await batchSpan(
                 "send_response",
@@ -742,10 +744,7 @@ export class SessionProcessor {
             runtime.log.error({ err: syncErr }, "Workspace file sync failed");
           }
 
-          const responseOutput = [
-            "我这边刚才没能推进整理进度。",
-            "你可以继续补充设定，我会基于最新内容继续整理并更新结果。",
-          ].join("\n");
+          const responseOutput = buildSessionOpencodeRunFailedReply(language);
           try {
             await batchSpan(
               "send_response",
@@ -930,6 +929,7 @@ export class SessionProcessor {
     history: HistoryEntry[];
     request: OpencodeRequestSpec;
     promptBytes: number;
+    language: UserLanguage | null;
   }> {
     const span = async <T>(
       step: string,
@@ -972,22 +972,22 @@ export class SessionProcessor {
         botId: sessionInfo.meta.botId,
       }),
     );
-    const systemPrompt = buildSystemPrompt(agentPrompt);
-    const system = buildOpencodeSystemContext({
-      systemPrompt,
-      history: [],
-    });
     const resolvedInput = resolveSessionInput(promptInput);
     const rawUserText = resolvedInput.trim();
     const language = await span("resolve_user_language", async () =>
       this.userState.getLanguage(sessionInfo.meta.ownerId),
     );
+    const systemPrompt = buildSystemPrompt(agentPrompt, language);
+    const system = buildOpencodeSystemContext({
+      systemPrompt,
+      history: [],
+    });
     const languageDirective = buildLanguageDirective(language);
     const rawWithLanguage = languageDirective
       ? `${rawUserText}\n\n${languageDirective}`.trim()
       : rawUserText;
     const userText = rawWithLanguage
-      ? appendInputAuditIfSuspicious(rawWithLanguage)
+      ? appendInputAuditIfSuspicious(rawWithLanguage, language)
       : " ";
 
     const config = getConfig();
@@ -1037,7 +1037,7 @@ export class SessionProcessor {
       },
     };
 
-    return { history: [], request, promptBytes };
+    return { history: [], request, promptBytes, language };
   }
 
   private async ensureWorkspaceBindings(
@@ -2040,22 +2040,6 @@ function resolveSessionInput(content: string): string {
   }
   // Opencode rejects empty input, but we still need a non-empty placeholder.
   return " ";
-}
-
-function buildLanguageDirective(language: UserLanguage | null): string {
-  if (language === "en") {
-    return [
-      "LANGUAGE: English only.",
-      "Reply in English; and when creating/modifying any files, write the document content in English.",
-    ].join("\n");
-  }
-  if (language === "zh") {
-    return [
-      "语言：中文。",
-      "请用中文回复；当需要创建/修改任何文件时，也必须用中文写入文档内容。",
-    ].join("\n");
-  }
-  return "";
 }
 
 function readHttpStatusCode(err: unknown): number | null {

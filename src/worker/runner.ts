@@ -2,6 +2,7 @@ import type { HistoryEntry, SessionInfo } from "../types/session";
 import type { SessionJob } from "../queue";
 import type { OpencodeRunResult } from "../opencode/output";
 import type { OpencodeToolCall } from "../opencode/output";
+import type { UserLanguage } from "../user/state-store";
 import type {
   OpencodeClient,
   OpencodePromptBody,
@@ -9,6 +10,11 @@ import type {
   OpencodeMessagePart,
 } from "../opencode/server-client";
 import { extractAssistantText } from "../opencode/server-client";
+import {
+  buildOpencodeQuestionToolFooter,
+  buildOpencodeQuestionToolIntro,
+  buildOpencodeQuestionToolNoQuestionsFallback,
+} from "../texts";
 
 export type { OpencodeRunResult } from "../opencode/output";
 
@@ -23,6 +29,7 @@ export interface OpencodeRunInput {
   session: SessionInfo;
   history: HistoryEntry[];
   request: OpencodeRequestSpec;
+  language?: UserLanguage | null;
   signal?: AbortSignal;
 }
 
@@ -67,7 +74,10 @@ export class OpencodeServerRunner implements OpencodeRunner {
         };
       }
 
-      const questionText = formatQuestionToolAsText(response);
+      const questionText = formatQuestionToolAsText(
+        response,
+        input.language ?? null,
+      );
       if (questionText) {
         return {
           output: questionText,
@@ -124,6 +134,7 @@ function shouldContinueAfterToolCalls(
 
 function formatQuestionToolAsText(
   response: OpencodeAssistantMessageWithParts,
+  language: UserLanguage | null,
 ): string | null {
   const parts = response.parts ?? [];
   const toolPart = findToolPart(parts, "question");
@@ -136,16 +147,11 @@ function formatQuestionToolAsText(
   const questions =
     input && Array.isArray(input.questions) ? input.questions : [];
   if (questions.length === 0) {
-    return [
-      "我需要你补充一些设定信息，但 opencode 触发了不适用于 Discord 的交互提问工具。",
-      "请你直接用文字回复补充：世界背景、规则体系、主要地点/势力等。",
-    ].join("\n");
+    return buildOpencodeQuestionToolNoQuestionsFallback(language);
   }
 
   const lines: string[] = [];
-  lines.push(
-    "我需要你补充一些设定信息（直接用文字回复即可，不要使用选择器）。",
-  );
+  lines.push(buildOpencodeQuestionToolIntro(language));
 
   for (const rawQuestion of questions) {
     if (!isRecord(rawQuestion)) {
@@ -192,10 +198,7 @@ function formatQuestionToolAsText(
     }
   }
 
-  lines.push(
-    "",
-    "你也可以直接上传/粘贴设定原文（txt/md/docx），我会据此生成 world/world-card.md 与 world/rules.md。",
-  );
+  lines.push("", buildOpencodeQuestionToolFooter(language));
   const text = lines.join("\n").trim();
   return text ? text : null;
 }

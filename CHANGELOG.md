@@ -36,6 +36,7 @@
 - Discord：`/onboard` 不再发 DM；改为在 homeGuild 内创建持久化私密话题（`玩家新手指导`/`创作者新手指导`），并把话题内输入视为 `@bot`（无需显式 mention）
 - Discord：世界构建附件读取支持 `json`，默认单文件上限提升至 8MB（用于容纳较大的设定原文）
 - Discord：`/world info|rules`、`/character view` 与世界公告快照改为 embed 卡片化展示（不使用附件，避免刷屏式长 Markdown）
+- Texts：长文本（system prompt/自动回复/Discord 指南与模板等）统一收敛到 `src/texts.ts`，并提供中英双语；世界卡/规则/提案解析兼容中英字段
 - Discord：精简角色卡创建指南提示文案，减少噪音并避免误导
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用
 - World：世界 meta 新增 `draft` 状态；仅发布（active）世界进入 `/world list|search` 索引

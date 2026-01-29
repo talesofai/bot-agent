@@ -16,7 +16,9 @@ import type { Logger } from "pino";
 import { resolveDataRoot } from "../utils/data-root";
 import { getConfig } from "../config";
 import { normalizeWorldId, type WorldId } from "./ids";
+import type { UserLanguage } from "../user/state-store";
 import { assertSafePathSegment } from "../utils/path";
+import { buildDefaultWorldCard, buildDefaultWorldRules } from "../texts";
 
 export interface WorldFileStoreOptions {
   logger: Logger;
@@ -185,6 +187,7 @@ export class WorldFileStore {
     worldId: WorldId;
     worldName: string;
     creatorId: string;
+    language: UserLanguage | null;
   }): Promise<void> {
     await this.ensureWorldDir(input.worldId);
     const existingCard = await this.readWorldCard(input.worldId);
@@ -195,12 +198,16 @@ export class WorldFileStore {
           worldId: input.worldId,
           worldName: input.worldName,
           creatorId: input.creatorId,
+          language: input.language,
         }),
       );
     }
     const existingRules = await this.readRules(input.worldId);
     if (!existingRules) {
-      await this.writeRules(input.worldId, buildDefaultWorldRules());
+      await this.writeRules(
+        input.worldId,
+        buildDefaultWorldRules(input.language),
+      );
     }
 
     await this.ensureCanonDefaults(input.worldId);
@@ -604,58 +611,4 @@ function sanitizeSourceFilename(filename: string): string {
   const safe = normalized || "document.txt";
   const capped = safe.length > 64 ? safe.slice(0, 64) : safe;
   return capped.includes(".") ? capped : `${capped}.txt`;
-}
-
-function buildDefaultWorldCard(input: {
-  worldId: WorldId;
-  worldName: string;
-  creatorId: string;
-}): string {
-  const name = input.worldName.trim() || `World-${input.worldId}`;
-  return [
-    `# 世界观设计卡（W${input.worldId}）`,
-    ``,
-    `- 世界名称：${name}`,
-    `- 创建者：${input.creatorId}`,
-    `- 类型标签：`,
-    `- 时代背景：`,
-    `- 一句话简介：`,
-    `- 核心元素：`,
-    `- 整体氛围：`,
-    ``,
-    `## 世界背景`,
-    `- 世界概述：`,
-    `- 起源/创世：`,
-    `- 历史背景：`,
-    `- 当前状态：`,
-    `- 核心冲突：`,
-    ``,
-    `## 社会设定`,
-    `- 政治体制：`,
-    `- 经济形态：`,
-    `- 科技水平：`,
-    `- 社会阶层：`,
-    `- 通用语言：`,
-    `- 货币体系：`,
-    ``,
-  ].join("\n");
-}
-
-function buildDefaultWorldRules(): string {
-  return [
-    `# 世界规则（底层逻辑）`,
-    ``,
-    `> 这是世界的硬性规则（正典）。未明确的部分允许在游玩中补全，但不得与已写规则冲突。`,
-    ``,
-    `## 玩家初始`,
-    `- 初始金额：`,
-    `- 初始装备：`,
-    ``,
-    `## 物理/超自然规则`,
-    `- （示例）遇水即融：否`,
-    ``,
-    `## 禁止事项`,
-    `- 禁止随意改写已发布正典；请走 /submit 或 /chronicle add`,
-    ``,
-  ].join("\n");
 }

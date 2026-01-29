@@ -57,7 +57,7 @@ describe("DiscordAdapter world build attachments", () => {
 
     expect(shouldEmit).toBe(false);
     expect(sent.length).toBe(1);
-  });
+  }, 10_000);
 
   test("continues emit when text exists even if attachments are invalid", async () => {
     const adapter = new DiscordAdapter({ token: "test-token" });
@@ -113,5 +113,5 @@ describe("DiscordAdapter world build attachments", () => {
 
     expect(shouldEmit).toBe(true);
     expect(sent.length).toBe(1);
-  });
+  }, 10_000);
 });

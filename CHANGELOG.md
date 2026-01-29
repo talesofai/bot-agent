@@ -12,6 +12,7 @@
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
 - Chat：新增掷骰快捷指令，发送 `NdM`（`1<=N<=10`、`1<=M<=100`，如 `2d100`）会直接返回掷骰结果（不走 opencode）
+- Chat：新增 `/nano` 文生图快捷命令：`/nano <描述>` 与 `/nano portrait [额外描述]`（走 TalesOfAI MCP / banana；不需要 @bot）
 - Config：新增 `OPENCODE_SERVER_WAIT_TIMEOUT_MS`（超时恢复阶段的等待上限）与 `OPENCODE_TOOL_STUCK_TIMEOUT_MS`（工具调用卡住判定阈值）
 - Config：新增 `OPENCODE_PROGRESS_HEARTBEAT_MS`（长耗时任务的进度心跳回复间隔）
 - Opencode：server client 新增 `deleteSession`（用于清理卡死会话）
@@ -28,6 +29,7 @@
 - World：构建会话（world/character/world-character-build）强制入队；游玩会话（`groupId=world_{worldId}`）默认仅在 `@bot` 时入队，避免刷屏
 - 持久化：Redis 维护自增 ID / meta / 路由；计数（访客数/角色数）以 members/world-characters 为真值重算，并落盘到 `/data/worlds/{worldId}/stats.json`
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
+- Skills：新增内置技能 `nano`（/nano 文生图与角色立绘）
 - Logging：飞书 webhook 仅推送 `warn/error` 与消息收发（`io.recv/io.send` + SlashCommand 输入/输出），便于在飞书追踪对话与故障而不刷噪音
 - Logging：新增 `ai.start/ai.finish` 事件（含输出预览），用于定位“子话题不推进/看起来没反应”
 
@@ -36,6 +38,7 @@
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - Discord：`/onboard` 不再发 DM；改为在 homeGuild 内创建持久化私密话题（`玩家新手指导`/`创作者新手指导`），并把话题内输入视为 `@bot`（无需显式 mention）
 - Discord：世界构建附件读取支持 `json`，默认单文件上限提升至 8MB（用于容纳较大的设定原文）
+- Discord：世界构建会话支持从粘贴/上传的 JSON 中提取正文（优先解析 `entries[*].content`），写入 `world/source.md`（避免把整坨 JSON 当“设定原文”）
 - Discord：`/world info|rules`、`/character view` 与世界公告快照改为 embed 卡片化展示（不使用附件，避免刷屏式长 Markdown）
 - Texts：长文本（system prompt/自动回复/Discord 指南与模板等）统一收敛到 `src/texts.ts`，并提供中英双语；世界卡/规则/提案解析兼容中英字段
 - Discord：精简角色卡创建指南提示文案，减少噪音并避免误导
@@ -64,6 +67,7 @@
 - Discord：`/world info|rules|stats|status` 在世界子空间频道内可省略 `world_id`
 - Discord：新增 `/world remove`（管理员）清理世界 meta/集合与 worlds 文件，并 best-effort 删除 Discord 资源
 - Discord：世界构建仅上传无效附件时不再触发 opencode 入队（避免重复回复“缺设定”），并区分“文件过大/类型不支持/内容为空”提示
+- Discord：对同一条消息的“相同回复”做短 TTL 去重，减少队列重试/网络抖动导致的重复回复
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”

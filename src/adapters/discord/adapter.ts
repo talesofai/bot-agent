@@ -55,6 +55,7 @@ import path from "node:path";
 import { writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { createTraceId } from "../../telemetry";
 import { redactSensitiveText } from "../../utils/redact";
+import { extractTextFromJsonDocument } from "../../utils/json-text";
 import {
   UserStateStore,
   type UserLanguage,
@@ -66,6 +67,7 @@ import {
   buildDiscordCharacterBuildKickoff,
   buildDiscordCharacterCreateGuide,
   buildDiscordCharacterHelp,
+  buildDiscordOnboardingAutoPrompt,
   buildDiscordOnboardingGuide,
   buildDiscordWorldBuildKickoff,
   buildDiscordWorldCharacterBuildKickoff,
@@ -600,18 +602,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await this.sendLongTextToChannel({
       guildId: message.guildId,
       channelId: threadId,
-      content: [
-        `【新手引导】`,
-        `你会在这里完成新手引导。`,
-        ``,
-        `请选择身份（仅需一次）：`,
-        `- /onboard role:player`,
-        `- /onboard role:creator`,
-        ``,
-        `可选：设置语言 /language lang:zh|en`,
-        ``,
-        `提示：/help 查看所有指令。`,
-      ].join("\n"),
+      content: buildDiscordOnboardingAutoPrompt(existing?.language),
     });
   }
 
@@ -634,7 +625,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return true;
     }
 
-    const uploaded: Array<{ filename: string; content: string }> = [];
+    const uploaded: Array<{
+      filename: string;
+      content: string;
+      extractedFromJson: boolean;
+    }> = [];
     const rejectedTooLarge: string[] = [];
     const rejectedUnsupported: string[] = [];
     const rejectedOther: string[] = [];
@@ -642,12 +637,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     for (const attachment of message.attachments.values()) {
       try {
-        uploaded.push(
-          await fetchDiscordTextAttachment(attachment, {
-            logger: this.logger,
-            maxBytes: DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES,
-          }),
-        );
+        const doc = await fetchDiscordTextAttachment(attachment, {
+          logger: this.logger,
+          maxBytes: DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES,
+        });
+        const extracted = extractTextFromJsonDocument(doc.content);
+        uploaded.push({
+          filename: doc.filename,
+          content: extracted?.extracted ?? doc.content,
+          extractedFromJson: Boolean(extracted),
+        });
       } catch (err) {
         const filename = (attachment.name ?? "").trim() || "document";
         const reason = err instanceof Error ? err.message : String(err);
@@ -707,6 +706,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         ? [
             `# 上传文档：${uploaded[0].filename}`,
             `- 时间：${nowIso}`,
+            uploaded[0].extractedFromJson ? `- 解析：已从 JSON 提取正文` : null,
             ``,
             uploaded[0].content.trimEnd(),
           ].join("\n")
@@ -715,6 +715,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
               [
                 `# 上传文档：${doc.filename}`,
                 `- 时间：${nowIso}`,
+                doc.extractedFromJson ? `- 解析：已从 JSON 提取正文` : null,
                 ``,
                 doc.content.trimEnd(),
                 ``,
@@ -798,13 +799,17 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       ? `${session.extras.authorName} (${session.userId})`
       : session.userId;
 
+    const extracted = extractTextFromJsonDocument(rawContent);
+    const normalizedContent = extracted?.extracted ?? rawContent;
+    const sectionTitle = extracted ? "## 用户文本（JSON 提取）" : "## 用户文本";
+
     await this.worldFiles.appendSourceDocument(parsed.worldId, {
       content: [
-        `## 用户文本`,
+        sectionTitle,
         `- 时间：${nowIso}`,
         `- 用户：${authorLabel}`,
         ``,
-        rawContent.trimEnd(),
+        normalizedContent.trimEnd(),
         ``,
         ``,
       ].join("\n"),

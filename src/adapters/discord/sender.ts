@@ -7,7 +7,7 @@ import type {
 import { Client, type MessageCreateOptions } from "discord.js";
 import { resolveDiscordImageAttachments } from "./image-attachments";
 import { getTraceIdFromExtras } from "../../telemetry";
-import type { BotMessageStore } from "../../store/bot-message-store";
+import { BotMessageStore } from "../../store/bot-message-store";
 import { feishuLogJson } from "../../feishu/webhook";
 import { redactSensitiveText } from "../../utils/redact";
 
@@ -67,6 +67,26 @@ export class MessageSender {
       return;
     }
 
+    const replySignature =
+      resolvedReply.replyTo && payload.content?.trim()
+        ? BotMessageStore.hashSignature(payload.content)
+        : "";
+    if (resolvedReply.replyTo && replySignature && this.botMessageStore) {
+      const alreadySent = await this.botMessageStore.hasReplySignature({
+        platform: session.platform,
+        selfId: session.selfId,
+        replyTo: resolvedReply.replyTo,
+        signature: replySignature,
+      });
+      if (alreadySent) {
+        log.debug(
+          { replyTo: resolvedReply.replyTo, signature: replySignature },
+          "Skipping duplicate reply",
+        );
+        return;
+      }
+    }
+
     try {
       const sent = await channel.send(payload);
       const messageId =
@@ -77,6 +97,14 @@ export class MessageSender {
           selfId: session.selfId,
           messageId,
         });
+        if (resolvedReply.replyTo && replySignature) {
+          await this.botMessageStore?.recordReplySignature({
+            platform: session.platform,
+            selfId: session.selfId,
+            replyTo: resolvedReply.replyTo,
+            signature: replySignature,
+          });
+        }
       }
       feishuLogJson({
         event: "io.send",

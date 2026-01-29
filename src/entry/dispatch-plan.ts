@@ -179,6 +179,16 @@ export function routeDispatch(input: {
     };
   }
 
+  if (normalized.trimmedContent.match(/^\/nano\b/i)) {
+    return {
+      kind: "enqueue",
+      key: normalized.key,
+      session: normalized.session,
+      contentHash,
+      contentLength: normalized.trimmedContent.length,
+    };
+  }
+
   if (!shouldHandle) {
     return { kind: "passive", echoRate: effectiveEchoRate };
   }

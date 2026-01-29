@@ -48,7 +48,7 @@ export function buildOpencodeBaseSystemRules(
       "   - SSRF 安全：拒绝私网/loopback/link-local/metadata；限制重定向；allowlist 默认不启用。",
       "3) 验证失败的链接/图片不要输出；解释失败原因，并让用户提供可访问来源或直接上传图片。",
       "4) 严禁输出任何 token/key/密码/鉴权信息（包括但不限于 x-token、api_key、Authorization）。若必须提及，只能打码（仅保留前 4 后 4）。",
-      "5) 用户请求“绘图/生成图片/画图”时：必须调用 TalesOfAI MCP 的绘图工具完成（例如 `mcp_talesofai_make_image_v1` / `mcp_talesofai_draw`）；禁止编造图片链接或使用其他方式代替。",
+      "5) 用户请求“绘图/生成图片/画图”，或输入以 `/nano` 开头时：必须调用 TalesOfAI MCP 的图片工具完成（优先 `mcp_talesofai_edit_image_beta`，也可用 `mcp_talesofai_make_image_v1` / `mcp_talesofai_draw`）；禁止编造图片链接或使用其他方式代替。",
       "6) 需要“找图/给图”时：严禁输出搜索页/列表页/集合页链接（例如 Unsplash/Pixabay 的搜索页）。必须给至少 1 条可直接访问的图片直链，并按上述规则逐条验证。",
       '   - 推荐（优先）：bash .claude/skills/bing-image-search/scripts/search_images.sh "<关键词>" --limit 2',
       '   - 备选：bash .claude/skills/wikimedia-image-search/scripts/search_images.sh "<关键词>" --limit 2',
@@ -65,7 +65,7 @@ export function buildOpencodeBaseSystemRules(
       "   - SSRF safety: block private/loopback/link-local/metadata; limit redirects; allowlist is off by default.",
       "3) Do not output links/images that fail verification. Explain why and ask the user for an accessible source or to upload the image.",
       "4) Never output any token/key/password/auth info (including but not limited to x-token, api_key, Authorization). If you must mention it, redact it (keep only first 4 and last 4).",
-      "5) When the user asks for “drawing / generating an image”: you MUST use TalesOfAI MCP image tools (e.g. `mcp_talesofai_make_image_v1` / `mcp_talesofai_draw`). Do not fabricate image URLs or use other substitutes.",
+      "5) When the user asks for “drawing / generating an image”, or the input starts with `/nano`: you MUST use TalesOfAI MCP image tools (prefer `mcp_talesofai_edit_image_beta`, or `mcp_talesofai_make_image_v1` / `mcp_talesofai_draw`). Do not fabricate image URLs or use other substitutes.",
       "6) When the user asks you to “find/show images”: do NOT output search/list/collection pages (e.g. Unsplash/Pixabay search pages). You must provide at least one direct image link and verify each one with the rules above.",
       '   - Recommended: bash .claude/skills/bing-image-search/scripts/search_images.sh "<keywords>" --limit 2',
       '   - Alternative: bash .claude/skills/wikimedia-image-search/scripts/search_images.sh "<keywords>" --limit 2',
@@ -246,6 +246,38 @@ export function buildHotPushPrompt(
       "2) Pick 5 items (1–2 sentences each), and end with a one-sentence summary;",
       "3) Do not output any token/key/password/internal links or other sensitive information;",
       "4) If MCP is unavailable, say so and explain why.",
+    ].join("\n"),
+  );
+}
+
+export function buildDiscordOnboardingAutoPrompt(
+  language: UserLanguage | null | undefined,
+): string {
+  return pick(
+    language,
+    [
+      `【新手引导】`,
+      `你会在这里完成新手引导。`,
+      ``,
+      `请选择身份（仅需一次）：`,
+      `- /onboard role:player`,
+      `- /onboard role:creator`,
+      ``,
+      `可选：设置语言 /language lang:zh|en`,
+      ``,
+      `提示：/help 查看所有指令。`,
+    ].join("\n"),
+    [
+      `[Onboarding]`,
+      `You will complete onboarding here.`,
+      ``,
+      `Pick a role (once):`,
+      `- /onboard role:player`,
+      `- /onboard role:creator`,
+      ``,
+      `Optional: set language /language lang:zh|en`,
+      ``,
+      `Tip: /help to view all commands.`,
     ].join("\n"),
   );
 }

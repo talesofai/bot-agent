@@ -58,6 +58,7 @@
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”
+- Worker：`opencode_run` 遇到 `TimeoutError` 时会尝试从 opencode server 读取已完成输出并继续回复；若仍在运行则发送进度提示并继续等待（避免让用户“重发一次”）
 - Worker：`opencode_run` 非超时失败会自动重试最多 3 次，减少瞬时波动导致的“处理失败”提示
 - Worker：自动扫描 `session:buffer:*`，发现“有待处理消息但无 gate/job”的 orphan buffer 时自动补发 job，避免重启/丢 gate 后世界创建子话题卡死
 - Worker：移除本地 `OPENCODE_RUN_TIMEOUT_MS`（60s）硬超时，仅保留 `OPENCODE_SERVER_TIMEOUT_MS`（默认 10 分钟），避免 Discord 误报“生成超时”但 opencode web 已有输出

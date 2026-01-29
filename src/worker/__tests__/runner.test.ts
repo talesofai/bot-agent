@@ -25,6 +25,9 @@ function createFakeClient(responses: FakePromptResponse[]): {
     async getSession() {
       return { id: "ses_test" };
     },
+    async listMessages() {
+      return [];
+    },
     async prompt(input) {
       calls.push({
         directory: input.directory,

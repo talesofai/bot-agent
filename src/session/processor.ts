@@ -24,7 +24,10 @@ import { runSessionGateLoop } from "./gate-loop";
 import { buildBotAccountId } from "../utils/bot-id";
 import { extractOutputElements } from "./output-elements";
 import { redactSensitiveText } from "../utils/redact";
-import type { OpencodeClient } from "../opencode/server-client";
+import {
+  type OpencodeClient,
+  type OpencodeMessageWithParts,
+} from "../opencode/server-client";
 import { appendInputAuditIfSuspicious } from "../opencode/input-audit";
 import { ensureOpencodeSkills } from "../opencode/skills";
 import { getConfig } from "../config";
@@ -422,6 +425,8 @@ export class SessionProcessor {
       let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
       const maxRunAttempts = 3;
       let runAttempt = 0;
+      const opencodeRunStartedAtMs = Date.now();
+      let sentPendingUpdate = false;
       for (;;) {
         runAttempt += 1;
         try {
@@ -448,6 +453,126 @@ export class SessionProcessor {
           const isAbort = isAbortError(err);
           const status = readHttpStatusCode(err);
           const shouldResetOpencodeSession = status === 404;
+
+          if (isAbort) {
+            const recovered = await batchSpan(
+              "opencode_recover",
+              async () =>
+                this.tryRecoverOpencodeOutputFromServer({
+                  directory: request.directory,
+                  opencodeSessionId: request.sessionId,
+                  minCreatedAtMs: opencodeRunStartedAtMs - 60_000,
+                  logger: runtime.log,
+                }),
+              { attempt: runAttempt },
+            );
+            if (recovered) {
+              result = recovered;
+              break;
+            }
+
+            if (!sentPendingUpdate) {
+              const pendingText = [
+                "我还在整理你的设定内容：",
+                "- 正在生成世界卡与世界规则",
+                "- 正在把原始设定补充进资料库",
+                "",
+                "你不需要重发；也可以继续补充设定，我会一起合并。",
+              ].join("\n");
+              try {
+                await batchSpan(
+                  "send_pending_update",
+                  async () => this.sendResponse(mergedWithTrace, pendingText),
+                  {
+                    outputBytes: Buffer.byteLength(pendingText, "utf8"),
+                    outputPreview: pendingText,
+                    outputPreviewTruncated: false,
+                  },
+                );
+              } catch (sendErr) {
+                runtime.log.error(
+                  { err: sendErr },
+                  "Failed to send pending update",
+                );
+              }
+              sentPendingUpdate = true;
+            }
+
+            const waited = await batchSpan(
+              "opencode_wait",
+              async () =>
+                this.waitForOpencodeOutputFromServer({
+                  directory: request.directory,
+                  opencodeSessionId: request.sessionId,
+                  requestBody: request.body,
+                  minCreatedAtMs: opencodeRunStartedAtMs - 60_000,
+                  deadlineMs:
+                    Date.now() + getConfig().OPENCODE_SERVER_TIMEOUT_MS,
+                  logger: runtime.log,
+                }),
+              { attempt: runAttempt },
+            );
+            if (waited) {
+              result = waited;
+              break;
+            }
+
+            runtime.log.warn(
+              { err, attempt: runAttempt, status },
+              "Opencode run timed out without output",
+            );
+            const responseOutput = [
+              "我这边还在继续整理你的设定（耗时比预期长）。",
+              "你可以继续补充信息；我会接着处理并在这里输出结果。",
+            ].join("\n");
+            try {
+              await batchSpan(
+                "send_response",
+                async () => this.sendResponse(mergedWithTrace, responseOutput),
+                {
+                  outputBytes: Buffer.byteLength(responseOutput, "utf8"),
+                  outputPreview: responseOutput,
+                  outputPreviewTruncated: false,
+                },
+              );
+            } catch (sendErr) {
+              runtime.log.error(
+                { err: sendErr },
+                "Failed to send fallback response",
+              );
+            }
+            feishuLogJson({
+              event: "ai.finish",
+              traceId: runtime.traceId,
+              platform: mergedWithTrace.platform,
+              guildId: mergedWithTrace.guildId,
+              channelId: mergedWithTrace.channelId,
+              messageId: mergedWithTrace.messageId,
+              groupId: sessionInfo.meta.groupId,
+              sessionId: sessionInfo.meta.sessionId,
+              userId: sessionInfo.meta.ownerId,
+              key: sessionInfo.meta.key,
+              worldId: parsedWorld?.worldId,
+              characterId: parsedCharacter?.characterId,
+              outputPreview: responseOutput,
+            });
+            await batchSpan("append_history", async () =>
+              this.appendHistoryFromJob(
+                sessionInfo,
+                mergedWithTrace,
+                historyKey,
+                undefined,
+                undefined,
+                responseOutput,
+                { stderr: "opencode_run_timeout" },
+              ),
+            );
+            await batchSpan("record_activity", async () =>
+              this.recordActivity(sessionInfo, runtime.log),
+            );
+
+            return "continue";
+          }
 
           if (!isAbort && runAttempt < maxRunAttempts) {
             runtime.log.debug(
@@ -509,19 +634,7 @@ export class SessionProcessor {
             runtime.log.error({ err: syncErr }, "Workspace file sync failed");
           }
 
-          if (isAbort) {
-            const nowIso = new Date().toISOString();
-            const updated = await this.sessionRepository.updateMeta({
-              ...sessionInfo.meta,
-              opencodeSessionId: undefined,
-              updatedAt: nowIso,
-            });
-            sessionInfo.meta = updated.meta;
-          }
-
-          const responseOutput = isAbort
-            ? "我这边暂时没拿到输出，你可以直接再发一次。"
-            : "我这边处理失败了，请稍后再试。";
+          const responseOutput = "我这边处理失败了，请稍后再试。";
           try {
             await batchSpan(
               "send_response",
@@ -783,10 +896,15 @@ export class SessionProcessor {
       },
     );
 
+    const upstreamMessageId =
+      telemetry?.message?.messageId && telemetry.message.messageId.trim()
+        ? telemetry.message.messageId.trim()
+        : undefined;
     const request: OpencodeRequestSpec = {
       directory: sessionInfo.workspacePath,
       sessionId: opencodeSessionId,
       body: {
+        messageID: upstreamMessageId,
         system,
         model: resolveModelRef({
           groupOverride: groupConfig.model,
@@ -1411,6 +1529,172 @@ export class SessionProcessor {
     };
   }
 
+  private async tryRecoverOpencodeOutputFromServer(input: {
+    directory: string;
+    opencodeSessionId: string;
+    minCreatedAtMs: number;
+    logger: Logger;
+  }): Promise<Awaited<ReturnType<OpencodeRunner["run"]>> | null> {
+    let messages: OpencodeMessageWithParts[];
+    try {
+      messages = await this.opencodeClient.listMessages({
+        directory: input.directory,
+        sessionId: input.opencodeSessionId,
+      });
+    } catch (err) {
+      input.logger.warn(
+        { err, opencodeSessionId: input.opencodeSessionId },
+        "Failed to list opencode messages",
+      );
+      return null;
+    }
+
+    const recovered = this.extractLatestAssistantTextFromMessages({
+      messages,
+      minCreatedAtMs: input.minCreatedAtMs,
+    });
+    if (!recovered) {
+      return null;
+    }
+
+    const createdAt = new Date().toISOString();
+    return {
+      output: recovered.output,
+      historyEntries: [
+        { role: "assistant", content: recovered.output, createdAt },
+      ],
+    };
+  }
+
+  private async waitForOpencodeOutputFromServer(input: {
+    directory: string;
+    opencodeSessionId: string;
+    requestBody: OpencodeRequestSpec["body"];
+    minCreatedAtMs: number;
+    deadlineMs: number;
+    logger: Logger;
+  }): Promise<Awaited<ReturnType<OpencodeRunner["run"]>> | null> {
+    const continuedAfter = new Set<string>();
+    let backoffMs = 2_000;
+
+    while (Date.now() < input.deadlineMs) {
+      let messages: OpencodeMessageWithParts[];
+      try {
+        messages = await this.opencodeClient.listMessages({
+          directory: input.directory,
+          sessionId: input.opencodeSessionId,
+        });
+      } catch (err) {
+        input.logger.warn(
+          { err, opencodeSessionId: input.opencodeSessionId },
+          "Failed to list opencode messages during wait loop",
+        );
+        await sleep(backoffMs);
+        backoffMs = Math.min(10_000, Math.floor(backoffMs * 1.5));
+        continue;
+      }
+
+      const recovered = this.extractLatestAssistantTextFromMessages({
+        messages,
+        minCreatedAtMs: input.minCreatedAtMs,
+      });
+      if (recovered) {
+        const createdAt = new Date().toISOString();
+        return {
+          output: recovered.output,
+          historyEntries: [
+            { role: "assistant", content: recovered.output, createdAt },
+          ],
+        };
+      }
+
+      const latestAssistant = this.findLatestAssistantMessage({
+        messages,
+        minCreatedAtMs: input.minCreatedAtMs,
+      });
+      if (
+        latestAssistant &&
+        shouldContinueAfterToolCalls(latestAssistant) &&
+        !continuedAfter.has(latestAssistant.info.id)
+      ) {
+        continuedAfter.add(latestAssistant.info.id);
+        try {
+          await this.opencodeClient.prompt({
+            directory: input.directory,
+            sessionId: input.opencodeSessionId,
+            body: {
+              ...input.requestBody,
+              parts: [{ type: "text", text: " " }],
+            },
+          });
+        } catch (err) {
+          if (!isAbortError(err)) {
+            input.logger.warn(
+              { err, opencodeSessionId: input.opencodeSessionId },
+              "Opencode continue request failed",
+            );
+          }
+        }
+      }
+
+      await sleep(backoffMs);
+      backoffMs = Math.min(10_000, Math.floor(backoffMs * 1.5));
+    }
+
+    return null;
+  }
+
+  private extractLatestAssistantTextFromMessages(input: {
+    messages: OpencodeMessageWithParts[];
+    minCreatedAtMs: number;
+  }): { output: string } | null {
+    for (let idx = input.messages.length - 1; idx >= 0; idx -= 1) {
+      const message = input.messages[idx];
+      if (!message || !message.info) {
+        continue;
+      }
+      if (message.info.role !== "assistant") {
+        continue;
+      }
+      const created =
+        typeof message.info.time?.created === "number"
+          ? message.info.time.created
+          : null;
+      if (created === null || created < input.minCreatedAtMs) {
+        continue;
+      }
+      const output = extractTextParts(message.parts);
+      if (output?.trim()) {
+        return { output };
+      }
+    }
+    return null;
+  }
+
+  private findLatestAssistantMessage(input: {
+    messages: OpencodeMessageWithParts[];
+    minCreatedAtMs: number;
+  }): OpencodeMessageWithParts | null {
+    for (let idx = input.messages.length - 1; idx >= 0; idx -= 1) {
+      const message = input.messages[idx];
+      if (!message || !message.info) {
+        continue;
+      }
+      if (message.info.role !== "assistant") {
+        continue;
+      }
+      const created =
+        typeof message.info.time?.created === "number"
+          ? message.info.time.created
+          : null;
+      if (created === null || created < input.minCreatedAtMs) {
+        continue;
+      }
+      return message;
+    }
+    return null;
+  }
+
   private logOpencodeToolFailuresToFeishu(input: {
     toolCalls?: OpencodeToolCall[];
     traceId: string;
@@ -1654,6 +1938,54 @@ function isAbortError(err: unknown): boolean {
     return true;
   }
   return false;
+}
+
+function shouldContinueAfterToolCalls(
+  message: OpencodeMessageWithParts,
+): boolean {
+  const parts = message.parts ?? [];
+  const hasQuestion = parts.some((part) => {
+    if (part.type !== "tool") {
+      return false;
+    }
+    const tool = typeof part["tool"] === "string" ? part["tool"].trim() : "";
+    return tool === "question";
+  });
+  if (hasQuestion) {
+    return false;
+  }
+
+  const hasToolCallsFinish = parts.some((part) => {
+    if (part.type !== "step-finish") {
+      return false;
+    }
+    const reason =
+      typeof part["reason"] === "string" ? part["reason"].trim() : "";
+    return reason === "tool-calls";
+  });
+  if (hasToolCallsFinish) {
+    return true;
+  }
+
+  return parts.some((part) => part.type === "tool");
+}
+
+function extractTextParts(
+  parts: OpencodeMessageWithParts["parts"] | undefined,
+): string | null {
+  const text = (parts ?? [])
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => String(part.text))
+    .join("");
+  const trimmed = text.trim();
+  return trimmed ? trimmed : null;
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return;
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {

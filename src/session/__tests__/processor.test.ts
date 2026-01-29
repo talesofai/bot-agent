@@ -59,6 +59,36 @@ class FakeOpencodeClient implements OpencodeClient {
     return this.sessions.has(input.sessionId) ? { id: input.sessionId } : null;
   }
 
+  async listMessages(input: {
+    directory: string;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<
+    Array<{
+      info: {
+        id: string;
+        sessionID: string;
+        role: "assistant" | "user" | "system";
+        time?: { created?: number; updated?: number };
+      };
+      parts: Array<{ type: string; text?: string }>;
+    }>
+  > {
+    void input.directory;
+    void input.signal;
+    return [
+      {
+        info: {
+          id: "msg_test",
+          sessionID: input.sessionId,
+          role: "assistant",
+          time: { created: Date.now() },
+        },
+        parts: [{ type: "text", text: "ok" }],
+      },
+    ];
+  }
+
   async prompt(input: {
     directory: string;
     sessionId: string;
@@ -905,6 +935,18 @@ describe("SessionProcessor", () => {
       async getSession(): Promise<{ id: string } | null> {
         return null;
       }
+      async listMessages(_input: {
+        directory: string;
+        sessionId: string;
+        signal?: AbortSignal;
+      }): Promise<
+        Array<{
+          info: { id: string; sessionID: string; role: "assistant" };
+          parts: Array<{ type: string; text?: string }>;
+        }>
+      > {
+        return [];
+      }
       async prompt(): Promise<{
         info: { id: string; sessionID: string; role: "assistant" };
         parts: Array<{ type: string; text?: string }>;
@@ -1020,6 +1062,93 @@ describe("SessionProcessor", () => {
     }
 
     expect(runner.runs).toBe(3);
+    expect(adapter.messages).toEqual(["ok"]);
+  });
+
+  test("recovers opencode output after timeout via listMessages", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const opencodeClient = new FakeOpencodeClient();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const message: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "123",
+      userId: jobData.userId,
+      guildId: jobData.groupId,
+      channelId: jobData.groupId,
+      messageId: "msg-1",
+      content: "hello",
+      elements: [{ type: "text", text: "hello" }],
+      timestamp: Date.now(),
+      extras: {},
+    };
+    const acquired = await bufferStore.appendAndRequestJob(
+      bufferKey,
+      message,
+      jobData.gateToken,
+    );
+    expect(acquired).toBe(jobData.gateToken);
+
+    class TimeoutRunner implements OpencodeRunner {
+      runs = 0;
+      async run(): Promise<OpencodeRunResult> {
+        this.runs += 1;
+        const err = new Error("The operation timed out") as Error & {
+          name: string;
+        };
+        err.name = "TimeoutError";
+        throw err;
+      }
+    }
+    const runner = new TimeoutRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+    });
+
+    try {
+      await processor.process({ id: 0, data: jobData }, jobData);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+
+    expect(runner.runs).toBe(1);
     expect(adapter.messages).toEqual(["ok"]);
   });
 

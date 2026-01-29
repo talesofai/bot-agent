@@ -35,6 +35,22 @@ export type OpencodeMessagePart = {
   [key: string]: unknown;
 };
 
+export type OpencodeMessageWithParts = {
+  info: {
+    id: string;
+    sessionID: string;
+    role: "assistant" | "user" | "system";
+    time?: {
+      created?: number;
+      updated?: number;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  parts: OpencodeMessagePart[];
+  [key: string]: unknown;
+};
+
 export type OpencodeAssistantMessageWithParts = {
   info: {
     id: string;
@@ -64,6 +80,11 @@ export interface OpencodeClient {
     sessionId: string;
     signal?: AbortSignal;
   }): Promise<OpencodeSessionInfo | null>;
+  listMessages(input: {
+    directory: string;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<OpencodeMessageWithParts[]>;
   prompt(input: {
     directory: string;
     sessionId: string;
@@ -128,6 +149,19 @@ export class OpencodeServerClient implements OpencodeClient {
       }
       throw err;
     }
+  }
+
+  async listMessages(input: {
+    directory: string;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<OpencodeMessageWithParts[]> {
+    return await this.requestJson<OpencodeMessageWithParts[]>({
+      method: "GET",
+      path: `/session/${encodeURIComponent(input.sessionId)}/message`,
+      directory: input.directory,
+      signal: input.signal,
+    });
   }
 
   async prompt(input: {

@@ -31,6 +31,9 @@ const opencodeClient: OpencodeClient = {
   async getSession(input) {
     return { id: input.sessionId };
   },
+  async listMessages() {
+    return [];
+  },
   async prompt(input) {
     return {
       info: { id: "msg_test", sessionID: input.sessionId, role: "assistant" },

@@ -1,6 +1,7 @@
 import type { HistoryEntry, SessionInfo } from "../types/session";
 import type { SessionJob } from "../queue";
 import type { OpencodeRunResult } from "../opencode/output";
+import type { OpencodeToolCall } from "../opencode/output";
 import type {
   OpencodeClient,
   OpencodePromptBody,
@@ -44,6 +45,7 @@ export class OpencodeServerRunner implements OpencodeRunner {
     const maxSteps = 6;
 
     let requestBody: OpencodePromptBody = input.request.body;
+    const toolCalls: OpencodeToolCall[] = [];
     for (let step = 0; step < maxSteps; step += 1) {
       const response = await this.client.prompt({
         directory: input.request.directory,
@@ -52,6 +54,8 @@ export class OpencodeServerRunner implements OpencodeRunner {
         signal: input.signal,
       });
 
+      toolCalls.push(...extractToolCalls(response.parts ?? []));
+
       const output = extractAssistantText(response) ?? undefined;
       if (output?.trim()) {
         return {
@@ -59,6 +63,7 @@ export class OpencodeServerRunner implements OpencodeRunner {
           historyEntries: [
             { role: "assistant", content: output, createdAt },
           ] satisfies HistoryEntry[],
+          toolCalls: toolCalls.length ? toolCalls : undefined,
         };
       }
 
@@ -70,11 +75,12 @@ export class OpencodeServerRunner implements OpencodeRunner {
             { role: "assistant", content: questionText, createdAt },
           ] satisfies HistoryEntry[],
           resetOpencodeSession: true,
+          toolCalls: toolCalls.length ? toolCalls : undefined,
         };
       }
 
       if (!shouldContinueAfterToolCalls(response)) {
-        return {};
+        return { toolCalls: toolCalls.length ? toolCalls : undefined };
       }
 
       // Opencode server may stop after tool-calls and expects the client to
@@ -85,7 +91,7 @@ export class OpencodeServerRunner implements OpencodeRunner {
       };
     }
 
-    return {};
+    return { toolCalls: toolCalls.length ? toolCalls : undefined };
   }
 }
 
@@ -212,4 +218,102 @@ function findToolPart(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function extractToolCalls(parts: OpencodeMessagePart[]): OpencodeToolCall[] {
+  const calls: OpencodeToolCall[] = [];
+  for (const part of parts) {
+    if (part.type !== "tool") {
+      continue;
+    }
+    const tool = typeof part.tool === "string" ? part.tool.trim() : "";
+    if (!tool) {
+      continue;
+    }
+    const state = isRecord(part.state) ? part.state : null;
+    const status =
+      state && typeof state.status === "string" ? state.status : "";
+    const input = state && isRecord(state.input) ? state.input : null;
+    const urls = input ? extractUrls(input) : [];
+    const errorMessage = state ? extractToolErrorMessage(state) : null;
+
+    calls.push({
+      tool,
+      status: status || undefined,
+      urls: urls.length ? urls : undefined,
+      errorMessage: errorMessage ?? undefined,
+    });
+  }
+  return calls;
+}
+
+function extractToolErrorMessage(
+  state: Record<string, unknown>,
+): string | null {
+  const error = isRecord(state.error) ? state.error : null;
+  const errorMessage =
+    (error && typeof error.message === "string" && error.message.trim()) || "";
+  if (errorMessage) {
+    return errorMessage.trim();
+  }
+
+  const output = state.output;
+  if (typeof output === "string" && output.trim()) {
+    return output.trim();
+  }
+  if (isRecord(output)) {
+    const message =
+      (typeof output.message === "string" && output.message.trim()) ||
+      (typeof output.error === "string" && output.error.trim()) ||
+      "";
+    if (message) {
+      return message.trim();
+    }
+  }
+  return null;
+}
+
+function extractUrls(value: unknown): string[] {
+  const urls = new Set<string>();
+  const visited = new Set<unknown>();
+
+  const walk = (node: unknown, depth: number): void => {
+    if (depth <= 0 || node === null || node === undefined) {
+      return;
+    }
+    if (typeof node === "string") {
+      const trimmed = node.trim();
+      if (trimmed.match(/^https?:\/\//i)) {
+        urls.add(trimmed);
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        walk(item, depth - 1);
+      }
+      return;
+    }
+    if (!isRecord(node)) {
+      return;
+    }
+    if (visited.has(node)) {
+      return;
+    }
+    visited.add(node);
+
+    for (const [key, child] of Object.entries(node)) {
+      if (
+        typeof child === "string" &&
+        key.match(/url|href/i) &&
+        child.trim().match(/^https?:\/\//i)
+      ) {
+        urls.add(child.trim());
+      }
+      walk(child, depth - 1);
+    }
+  };
+
+  walk(value, 4);
+  return [...urls];
 }

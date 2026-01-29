@@ -69,6 +69,7 @@
 - Discord：当世界 Category 被手动删除/缺失时，世界子空间维护不会强依赖 `parent_id`；避免触发 `CHANNEL_PARENT_INVALID`，并确保世界识别/加入流程可继续推进
 - Discord：`/world create` 私密话题会先发送“世界创建规则”，再进入多轮补全，降低新用户上手成本
 - Logging：飞书 `warn/error` 日志补齐 `guildId/worldId/characterId` 字段，便于快速定位是哪个世界/会话出问题
+- Logging：当 `webfetch` 抓取失败（403/404/526 等）时，飞书会记录失败 URL 与状态码，便于定位“为什么查资料失败”
 - Discord：世界子空间迁移仅在启用 Slash Commands 的进程执行，避免 adapter/worker 双进程重复迁移造成重复告警/重复创建
 
 ## [0.0.30] - 2026-01-24

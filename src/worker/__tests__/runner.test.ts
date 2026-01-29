@@ -148,6 +148,70 @@ describe("OpencodeServerRunner", () => {
     expect(result.historyEntries).toBeUndefined();
   });
 
+  test("captures webfetch URL and error message from tool part", async () => {
+    const { client } = createFakeClient([
+      {
+        parts: [
+          {
+            type: "tool",
+            tool: "webfetch",
+            state: {
+              status: "failed",
+              input: { request: { url: "https://example.com/a" } },
+              error: { message: "Request failed with status code: 403" },
+            },
+          },
+          { type: "text", text: "ok" },
+        ],
+      },
+    ]);
+    const runner = new OpencodeServerRunner(client);
+    const result = await runner.run({
+      job: {
+        id: "job",
+        data: {
+          botId: "bot",
+          groupId: "group",
+          sessionId: "session",
+          userId: "user",
+          key: 0,
+          gateToken: "gate",
+        },
+      },
+      session: {
+        meta: {
+          sessionId: "session",
+          groupId: "group",
+          botId: "bot",
+          ownerId: "user",
+          key: 0,
+          status: "running",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        groupPath: "/tmp",
+        workspacePath: "/tmp",
+      },
+      history: [],
+      request: {
+        directory: "/tmp/workspace",
+        sessionId: "ses_test",
+        body: {
+          parts: [{ type: "text", text: "user" }],
+        },
+      },
+    });
+
+    expect(result.output).toBe("ok");
+    expect(result.toolCalls).toBeTruthy();
+    expect(result.toolCalls?.[0]).toMatchObject({
+      tool: "webfetch",
+      status: "failed",
+      urls: ["https://example.com/a"],
+      errorMessage: "Request failed with status code: 403",
+    });
+  });
+
   test("continues after tool-calls until text is available", async () => {
     const { client, calls } = createFakeClient([
       {

@@ -5,12 +5,20 @@ export interface OpencodeStreamEvent {
   text: string;
 }
 
+export type OpencodeToolCall = {
+  tool: string;
+  status?: string;
+  urls?: string[];
+  errorMessage?: string;
+};
+
 export interface OpencodeRunResult {
   output?: string;
   historyEntries?: HistoryEntry[];
   streamEvents?: OpencodeStreamEvent[];
   rawStdout?: string;
   rawStderr?: string;
+  toolCalls?: OpencodeToolCall[];
   /**
    * Hint from runner that the current opencode session is stuck (e.g. waiting for
    * an interactive UI tool) and should be reset before the next turn.

@@ -16,6 +16,7 @@ import {
 } from "../opencode/prompt";
 import { buildSystemPrompt } from "../opencode/default-system-prompt";
 import type { OpencodeStreamEvent } from "../opencode/output";
+import type { OpencodeToolCall } from "../opencode/output";
 import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
@@ -540,6 +541,15 @@ export class SessionProcessor {
 
       const output = resolveOutput(result.output);
       const auditedOutput = output ? redactSensitiveText(output) : undefined;
+
+      this.logOpencodeToolFailuresToFeishu({
+        toolCalls: result.toolCalls,
+        traceId: runtime.traceId,
+        session: mergedWithTrace,
+        sessionInfo,
+        worldId: parsedWorld?.worldId,
+        characterId: parsedCharacter?.characterId,
+      });
 
       if (result.resetOpencodeSession) {
         const nowIso = new Date().toISOString();
@@ -1346,6 +1356,58 @@ export class SessionProcessor {
       clearInterval(timer);
     };
   }
+
+  private logOpencodeToolFailuresToFeishu(input: {
+    toolCalls?: OpencodeToolCall[];
+    traceId: string;
+    session: SessionEvent;
+    sessionInfo: SessionInfo;
+    worldId?: number;
+    characterId?: number;
+  }): void {
+    const toolCalls = input.toolCalls ?? [];
+    if (toolCalls.length === 0) {
+      return;
+    }
+
+    const failures = toolCalls.filter((call) => {
+      if (call.tool !== "webfetch") {
+        return false;
+      }
+      if (call.status?.toLowerCase() === "failed") {
+        return true;
+      }
+      return Boolean(call.errorMessage?.trim());
+    });
+    if (failures.length === 0) {
+      return;
+    }
+
+    for (const failure of failures) {
+      const urls = failure.urls?.filter(Boolean) ?? [];
+      const urlText = urls.length ? urls.join(", ") : "(unknown)";
+      const statusCode = parseWebfetchStatusCode(failure.errorMessage);
+      const statusText = statusCode ? ` status:${statusCode}` : "";
+      const errText = failure.errorMessage?.trim()
+        ? ` err:${truncateLogPreview(failure.errorMessage.trim(), 280)}`
+        : "";
+
+      feishuLogJson({
+        event: "log.warn",
+        traceId: input.traceId,
+        platform: input.session.platform,
+        guildId: input.session.guildId,
+        channelId: input.session.channelId,
+        messageId: input.session.messageId,
+        groupId: input.sessionInfo.meta.groupId,
+        sessionId: input.sessionInfo.meta.sessionId,
+        userId: input.sessionInfo.meta.ownerId,
+        worldId: input.worldId,
+        characterId: input.characterId,
+        msg: `webfetch失败${statusText} url:${truncateLogPreview(urlText, 500)}${errText}`,
+      });
+    }
+  }
 }
 
 function resolveUserCreatedAt(
@@ -1385,6 +1447,26 @@ function buildLanguageDirective(language: UserLanguage | null): string {
     ].join("\n");
   }
   return "";
+}
+
+function parseWebfetchStatusCode(message: string | undefined): number | null {
+  if (!message) {
+    return null;
+  }
+  const match = message.match(/status code:\s*(\d{3})/i);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1]);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function truncateLogPreview(text: string, maxChars: number): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxChars)}…`;
 }
 
 function truncateTextByBytes(

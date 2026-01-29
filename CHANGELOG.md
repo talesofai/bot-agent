@@ -11,6 +11,8 @@
 
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
+- Config：新增 `OPENCODE_SERVER_WAIT_TIMEOUT_MS`（超时恢复阶段的等待上限）与 `OPENCODE_TOOL_STUCK_TIMEOUT_MS`（工具调用卡住判定阈值）
+- Opencode：server client 新增 `deleteSession`（用于清理卡死会话）
 - Discord：`/world create` 创建世界草稿并创建私密话题（Thread，位于 `world-workshop-{userId}`），支持上传 txt/md/docx 设定原文写入 `world/source.md`；构建会话 `groupId=world_{id}_build`
 - World：世界构建会话会把创作者多轮文本与附件持续追加写入 `world/source.md`（避免只依赖对话历史或覆盖丢失）
 - World：世界构建模式支持创作者要求“上网搜索/查公开资料”，允许使用 bash/curl 获取可访问公开资料，并要求把来源链接写入 `world/source.md`/`canon/*.md`
@@ -60,6 +62,7 @@
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”
 - Worker：`opencode_run` 遇到 `TimeoutError` 时会尝试从 opencode server 读取已完成输出并继续回复；若仍在运行则发送进度提示并继续等待（避免让用户“重发一次”）
+- Worker：当 opencode tool 长时间处于 `running`（疑似卡死）时自动清理 opencode session 并重建继续跑，避免世界构建会话“跑很久不出结果”
 - Worker：`opencode_run` 非超时失败会自动重试最多 3 次，减少瞬时波动导致的“处理失败”提示
 - Worker：自动扫描 `session:buffer:*`，发现“有待处理消息但无 gate/job”的 orphan buffer 时自动补发 job，避免重启/丢 gate 后世界创建子话题卡死
 - Worker：移除本地 `OPENCODE_RUN_TIMEOUT_MS`（60s）硬超时，仅保留 `OPENCODE_SERVER_TIMEOUT_MS`（默认 10 分钟），避免 Discord 误报“生成超时”但 opencode web 已有输出

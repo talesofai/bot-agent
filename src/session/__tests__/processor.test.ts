@@ -49,6 +49,16 @@ class FakeOpencodeClient implements OpencodeClient {
     return { id };
   }
 
+  async deleteSession(input: {
+    directory: string;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<boolean> {
+    void input.directory;
+    void input.signal;
+    return this.sessions.delete(input.sessionId);
+  }
+
   async getSession(input: {
     directory: string;
     sessionId: string;
@@ -932,6 +942,9 @@ describe("SessionProcessor", () => {
       async createSession(): Promise<{ id: string }> {
         throw new Error("The operation timed out");
       }
+      async deleteSession(): Promise<boolean> {
+        return false;
+      }
       async getSession(): Promise<{ id: string } | null> {
         return null;
       }
@@ -1234,8 +1247,8 @@ describe("SessionProcessor", () => {
     expect(runner.runs).toBe(3);
     expect(adapter.messages).toEqual([
       [
-        "我这次没能输出结果。",
-        "你不需要重发；可以继续补充，我会接着处理。",
+        "我这边刚才没能推进整理进度。",
+        "你可以继续补充设定，我会基于最新内容继续整理并更新结果。",
       ].join("\n"),
     ]);
   });

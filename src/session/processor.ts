@@ -83,6 +83,19 @@ type SessionProcessorRuntime = {
   gateToken: string;
 };
 
+type StaleOpencodeToolCall = {
+  tool: string;
+  messageId: string;
+  startedAtMs: number;
+  ageMs: number;
+  input?: unknown;
+};
+
+type WaitForOpencodeOutputResult =
+  | { kind: "output"; result: Awaited<ReturnType<OpencodeRunner["run"]>> }
+  | { kind: "stale_tool"; stale: StaleOpencodeToolCall }
+  | { kind: "timeout" };
+
 export class SessionProcessor {
   private logger: Logger;
   private adapter: PlatformAdapter;
@@ -508,14 +521,61 @@ export class SessionProcessor {
                   requestBody: request.body,
                   minCreatedAtMs: opencodeRunStartedAtMs - 60_000,
                   deadlineMs:
-                    Date.now() + getConfig().OPENCODE_SERVER_TIMEOUT_MS,
+                    Date.now() + getConfig().OPENCODE_SERVER_WAIT_TIMEOUT_MS,
                   logger: runtime.log,
                 }),
               { attempt: runAttempt },
             );
-            if (waited) {
-              result = waited;
+            if (waited.kind === "output") {
+              result = waited.result;
               break;
+            }
+            if (waited.kind === "stale_tool") {
+              runtime.log.warn(
+                {
+                  tool: waited.stale.tool,
+                  toolAgeMs: waited.stale.ageMs,
+                  toolStartedAtMs: waited.stale.startedAtMs,
+                  toolMessageId: waited.stale.messageId,
+                  toolInput: waited.stale.input,
+                },
+                "Opencode session appears stuck; resetting session",
+              );
+
+              try {
+                await this.opencodeClient.deleteSession({
+                  directory: request.directory,
+                  sessionId: request.sessionId,
+                });
+              } catch (deleteErr) {
+                runtime.log.warn(
+                  { err: deleteErr, opencodeSessionId: request.sessionId },
+                  "Failed to delete stuck opencode session",
+                );
+              }
+
+              const nowIso = new Date().toISOString();
+              const cleared = await this.sessionRepository.updateMeta({
+                ...sessionInfo.meta,
+                opencodeSessionId: undefined,
+                updatedAt: nowIso,
+              });
+              sessionInfo.meta = cleared.meta;
+              const newId = await this.ensureOpencodeSessionId(
+                sessionInfo,
+                buildOpencodeSessionTitle(sessionInfo),
+                {
+                  logger: runtime.log,
+                  traceId: runtime.traceId,
+                  jobId: runtime.jobId,
+                  message: runtime.spanMessage,
+                },
+              );
+              request.sessionId = newId;
+
+              if (runAttempt < maxRunAttempts) {
+                continue;
+              }
             }
 
             try {
@@ -663,8 +723,8 @@ export class SessionProcessor {
           }
 
           const responseOutput = [
-            "我这次没能输出结果。",
-            "你不需要重发；可以继续补充，我会接着处理。",
+            "我这边刚才没能推进整理进度。",
+            "你可以继续补充设定，我会基于最新内容继续整理并更新结果。",
           ].join("\n");
           try {
             await batchSpan(
@@ -1609,9 +1669,10 @@ export class SessionProcessor {
     minCreatedAtMs: number;
     deadlineMs: number;
     logger: Logger;
-  }): Promise<Awaited<ReturnType<OpencodeRunner["run"]>> | null> {
+  }): Promise<WaitForOpencodeOutputResult> {
     const continuedAfter = new Set<string>();
     let backoffMs = 2_000;
+    const config = getConfig();
 
     while (Date.now() < input.deadlineMs) {
       let messages: OpencodeMessageWithParts[];
@@ -1630,6 +1691,16 @@ export class SessionProcessor {
         continue;
       }
 
+      const stale = this.findStaleOpencodeToolCall({
+        messages,
+        minCreatedAtMs: input.minCreatedAtMs,
+        nowMs: Date.now(),
+        staleAfterMs: config.OPENCODE_TOOL_STUCK_TIMEOUT_MS,
+      });
+      if (stale) {
+        return { kind: "stale_tool", stale };
+      }
+
       const recovered = this.extractLatestAssistantTextFromMessages({
         messages,
         minCreatedAtMs: input.minCreatedAtMs,
@@ -1637,10 +1708,13 @@ export class SessionProcessor {
       if (recovered) {
         const createdAt = new Date().toISOString();
         return {
-          output: recovered.output,
-          historyEntries: [
-            { role: "assistant", content: recovered.output, createdAt },
-          ],
+          kind: "output",
+          result: {
+            output: recovered.output,
+            historyEntries: [
+              { role: "assistant", content: recovered.output, createdAt },
+            ],
+          },
         };
       }
 
@@ -1677,7 +1751,73 @@ export class SessionProcessor {
       backoffMs = Math.min(10_000, Math.floor(backoffMs * 1.5));
     }
 
-    return null;
+    return { kind: "timeout" };
+  }
+
+  private findStaleOpencodeToolCall(input: {
+    messages: OpencodeMessageWithParts[];
+    minCreatedAtMs: number;
+    nowMs: number;
+    staleAfterMs: number;
+  }): StaleOpencodeToolCall | null {
+    let best: StaleOpencodeToolCall | null = null;
+    for (const message of input.messages) {
+      if (!message || !message.info) {
+        continue;
+      }
+      if (message.info.role !== "assistant") {
+        continue;
+      }
+      const created =
+        typeof message.info.time?.created === "number"
+          ? message.info.time.created
+          : null;
+      if (created === null || created < input.minCreatedAtMs) {
+        continue;
+      }
+      const parts = message.parts ?? [];
+      for (const part of parts) {
+        if (part.type !== "tool") {
+          continue;
+        }
+        const tool =
+          typeof part["tool"] === "string" ? part["tool"].trim() : "";
+        if (!tool) {
+          continue;
+        }
+        const state = isRecord(part["state"]) ? part["state"] : null;
+        if (!state) {
+          continue;
+        }
+        const status =
+          typeof state["status"] === "string" ? state["status"].trim() : "";
+        if (status !== "running") {
+          continue;
+        }
+        const time = isRecord(state["time"]) ? state["time"] : null;
+        const startedAtMs =
+          time && typeof time["start"] === "number" ? time["start"] : null;
+        if (startedAtMs === null) {
+          continue;
+        }
+        const ageMs = input.nowMs - startedAtMs;
+        if (!Number.isFinite(ageMs) || ageMs < input.staleAfterMs) {
+          continue;
+        }
+
+        const candidate: StaleOpencodeToolCall = {
+          tool,
+          messageId: message.info.id,
+          startedAtMs,
+          ageMs,
+          input: state["input"],
+        };
+        if (!best || candidate.startedAtMs < best.startedAtMs) {
+          best = candidate;
+        }
+      }
+    }
+    return best;
   }
 
   private extractLatestAssistantTextFromMessages(input: {
@@ -1974,6 +2114,10 @@ function isAbortError(err: unknown): boolean {
     return true;
   }
   return false;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function shouldContinueAfterToolCalls(

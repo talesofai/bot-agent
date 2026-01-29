@@ -22,6 +22,9 @@ function createFakeClient(responses: FakePromptResponse[]): {
     async createSession() {
       return { id: "ses_test" };
     },
+    async deleteSession() {
+      return true;
+    },
     async getSession() {
       return { id: "ses_test" };
     },

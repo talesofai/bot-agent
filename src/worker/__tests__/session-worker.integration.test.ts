@@ -28,6 +28,9 @@ const opencodeClient: OpencodeClient = {
   async createSession() {
     return { id: "ses_test" };
   },
+  async deleteSession() {
+    return true;
+  },
   async getSession(input) {
     return { id: input.sessionId };
   },

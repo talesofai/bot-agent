@@ -75,6 +75,11 @@ export interface OpencodeClient {
     parentID?: string;
     signal?: AbortSignal;
   }): Promise<OpencodeSessionInfo>;
+  deleteSession(input: {
+    directory: string;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<boolean>;
   getSession(input: {
     directory: string;
     sessionId: string;
@@ -129,6 +134,27 @@ export class OpencodeServerClient implements OpencodeClient {
       body,
       signal: input.signal,
     });
+  }
+
+  async deleteSession(input: {
+    directory: string;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<boolean> {
+    try {
+      await this.requestJson({
+        method: "DELETE",
+        path: `/session/${encodeURIComponent(input.sessionId)}`,
+        directory: input.directory,
+        signal: input.signal,
+      });
+      return true;
+    } catch (err) {
+      if (isHttpError(err) && err.status === 404) {
+        return false;
+      }
+      throw err;
+    }
   }
 
   async getSession(input: {

@@ -17,6 +17,16 @@ const envSchema = z.object({
     .int()
     .min(1_000)
     .default(600_000),
+  OPENCODE_SERVER_WAIT_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .default(1_800_000),
+  OPENCODE_TOOL_STUCK_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .default(300_000),
   /** SSRF protection: max redirects allowed for any URL fetch. */
   SSRF_MAX_REDIRECTS: z.coerce.number().int().min(0).max(10).default(3),
   /** SSRF protection: allowlist is implemented but disabled by default. */

@@ -71,7 +71,7 @@ spec:
                   key: OPENCODE_SERVER_PASSWORD
                   optional: true
             - name: SESSION_WORKER_CONCURRENCY
-              value: "4"
+              value: "50"
             - name: FEISHU_LOG_ENABLED
               value: "true"
             - name: FEISHU_WEBHOOK_URL

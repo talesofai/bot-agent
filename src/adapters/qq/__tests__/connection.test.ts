@@ -161,9 +161,13 @@ describe("MilkyConnection", () => {
 
     sockets[0]?.close();
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const deadline = Date.now() + 200;
+    while (connectionCount < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
 
     expect(connectionCount).toBe(2);
+    await connection.disconnect();
   });
 
   test("should handle ArrayBuffer payloads", async () => {

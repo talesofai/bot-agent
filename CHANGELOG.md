@@ -22,7 +22,7 @@
 - Discord：新增角色系统（`/character help|create|open|view|use|act|publish|unpublish|list|search`），角色卡全局（不绑定世界），visibility（`public|private`，默认 `private`）
 - Discord：`/character create` 创建角色草稿并创建私密话题（Thread，位于 `character-workshop-{userId}`），构建会话 `groupId=character_{id}_build` 并触发 kickoff 以多轮补全角色卡
 - World：构建会话（world/character/world-character-build）强制入队；游玩会话（`groupId=world_{worldId}`）默认仅在 `@bot` 时入队，避免刷屏
-- 持久化：Redis 维护自增 ID / meta / 路由；计数（访客数/角色数）落盘到 `/data/worlds/{worldId}/stats.json`（并用 members/world-characters 去重）
+- 持久化：Redis 维护自增 ID / meta / 路由；计数（访客数/角色数）以 members/world-characters 为真值重算，并落盘到 `/data/worlds/{worldId}/stats.json`
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
 - Logging：飞书 webhook 仅推送 `warn/error` 与消息收发（`io.recv/io.send` + SlashCommand 输入/输出），便于在飞书追踪对话与故障而不刷噪音
 - Logging：新增 `ai.start/ai.finish` 事件（含输出预览），用于定位“子话题不推进/看起来没反应”
@@ -42,10 +42,10 @@
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件
 - Platform：默认不启用 QQ（`LLBOT_PLATFORM` 默认 `discord`；仅在 `LLBOT_PLATFORM=qq` 时启动 QQ adapter pool）
 - Config：新增 `DISCORD_HOME_GUILD_ID`（可选：锁定世界系统只允许在单一 homeGuild 创建世界）
-- Config：新增 `SESSION_WORKER_CONCURRENCY`（每个 worker 实例并行处理会话数；同用户会话仍串行）
+- Config：新增 `SESSION_WORKER_CONCURRENCY`（每个 worker 实例并行处理会话数；默认 50，最大 1000；同用户会话仍串行）
 - K8s：`llbot`（QQ）StatefulSet 默认 `replicas=0`（默认不启用，需要时再手动 scale）
 - K8s：`opencode-bot-agent` adapter/worker 直配 `FEISHU_WEBHOOK_URL`；worker 移除 `DATABASE_URL`（不再依赖 Postgres）
-- K8s：新增 `opencode-bot-agent-worker` HPA（CPU+内存自动扩缩容；scaleDown 保持 10 分钟）
+- K8s：新增 `opencode-bot-agent-worker` HPA（CPU+内存自动扩缩容；阈值 50%；scaleDown 保持 2 分钟）
 
 ### Fixed
 

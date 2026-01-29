@@ -23,7 +23,7 @@ spec:
       selectPolicy: Max
     scaleDown:
       # “空闲后保持一段时间再缩容/退出”
-      stabilizationWindowSeconds: 600
+      stabilizationWindowSeconds: 120
       policies:
         - type: Percent
           value: 50
@@ -35,10 +35,10 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 50
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 75
+          averageUtilization: 50

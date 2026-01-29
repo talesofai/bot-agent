@@ -67,8 +67,8 @@ const envSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(100)
-    .default(4),
+    .max(1000)
+    .default(50),
   API_TOKEN: z.string().optional(),
   FORCE_GROUP_ID: z.string().optional(),
   LLBOT_REGISTRY_PREFIX: z.string().default("llbot:registry"),

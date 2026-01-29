@@ -77,3 +77,51 @@ describe("WorldFileStore source documents", () => {
     }
   });
 });
+
+describe("WorldFileStore stats", () => {
+  test("ensureMember maintains visitorCount under parallel joins", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const store = new WorldFileStore({ logger, dataRoot: tempDir });
+
+    try {
+      await Promise.all([
+        store.ensureMember(1, "u1"),
+        store.ensureMember(1, "u2"),
+        store.ensureMember(1, "u3"),
+      ]);
+
+      const stats = await store.readStats(1);
+      expect(stats.visitorCount).toBe(3);
+
+      await store.ensureMember(1, "u1");
+      const after = await store.readStats(1);
+      expect(after.visitorCount).toBe(3);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("ensureWorldCharacter maintains characterCount under parallel adds", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const store = new WorldFileStore({ logger, dataRoot: tempDir });
+
+    try {
+      await Promise.all([
+        store.ensureWorldCharacter(1, 1),
+        store.ensureWorldCharacter(1, 2),
+        store.ensureWorldCharacter(1, 3),
+      ]);
+
+      const stats = await store.readStats(1);
+      expect(stats.characterCount).toBe(3);
+
+      await store.ensureWorldCharacter(1, 2);
+      const after = await store.readStats(1);
+      expect(after.characterCount).toBe(3);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});

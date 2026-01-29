@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import {
   access,
@@ -300,10 +301,7 @@ export class WorldFileStore {
         }
       }
     }
-    const stats = await this.updateStats(worldId, (current) => ({
-      ...current,
-      visitorCount: current.visitorCount + (added ? 1 : 0),
-    }));
+    const stats = await this.recomputeStats(worldId);
     return { added, stats };
   }
 
@@ -362,10 +360,7 @@ export class WorldFileStore {
         }
       }
     }
-    const stats = await this.updateStats(worldId, (current) => ({
-      ...current,
-      characterCount: current.characterCount + (added ? 1 : 0),
-    }));
+    const stats = await this.recomputeStats(worldId);
     return { added, stats };
   }
 
@@ -517,22 +512,35 @@ export class WorldFileStore {
     await this.atomicWrite(filePath, JSON.stringify(initial, null, 2));
   }
 
-  private async updateStats(
-    worldId: WorldId,
-    update: (current: WorldStatsV1) => WorldStatsV1,
-  ): Promise<WorldStatsV1> {
-    const current = await this.readStats(worldId);
+  private async recomputeStats(worldId: WorldId): Promise<WorldStatsV1> {
+    await this.ensureWorldDir(worldId);
+    const dir = this.worldDir(worldId);
+    const visitorCount = await this.countJsonFiles(path.join(dir, "members"));
+    const characterCount = await this.countJsonFiles(
+      path.join(dir, "world-characters"),
+    );
     const nowIso = new Date().toISOString();
-    const next = update({
-      ...current,
-      updatedAt: nowIso,
+    const next: WorldStatsV1 = {
       version: 1,
-    });
+      visitorCount,
+      characterCount,
+      updatedAt: nowIso,
+    };
     await this.atomicWrite(
       this.statsPath(worldId),
       JSON.stringify(next, null, 2),
     );
     return next;
+  }
+
+  private async countJsonFiles(dir: string): Promise<number> {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    return entries.filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith(".json") &&
+        !entry.name.startsWith("."),
+    ).length;
   }
 
   private worldFilePath(worldId: WorldId, kind: WorldFileKind): string {
@@ -568,9 +576,10 @@ export class WorldFileStore {
 
   private async atomicWrite(filePath: string, content: string): Promise<void> {
     await mkdir(path.dirname(filePath), { recursive: true });
+    const nonce = randomBytes(6).toString("hex");
     const tmpPath = path.join(
       path.dirname(filePath),
-      `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+      `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${nonce}.tmp`,
     );
     await writeFile(
       tmpPath,

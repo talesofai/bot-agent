@@ -11,6 +11,7 @@
 
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
+- Chat：新增掷骰快捷指令，发送 `NdM`（`1<=N<=10`、`1<=M<=100`，如 `2d100`）会直接返回掷骰结果（不走 opencode）
 - Config：新增 `OPENCODE_SERVER_WAIT_TIMEOUT_MS`（超时恢复阶段的等待上限）与 `OPENCODE_TOOL_STUCK_TIMEOUT_MS`（工具调用卡住判定阈值）
 - Config：新增 `OPENCODE_PROGRESS_HEARTBEAT_MS`（长耗时任务的进度心跳回复间隔）
 - Opencode：server client 新增 `deleteSession`（用于清理卡死会话）

@@ -13,6 +13,8 @@ import {
 import { resolveEchoRate } from "./echo-rate";
 import { isSafePathSegment } from "../utils/path";
 import { buildBotFsId, resolveCanonicalBotId } from "../utils/bot-id";
+import type { DiceSpec } from "../utils/dice";
+import { parseDiceSpec } from "../utils/dice";
 
 export type DispatchEnvelope = {
   groupId: string;
@@ -96,6 +98,14 @@ export type DispatchRoutingPlan =
       maxSessions: number;
     }
   | {
+      kind: "dice";
+      key: number;
+      dice: DiceSpec;
+      session: SessionEvent;
+      contentHash: string;
+      contentLength: number;
+    }
+  | {
       kind: "command";
       key: number;
       command: ManagementCommand;
@@ -134,12 +144,9 @@ export function routeDispatch(input: {
     globalEchoRate,
   );
 
-  if (
-    !input.forceEnqueue &&
-    !shouldEnqueue({ message: input.message, rule: triggerRule })
-  ) {
-    return { kind: "passive", echoRate: effectiveEchoRate };
-  }
+  const shouldHandle =
+    Boolean(input.forceEnqueue) ||
+    shouldEnqueue({ message: input.message, rule: triggerRule });
 
   const normalized = normalizeDispatchMessage({
     message: input.message,
@@ -159,6 +166,22 @@ export function routeDispatch(input: {
     .update(normalized.trimmedContent)
     .digest("hex")
     .slice(0, 12);
+
+  const dice = parseDiceSpec(normalized.trimmedContent);
+  if (dice) {
+    return {
+      kind: "dice",
+      key: normalized.key,
+      dice,
+      session: normalized.session,
+      contentHash,
+      contentLength: normalized.trimmedContent.length,
+    };
+  }
+
+  if (!shouldHandle) {
+    return { kind: "passive", echoRate: effectiveEchoRate };
+  }
 
   const command = parseManagementCommand(normalized.trimmedContent);
   if (command) {

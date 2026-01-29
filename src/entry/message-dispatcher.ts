@@ -35,6 +35,7 @@ import {
   type DispatchRoutingPlan,
   type ManagementCommand,
 } from "./dispatch-plan";
+import { formatDiceResult, rollDice } from "../utils/dice";
 
 export { resolveDispatchGroupId } from "./dispatch-plan";
 
@@ -322,6 +323,14 @@ export class MessageDispatcher {
         });
         return;
       }
+      case "dice": {
+        await this.handleDiceRouting({
+          runtime: input.runtime,
+          envelope: input.envelope,
+          routing: input.routing,
+        });
+        return;
+      }
       case "command": {
         await this.handleCommandRouting({
           runtime: input.runtime,
@@ -399,6 +408,66 @@ export class MessageDispatcher {
         "Session key exceeds maxSessions, dropping message",
       );
     }
+  }
+
+  private async handleDiceRouting(input: {
+    runtime: MessageDispatchRuntime;
+    envelope: DispatchEnvelope;
+    routing: Extract<DispatchRoutingPlan, { kind: "dice" }>;
+  }): Promise<void> {
+    if (!hasDiscordInteractionId(input.runtime.message.extras)) {
+      feishuLogJson({
+        event: "io.recv",
+        platform: input.runtime.message.platform,
+        command: "dice",
+        traceId: input.runtime.traceId,
+        guildId: input.runtime.message.guildId ?? undefined,
+        groupId: input.envelope.groupId,
+        channelId: input.runtime.message.channelId,
+        userId: input.runtime.message.userId,
+        messageId: input.runtime.message.messageId,
+        contentPreview: truncateTextByBytes(
+          redactSensitiveText(input.runtime.message.content ?? ""),
+          1200,
+        ),
+        contentLength: input.runtime.message.content?.length ?? 0,
+      });
+    }
+
+    input.runtime.log.info(
+      {
+        id: input.runtime.message.messageId,
+        channelId: input.runtime.message.channelId,
+        userId: input.runtime.message.userId,
+        botId: input.envelope.botId,
+        selfId: input.envelope.rawBotId,
+        dice: input.routing.dice,
+        contentHash: input.routing.contentHash,
+      },
+      "Dice roll requested",
+    );
+
+    const result = rollDice(input.routing.dice);
+    const output = formatDiceResult(input.routing.dice, result);
+
+    await input.runtime.span(
+      "dice_send",
+      {
+        message: {
+          ...input.runtime.baseSpanMessage,
+          botId: input.envelope.botId,
+          groupId: input.envelope.groupId,
+          key: input.routing.key,
+        },
+        attrs: {
+          dice: `${input.routing.dice.count}d${input.routing.dice.sides}`,
+          total: result.total,
+        },
+      },
+      async () => {
+        await this.adapter.sendMessage(input.runtime.message, output);
+      },
+    );
   }
 
   private async handleCommandRouting(input: {

@@ -518,6 +518,33 @@ export class SessionProcessor {
               break;
             }
 
+            try {
+              const syncResult = await batchSpan(
+                "sync_workspace_files",
+                async () => {
+                  try {
+                    const changed =
+                      await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
+                    return { ok: true as const, changed };
+                  } catch (syncErr) {
+                    return { ok: false as const, err: syncErr };
+                  }
+                },
+                { reason: "opencode_timeout" },
+              );
+              if (!syncResult.ok) {
+                runtime.log.error(
+                  { err: syncResult.err },
+                  "Workspace file sync failed after opencode timeout",
+                );
+              }
+            } catch (syncErr) {
+              runtime.log.error(
+                { err: syncErr },
+                "Workspace file sync failed after opencode timeout",
+              );
+            }
+
             runtime.log.warn(
               { err, attempt: runAttempt, status },
               "Opencode run timed out without output",

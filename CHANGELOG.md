@@ -77,6 +77,8 @@
 - Discord：世界子空间迁移仅在启用 Slash Commands 的进程执行，避免 adapter/worker 双进程重复迁移造成重复告警/重复创建
 - UX：兜底回复不再暴露内部状态（如“没拿到输出/请重发/处理失败”），改为进度式体验文案并自动继续尝试获取输出
 - Security：K8s 部署不再硬编码 `FEISHU_WEBHOOK_URL`，改为从 `llbot-secrets` 读取（避免 webhook 泄露）
+- World：`/world publish` 与 `/world list|search` 支持从“表格型世界卡”解析世界名称/一句话简介（兼容 `world-design-card` 输出）
+- Worker：opencode 超时兜底返回前仍会尝试同步 workspace 产物到 `/data/worlds/*`，避免“世界卡已生成但 /world info 仍为空模板”
 
 ## [0.0.30] - 2026-01-24
 

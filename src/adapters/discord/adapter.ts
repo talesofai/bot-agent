@@ -4493,6 +4493,23 @@ function patchCreatorLineInMarkdown(
     const line = lines[i];
     const match = line.match(/^\s*-\s*创建者\s*[:：]\s*(.+)\s*$/);
     if (!match) {
+      const tableMatch = line.match(
+        /^(\s*\|\s*(?:创建者|创作者)\s*\|\s*)([^|]*?)(\s*\|.*)$/,
+      );
+      if (!tableMatch) {
+        continue;
+      }
+      const value = (tableMatch[2] ?? "").trim();
+      if (
+        !value ||
+        value === safeCreatorId ||
+        value === `<@${safeCreatorId}>` ||
+        /^\d+$/.test(value) ||
+        value.includes(safeCreatorId)
+      ) {
+        lines[i] = `${tableMatch[1]}${label}${tableMatch[3]}`;
+        patched = true;
+      }
       continue;
     }
     const value = match[1]?.trim() ?? "";
@@ -5464,8 +5481,13 @@ function extractWorldOneLiner(card: string | null): string | null {
   const raw = (card ?? "").trim();
   if (!raw) return null;
   const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const match = normalized.match(/^-\\s*一句话简介：\\s*(.+)\\s*$/m);
-  const summary = match?.[1]?.trim() ?? "";
+  const bulletMatch = normalized.match(
+    /^\\s*-\\s*一句话简介\\s*[:：]\\s*(.+)\\s*$/m,
+  );
+  const tableMatch = normalized.match(
+    /^\\s*\\|\\s*一句话简介\\s*\\|\\s*([^|\\n]+?)\\s*\\|/m,
+  );
+  const summary = (bulletMatch?.[1] ?? tableMatch?.[1] ?? "").trim();
   if (!summary) return null;
   return summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
 }
@@ -5474,8 +5496,21 @@ function extractWorldNameFromCard(card: string | null): string | null {
   const raw = (card ?? "").trim();
   if (!raw) return null;
   const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const match = normalized.match(/^-\\s*世界名称：\\s*(.+)\\s*$/m);
-  const name = match?.[1]?.trim() ?? "";
+  const bulletMatch = normalized.match(
+    /^\\s*-\\s*世界名称\\s*[:：]\\s*(.+)\\s*$/m,
+  );
+  const tableMatch = normalized.match(
+    /^\\s*\\|\\s*世界名称\\s*\\|\\s*([^|\\n]+?)\\s*\\|/m,
+  );
+  const headingMatch = normalized.match(
+    /^\\s*#\\s*(?:世界卡|世界观设计卡)\\s*[:：]\\s*(.+)\\s*$/m,
+  );
+  const name = (
+    bulletMatch?.[1] ??
+    tableMatch?.[1] ??
+    headingMatch?.[1] ??
+    ""
+  ).trim();
   if (!name) return null;
   return name.length > 60 ? name.slice(0, 60) : name;
 }

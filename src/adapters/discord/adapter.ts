@@ -9,6 +9,7 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  type APIEmbed,
   type Attachment,
   type ChatInputCommandInteraction,
   type Guild,
@@ -42,7 +43,14 @@ import {
 import { getConfig } from "../../config";
 import { feishuLogJson } from "../../feishu/webhook";
 import { GroupFileRepository } from "../../store/repository";
-import { fetchDiscordTextAttachment } from "./text-attachments";
+import {
+  DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES,
+  fetchDiscordTextAttachment,
+} from "./text-attachments";
+import {
+  buildMarkdownCardEmbeds,
+  chunkEmbedsForDiscord,
+} from "./markdown-cards";
 import path from "node:path";
 import { writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { createTraceId } from "../../telemetry";
@@ -256,14 +264,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       } catch (err) {
         this.logger.warn({ err }, "Failed to ingest world build text");
       }
+      let shouldEmitEvent = true;
       try {
-        await this.ingestWorldBuildAttachments(
+        shouldEmitEvent = await this.ingestWorldBuildAttachments(
           message,
           augmented,
           parsedWorldGroup,
         );
       } catch (err) {
         this.logger.warn({ err }, "Failed to ingest world build attachments");
+      }
+      if (!shouldEmitEvent) {
+        return;
       }
       try {
         const blocked = await this.maybeRejectWorldPlayMessageNotMember(
@@ -574,9 +586,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     message: Message,
     session: SessionEvent<DiscordMessageExtras>,
     parsedWorldGroup?: ReturnType<typeof parseWorldGroup> | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!message.attachments || message.attachments.size === 0) {
-      return;
+      return true;
     }
 
     const parsed =
@@ -586,31 +598,74 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         .then((groupId) => (groupId ? parseWorldGroup(groupId) : null))
         .catch(() => null));
     if (!parsed || parsed.kind !== "build") {
-      return;
+      return true;
     }
 
     const uploaded: Array<{ filename: string; content: string }> = [];
-    const rejected: string[] = [];
+    const rejectedTooLarge: string[] = [];
+    const rejectedUnsupported: string[] = [];
+    const rejectedOther: string[] = [];
+    const rejectedEmpty: string[] = [];
 
     for (const attachment of message.attachments.values()) {
       try {
         uploaded.push(
-          await fetchDiscordTextAttachment(attachment, { logger: this.logger }),
+          await fetchDiscordTextAttachment(attachment, {
+            logger: this.logger,
+            maxBytes: DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES,
+          }),
         );
-      } catch {
-        rejected.push((attachment.name ?? "").trim() || "document");
+      } catch (err) {
+        const filename = (attachment.name ?? "").trim() || "document";
+        const reason = err instanceof Error ? err.message : String(err);
+        if (reason.includes("attachment too large")) {
+          rejectedTooLarge.push(filename);
+        } else if (reason.includes("unsupported attachment type")) {
+          rejectedUnsupported.push(filename);
+        } else if (reason.includes("attachment is empty")) {
+          rejectedEmpty.push(filename);
+        } else {
+          rejectedOther.push(filename);
+        }
       }
     }
 
     if (uploaded.length === 0) {
+      const rejected = [
+        ...rejectedTooLarge,
+        ...rejectedUnsupported,
+        ...rejectedEmpty,
+        ...rejectedOther,
+      ];
       if (rejected.length === 0) {
-        return;
+        return true;
       }
-      await this.sendMessage(
-        session,
-        `不支持的设定文档类型：${rejected.join(", ")}\n仅支持：txt/md（以及可解析的 docx）`,
+
+      const limitMb = Math.floor(
+        DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES / (1024 * 1024),
       );
-      return;
+      const supported = `支持：txt/md/json（以及可解析的 docx）`;
+      const lines: string[] = [];
+      if (rejectedTooLarge.length > 0) {
+        lines.push(
+          `设定文档过大（单个文件最大 ${limitMb}MB）：${rejectedTooLarge.join(", ")}`,
+        );
+      }
+      if (rejectedUnsupported.length > 0) {
+        lines.push(`设定文档类型不支持：${rejectedUnsupported.join(", ")}`);
+      }
+      if (rejectedEmpty.length > 0) {
+        lines.push(`设定文档内容为空：${rejectedEmpty.join(", ")}`);
+      }
+      if (rejectedOther.length > 0) {
+        lines.push(`设定文档暂未读取：${rejectedOther.join(", ")}`);
+      }
+      lines.push(supported);
+
+      await this.sendMessage(session, lines.join("\n"));
+
+      const hasUserText = Boolean(session.content && session.content.trim());
+      return hasUserText;
     }
 
     const nowIso = new Date().toISOString();
@@ -653,12 +708,33 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         messageId: message.id,
       });
     }
-    if (rejected.length > 0) {
-      await this.sendMessage(
-        session,
-        `已读取并写入 world/source.md（${uploaded.length} 个文档）。以下文件被忽略（类型不支持）：${rejected.join(", ")}`,
+    const ignoredLines: string[] = [];
+    if (rejectedTooLarge.length > 0) {
+      const limitMb = Math.floor(
+        DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES / (1024 * 1024),
+      );
+      ignoredLines.push(
+        `文件过大（单个最大 ${limitMb}MB）：${rejectedTooLarge.join(", ")}`,
       );
     }
+    if (rejectedUnsupported.length > 0) {
+      ignoredLines.push(`类型不支持：${rejectedUnsupported.join(", ")}`);
+    }
+    if (rejectedEmpty.length > 0) {
+      ignoredLines.push(`内容为空：${rejectedEmpty.join(", ")}`);
+    }
+    if (rejectedOther.length > 0) {
+      ignoredLines.push(`未读取：${rejectedOther.join(", ")}`);
+    }
+
+    if (ignoredLines.length > 0) {
+      await this.sendMessage(
+        session,
+        `已读取并写入 world/source.md（${uploaded.length} 个文档）。以下文件被忽略：\n${ignoredLines.map((line) => `- ${line}`).join("\n")}`,
+      );
+    }
+
+    return true;
   }
 
   private async ingestWorldBuildMessageContent(
@@ -1296,7 +1372,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           ``,
           `你可以继续：`,
           `- 直接粘贴/分段发送设定原文（可多轮补全）`,
-          `- 或上传 txt/md/docx（会自动写入本文件）`,
+          `- 或上传 txt/md/json/docx（会自动写入本文件）`,
           ``,
           `提示：无需在 /world create 里填写任何参数。`,
           ``,
@@ -1741,29 +1817,57 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       guild:
         interaction.guildId === meta.homeGuildId ? interaction.guild : null,
     });
+    const statusLabel = meta.status === "draft" ? "draft(未发布)" : meta.status;
     const channels =
       meta.status === "draft"
-        ? []
+        ? null
         : [
             `公告：<#${meta.infoChannelId}>`,
             `讨论：<#${meta.roleplayChannelId}>`,
             `提案：<#${meta.proposalsChannelId}>`,
-            `加入：/world join world_id:${meta.id}`,
-          ];
-    const header = [
-      `W${meta.id} ${meta.name}`,
-      `创作者：${creatorLabel}`,
-      `入口 guild:${meta.homeGuildId}`,
-      `状态：${meta.status === "draft" ? "draft(未发布)" : meta.status}`,
-      `访客数：${stats.visitorCount}`,
-      `角色数：${stats.characterCount}`,
-      ...channels,
-      ``,
-    ].join("\n");
-    const body = card?.trim()
-      ? patchCreatorLineInMarkdown(card.trim(), meta.creatorId, creatorLabel)
-      : "(世界卡缺失)";
-    await replyLongText(interaction, `${header}${body}`, { ephemeral: false });
+            `加入：\`/world join world_id:${meta.id}\``,
+          ].join("\n");
+
+    const patchedCard =
+      card?.trim() && meta.creatorId
+        ? patchCreatorLineInMarkdown(card.trim(), meta.creatorId, creatorLabel)
+        : card?.trim()
+          ? card.trim()
+          : "";
+    const summary = extractWorldOneLiner(patchedCard) ?? "";
+
+    const embeds: APIEmbed[] = [
+      {
+        title: `W${meta.id} ${meta.name}`,
+        description: summary || undefined,
+        fields: [
+          {
+            name: "创作者",
+            value: creatorLabel || `<@${meta.creatorId}>`,
+            inline: true,
+          },
+          { name: "状态", value: statusLabel, inline: true },
+          { name: "入口", value: `guild:${meta.homeGuildId}`, inline: true },
+          {
+            name: "统计",
+            value: `访客数：${stats.visitorCount}\n角色数：${stats.characterCount}`,
+            inline: true,
+          },
+          ...(channels
+            ? [{ name: "频道", value: channels, inline: false }]
+            : []),
+        ],
+      },
+      ...buildMarkdownCardEmbeds(patchedCard, {
+        titlePrefix: "世界卡",
+        maxEmbeds: 18,
+        includeEmptyFields: true,
+      }),
+    ];
+
+    for (const chunk of chunkEmbedsForDiscord(embeds, 10)) {
+      await safeReplyRich(interaction, { embeds: chunk }, { ephemeral: false });
+    }
   }
 
   private async handleWorldRules(
@@ -1789,8 +1893,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     const rules = await this.worldFiles.readRules(meta.id);
-    const body = rules?.trim() ? rules.trim() : "(规则缺失)";
-    await replyLongText(interaction, body, { ephemeral: false });
+    const patchedRules = rules?.trim() ? rules.trim() : "";
+
+    const embeds: APIEmbed[] = [
+      { title: `W${meta.id} ${meta.name} — 世界规则` },
+      ...buildMarkdownCardEmbeds(patchedRules, {
+        titlePrefix: "世界规则",
+        maxEmbeds: 18,
+        includeEmptyFields: true,
+      }),
+    ];
+    for (const chunk of chunkEmbedsForDiscord(embeds, 10)) {
+      await safeReplyRich(interaction, { embeds: chunk }, { ephemeral: false });
+    }
   }
 
   private async handleWorldCanon(
@@ -2773,16 +2888,46 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       return;
     }
+
+    const ephemeral = meta.visibility === "private";
+    await safeDefer(interaction, { ephemeral });
+
     const card = await this.worldFiles.readCharacterCard(meta.id);
     if (!card) {
       await safeReply(interaction, "角色卡缺失（待修复）。", {
-        ephemeral: false,
+        ephemeral,
       });
       return;
     }
-    await replyLongText(interaction, card.trim(), {
-      ephemeral: meta.visibility === "private",
+    const creatorLabel = await this.resolveDiscordUserLabel({
+      userId: meta.creatorId,
+      guild: interaction.guild ?? null,
     });
+    const patched = card.trim();
+
+    const embeds: APIEmbed[] = [
+      {
+        title: `C${meta.id} ${meta.name}`,
+        fields: [
+          {
+            name: "创建者",
+            value: creatorLabel || `<@${meta.creatorId}>`,
+            inline: true,
+          },
+          { name: "可见性", value: meta.visibility, inline: true },
+          { name: "状态", value: meta.status, inline: true },
+        ],
+      },
+      ...buildMarkdownCardEmbeds(patched, {
+        titlePrefix: "角色卡",
+        maxEmbeds: 18,
+        includeEmptyFields: true,
+      }),
+    ];
+
+    for (const chunk of chunkEmbedsForDiscord(embeds, 10)) {
+      await safeReplyRich(interaction, { embeds: chunk }, { ephemeral });
+    }
   }
 
   private async handleCharacterAct(
@@ -3870,6 +4015,103 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
   }
 
+  private async sendRichToChannel(input: {
+    guildId?: string;
+    channelId: string;
+    content?: string;
+    embeds?: APIEmbed[];
+    files?: Array<{ name: string; content: string }>;
+    traceId?: string;
+  }): Promise<void> {
+    const botId = this.botUserId?.trim() ?? this.client.user?.id ?? "";
+    if (!botId) {
+      return;
+    }
+
+    const content = input.content?.trim() ?? "";
+    const embeds = input.embeds ?? [];
+    const files = (input.files ?? [])
+      .map((file) => ({
+        name: file.name?.trim() ?? "",
+        content: file.content ?? "",
+      }))
+      .filter((file) => Boolean(file.name));
+    if (!content && embeds.length === 0 && files.length === 0) {
+      return;
+    }
+
+    const channel = await this.client.channels
+      .fetch(input.channelId)
+      .catch(() => null);
+    if (!channel || typeof channel !== "object") {
+      return;
+    }
+    if (
+      !("send" in channel) ||
+      typeof (channel as { send?: unknown }).send !== "function"
+    ) {
+      return;
+    }
+
+    const payload: {
+      content?: string;
+      embeds?: APIEmbed[];
+      files?: Array<{ attachment: Buffer; name: string }>;
+    } = {};
+    if (content) {
+      payload.content = content;
+    }
+    if (embeds.length > 0) {
+      payload.embeds = embeds;
+    }
+    if (files.length > 0) {
+      payload.files = files
+        .map((file) => {
+          const buf = Buffer.from(file.content ?? "", "utf8") as Buffer;
+          if (buf.byteLength > DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES) {
+            return null;
+          }
+          return { attachment: buf, name: file.name };
+        })
+        .filter((file): file is { attachment: Buffer; name: string } =>
+          Boolean(file),
+        );
+    }
+
+    if (
+      !payload.content &&
+      (!payload.embeds || payload.embeds.length === 0) &&
+      (!payload.files || payload.files.length === 0)
+    ) {
+      return;
+    }
+
+    try {
+      const sent = await (
+        channel as { send: (payload: unknown) => Promise<unknown> }
+      ).send(payload);
+      const messageId =
+        sent && typeof sent === "object" && "id" in sent ? String(sent.id) : "";
+      feishuLogJson({
+        event: "io.send",
+        platform: "discord",
+        traceId: input.traceId,
+        channelId: input.channelId,
+        botId,
+        messageId,
+        contentPreview: previewTextForLog(payload.content ?? "", 1200),
+        contentLength: payload.content?.length ?? 0,
+        hasFiles: Boolean(payload.files && payload.files.length > 0),
+        hasEmbeds: Boolean(payload.embeds && payload.embeds.length > 0),
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err, channelId: input.channelId },
+        "Failed to send rich message",
+      );
+    }
+  }
+
   private async pushWorldInfoSnapshot(input: {
     guildId: string;
     worldId: number;
@@ -3891,45 +4133,46 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             guild: this.client.guilds.cache.get(input.guildId) ?? null,
           })
         : null;
-    const joinHint = `加入：/world join world_id:${input.worldId}`;
-    const header = [
-      `【世界信息】W${input.worldId} ${input.worldName}`,
-      `更新时间：${nowIso}`,
-      creatorLabel ? `创作者：${creatorLabel}` : null,
-      `访客数：${stats.visitorCount} 角色数：${stats.characterCount}`,
-      joinHint,
-      ``,
-    ]
-      .filter((line): line is string => Boolean(line))
-      .join("\n");
+    const patchedCard =
+      card?.trim() && meta?.creatorId
+        ? patchCreatorLineInMarkdown(card.trim(), meta.creatorId, creatorLabel)
+        : card?.trim()
+          ? card.trim()
+          : "";
+    const patchedRules = rules?.trim() ? rules.trim() : "";
 
-    await this.sendLongTextToChannel({
-      guildId: input.guildId,
-      channelId: input.infoChannelId,
-      content: header,
-      traceId: input.traceId,
-    });
-    await this.sendLongTextToChannel({
-      guildId: input.guildId,
-      channelId: input.infoChannelId,
-      content:
-        card?.trim() && meta?.creatorId
-          ? patchCreatorLineInMarkdown(
-              card.trim(),
-              meta.creatorId,
-              creatorLabel,
-            )
-          : card?.trim()
-            ? card.trim()
-            : "(世界卡缺失)",
-      traceId: input.traceId,
-    });
-    await this.sendLongTextToChannel({
-      guildId: input.guildId,
-      channelId: input.infoChannelId,
-      content: rules?.trim() ? rules.trim() : "(规则缺失)",
-      traceId: input.traceId,
-    });
+    const embeds: APIEmbed[] = [
+      {
+        title: `【世界信息】W${input.worldId} ${input.worldName}`,
+        description: [
+          `更新时间：${nowIso}`,
+          creatorLabel ? `创作者：${creatorLabel}` : null,
+          `访客数：${stats.visitorCount} 角色数：${stats.characterCount}`,
+          `加入：\`/world join world_id:${input.worldId}\``,
+        ]
+          .filter((line): line is string => Boolean(line))
+          .join("\n"),
+      },
+      ...buildMarkdownCardEmbeds(patchedCard, {
+        titlePrefix: "世界卡",
+        maxEmbeds: 4,
+        includeEmptyFields: true,
+      }),
+      ...buildMarkdownCardEmbeds(patchedRules, {
+        titlePrefix: "世界规则",
+        maxEmbeds: 4,
+        includeEmptyFields: true,
+      }),
+    ];
+
+    for (const chunk of chunkEmbedsForDiscord(embeds, 10)) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.infoChannelId,
+        embeds: chunk,
+        traceId: input.traceId,
+      });
+    }
   }
 
   private async createWorldSubspace(input: {
@@ -4030,7 +4273,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         ``,
         `1) 提供设定原文（任选其一）：`,
         `   - 直接粘贴/分段发送（可多轮补全）`,
-        `   - 上传 txt/md/docx（会自动写入 world/source.md）`,
+        `   - 上传 txt/md/json/docx（会自动写入 world/source.md）`,
         ``,
         `2) 系统会整理为两份正典（可反复修改）：`,
         `   - world-card.md：世界背景/势力/地点/历史等`,
@@ -5514,23 +5757,6 @@ function extractWorldNameFromCard(card: string | null): string | null {
   return name.length > 60 ? name.slice(0, 60) : name;
 }
 
-async function replyLongText(
-  interaction: ChatInputCommandInteraction,
-  content: string,
-  options: { ephemeral: boolean },
-): Promise<void> {
-  const chunks = splitDiscordMessage(content, 1800);
-  const first = chunks.shift();
-  if (!first) {
-    await safeReply(interaction, "(空)", options);
-    return;
-  }
-  await safeReply(interaction, first, options);
-  for (const chunk of chunks) {
-    await safeReply(interaction, chunk, options);
-  }
-}
-
 function splitDiscordMessage(input: string, maxLen: number): string[] {
   const normalized = input.trim();
   if (!normalized) {
@@ -5591,6 +5817,71 @@ async function safeReply(
       return;
     }
     await interaction.reply({ content, ephemeral: options.ephemeral });
+  } catch (err) {
+    feishuLogJson({
+      event: "log.warn",
+      msg: "Failed to reply discord interaction",
+      errName: err instanceof Error ? err.name : "Error",
+      errMessage: err instanceof Error ? err.message : String(err),
+      command: buildInteractionCommand(interaction),
+      interactionId: interaction.id,
+      userId: interaction.user.id,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+      ephemeral: options.ephemeral,
+    });
+  }
+}
+
+async function safeReplyRich(
+  interaction: ChatInputCommandInteraction,
+  payload: {
+    content?: string;
+    embeds?: APIEmbed[];
+    files?: Array<{ attachment: Buffer; name: string }>;
+  },
+  options: { ephemeral: boolean },
+): Promise<void> {
+  const safePayload = {
+    content: payload.content?.trim() ?? undefined,
+    embeds: payload.embeds ?? undefined,
+    files: payload.files ?? undefined,
+  };
+  if (
+    !safePayload.content &&
+    (!safePayload.embeds || safePayload.embeds.length === 0) &&
+    (!safePayload.files || safePayload.files.length === 0)
+  ) {
+    return;
+  }
+
+  feishuLogJson({
+    event: "discord.command.reply",
+    command: buildInteractionCommand(interaction),
+    interactionId: interaction.id,
+    userId: interaction.user.id,
+    guildId: interaction.guildId ?? undefined,
+    channelId: interaction.channelId,
+    ephemeral: options.ephemeral,
+    contentPreview: previewTextForLog(safePayload.content ?? "", 1200),
+    contentLength: safePayload.content?.length ?? 0,
+    hasFiles: Boolean(safePayload.files && safePayload.files.length > 0),
+    hasEmbeds: Boolean(safePayload.embeds && safePayload.embeds.length > 0),
+  });
+
+  try {
+    if (interaction.replied) {
+      await interaction.followUp({
+        ...safePayload,
+        ephemeral: options.ephemeral,
+      });
+      return;
+    }
+    if (interaction.deferred) {
+      await interaction.editReply(safePayload);
+      return;
+    }
+    await interaction.reply({ ...safePayload, ephemeral: options.ephemeral });
   } catch (err) {
     feishuLogJson({
       event: "log.warn",

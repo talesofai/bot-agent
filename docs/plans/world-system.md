@@ -149,6 +149,8 @@ status: active
 
 # TODO（后续迭代）
 
+- 文本润色：`/polish <草稿>`（消息命令，优先走 opencode skill；不写盘，直接返回润色结果）
+- 新手任务引导：`/quest`（消息命令，优先走 opencode skill；根据上下文给 3-5 个可执行小任务）
 - 世界任务系统：世界通用任务 / 剧本 / 世界新闻（从 `world-proposals` 或后台配置触发）。
 - 正典系统：玩家提案 → 初审核 → 创作者确认 → 写入世界历史（chronicle）。
 - 世界地图：优先走 opencode skill（经 talesofai MCP / banana 生成/改图），并把图/说明落盘与公告；暂不做独立 slash command。

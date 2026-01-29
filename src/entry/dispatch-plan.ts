@@ -179,7 +179,7 @@ export function routeDispatch(input: {
     };
   }
 
-  if (normalized.trimmedContent.match(/^\/nano\b/i)) {
+  if (normalized.trimmedContent.match(/^\/(?:nano|polish|quest)\b/i)) {
     return {
       kind: "enqueue",
       key: normalized.key,

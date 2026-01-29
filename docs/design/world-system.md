@@ -367,6 +367,8 @@ world:
 
 - `configs/skills/world-design-card/SKILL.md`：世界卡结构化生成
 - `configs/skills/character-card/SKILL.md`：角色卡结构化生成
+- `configs/skills/polish/SKILL.md`：文本润色（`/polish <草稿>`）
+- `configs/skills/quest/SKILL.md`：新手任务引导（`/quest`）
 - `configs/skills/world-readonly/SKILL.md`：在 roleplay 前**必读** `workspace/world/` 下的世界卡与规则，禁止胡编世界设定
 - `configs/skills/canon-conflict-check/SKILL.md`：冲突检测的工作流（先检索正典，再输出冲突点）
 

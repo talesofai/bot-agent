@@ -93,7 +93,7 @@ describe("routeDispatch dice", () => {
   });
 });
 
-describe("routeDispatch nano", () => {
+describe("routeDispatch always-enqueue commands", () => {
   test("enqueues /nano even when triggerMode is mention and message is not a mention", () => {
     const message: SessionEvent = {
       type: "message",
@@ -105,6 +105,56 @@ describe("routeDispatch nano", () => {
       messageId: "msg",
       content: "/nano a cute cat",
       elements: [{ type: "text", text: "/nano a cute cat" }],
+      timestamp: Date.now(),
+      extras: {},
+    };
+
+    const routing = routeDispatch({
+      message,
+      groupConfig: { ...DEFAULT_GROUP_CONFIG, triggerMode: "mention" },
+      routerSnapshot: null,
+      botId: "bot",
+    });
+
+    expect(routing.kind).toBe("enqueue");
+  });
+
+  test("enqueues /polish even when triggerMode is mention and message is not a mention", () => {
+    const message: SessionEvent = {
+      type: "message",
+      platform: "discord",
+      selfId: "bot",
+      userId: "user",
+      guildId: "guild",
+      channelId: "channel",
+      messageId: "msg",
+      content: "/polish 我今天很累，但还得继续。",
+      elements: [{ type: "text", text: "/polish 我今天很累，但还得继续。" }],
+      timestamp: Date.now(),
+      extras: {},
+    };
+
+    const routing = routeDispatch({
+      message,
+      groupConfig: { ...DEFAULT_GROUP_CONFIG, triggerMode: "mention" },
+      routerSnapshot: null,
+      botId: "bot",
+    });
+
+    expect(routing.kind).toBe("enqueue");
+  });
+
+  test("enqueues /quest even when triggerMode is mention and message is not a mention", () => {
+    const message: SessionEvent = {
+      type: "message",
+      platform: "discord",
+      selfId: "bot",
+      userId: "user",
+      guildId: "guild",
+      channelId: "channel",
+      messageId: "msg",
+      content: "/quest",
+      elements: [{ type: "text", text: "/quest" }],
       timestamp: Date.now(),
       extras: {},
     };

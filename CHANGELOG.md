@@ -13,6 +13,8 @@
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
 - Chat：新增掷骰快捷指令，发送 `NdM`（`1<=N<=10`、`1<=M<=100`，如 `2d100`）会直接返回掷骰结果（不走 opencode）
 - Chat：新增 `/nano` 文生图快捷命令：`/nano <描述>` 与 `/nano portrait [额外描述]`（走 TalesOfAI MCP / banana；不需要 @bot）
+- Chat：新增 `/polish <草稿>` 文本润色快捷命令（不需要 @bot；走 opencode skill）
+- Chat：新增 `/quest` 新手任务引导快捷命令（不需要 @bot；走 opencode skill）
 - Config：新增 `OPENCODE_SERVER_WAIT_TIMEOUT_MS`（超时恢复阶段的等待上限）与 `OPENCODE_TOOL_STUCK_TIMEOUT_MS`（工具调用卡住判定阈值）
 - Config：新增 `OPENCODE_PROGRESS_HEARTBEAT_MS`（长耗时任务的进度心跳回复间隔）
 - Opencode：server client 新增 `deleteSession`（用于清理卡死会话）
@@ -30,6 +32,7 @@
 - 持久化：Redis 维护自增 ID / meta / 路由；计数（访客数/角色数）以 members/world-characters 为真值重算，并落盘到 `/data/worlds/{worldId}/stats.json`
 - Skills：新增内置技能 `world-design-card`、`character-card`（结构化世界卡/角色卡）
 - Skills：新增内置技能 `nano`（/nano 文生图与角色立绘）
+- Skills：新增内置技能 `polish`（/polish 文本润色）与 `quest`（/quest 新手任务引导）
 - Logging：飞书 webhook 仅推送 `warn/error` 与消息收发（`io.recv/io.send` + SlashCommand 输入/输出），便于在飞书追踪对话与故障而不刷噪音
 - Logging：新增 `ai.start/ai.finish` 事件（含输出预览），用于定位“子话题不推进/看起来没反应”
 

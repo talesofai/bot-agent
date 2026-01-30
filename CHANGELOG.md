@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- Worker：当 opencode 同时返回 text 与 `question` tool 时，优先输出 question 并标记为等待用户输入（避免卡住或漏掉交互提问）
+
 ## [0.0.31] - 2026-01-30
 
 ### Added

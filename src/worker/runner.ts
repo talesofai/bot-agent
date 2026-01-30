@@ -65,7 +65,30 @@ export class OpencodeServerRunner implements OpencodeRunner {
       const assistantMessageId =
         typeof response.info?.id === "string" ? response.info.id : undefined;
 
+      const question = formatQuestionToolAsText(
+        response,
+        input.language ?? null,
+      );
       const output = extractAssistantText(response) ?? undefined;
+      if (question) {
+        const combined = [output?.trim(), question.text]
+          .filter(Boolean)
+          .join("\n\n")
+          .trim();
+        return {
+          output: combined,
+          opencodeAssistantMessageId: assistantMessageId,
+          historyEntries: [
+            { role: "assistant", content: combined, createdAt },
+          ] satisfies HistoryEntry[],
+          pendingUserInput: {
+            kind: "question",
+            opencodeCallId: question.opencodeCallId,
+          },
+          toolCalls: toolCalls.length ? toolCalls : undefined,
+        };
+      }
+
       if (output?.trim()) {
         return {
           output,
@@ -73,25 +96,6 @@ export class OpencodeServerRunner implements OpencodeRunner {
           historyEntries: [
             { role: "assistant", content: output, createdAt },
           ] satisfies HistoryEntry[],
-          toolCalls: toolCalls.length ? toolCalls : undefined,
-        };
-      }
-
-      const question = formatQuestionToolAsText(
-        response,
-        input.language ?? null,
-      );
-      if (question) {
-        return {
-          output: question.text,
-          opencodeAssistantMessageId: assistantMessageId,
-          historyEntries: [
-            { role: "assistant", content: question.text, createdAt },
-          ] satisfies HistoryEntry[],
-          pendingUserInput: {
-            kind: "question",
-            opencodeCallId: question.opencodeCallId,
-          },
           toolCalls: toolCalls.length ? toolCalls : undefined,
         };
       }

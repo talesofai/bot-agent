@@ -347,6 +347,76 @@ describe("OpencodeServerRunner", () => {
     });
   });
 
+  test("prioritizes question tool even when assistant text is present", async () => {
+    const { client } = createFakeClient([
+      {
+        parts: [
+          { type: "text", text: "先回答下面的问题，然后我才能继续。" },
+          {
+            type: "tool",
+            tool: "question",
+            callID: "call_test",
+            state: {
+              status: "running",
+              input: {
+                questions: [
+                  {
+                    header: "补充信息",
+                    question: "请选择 A 或 B：",
+                    options: [{ label: "A" }, { label: "B" }],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ]);
+    const runner = new OpencodeServerRunner(client);
+    const result = await runner.run({
+      job: {
+        id: "job",
+        data: {
+          botId: "bot",
+          groupId: "group",
+          sessionId: "session",
+          userId: "user",
+          key: 0,
+          gateToken: "gate",
+        },
+      },
+      session: {
+        meta: {
+          sessionId: "session",
+          groupId: "group",
+          botId: "bot",
+          ownerId: "user",
+          key: 0,
+          status: "running",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        groupPath: "/tmp",
+        workspacePath: "/tmp",
+      },
+      history: [],
+      request: {
+        directory: "/tmp/workspace",
+        sessionId: "ses_test",
+        body: {
+          parts: [{ type: "text", text: "user" }],
+        },
+      },
+    });
+
+    expect(result.output).toContain("先回答下面的问题");
+    expect(result.output).toContain("补充信息");
+    expect(result.pendingUserInput).toEqual({
+      kind: "question",
+      opencodeCallId: "call_test",
+    });
+  });
+
   test("throws when aborted before start", async () => {
     const { client } = createFakeClient([
       { parts: [{ type: "text", text: "hello" }] },

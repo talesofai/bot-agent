@@ -49,6 +49,7 @@
 - Discord：世界构建会话支持从粘贴/上传的 JSON 中提取正文（优先解析 `entries[*].content`），写入 `world/source.md`（避免把整坨 JSON 当“设定原文”）
 - Discord：`/world info|rules`、`/character view` 与世界公告快照改为 embed 卡片化展示（不使用附件，避免刷屏式长 Markdown）
 - K8s：`world-wiki.talesofai.com` Ingress 移除 Basic Auth，Wiki 默认公开只读访问
+- Wiki：修复 Docsify 路由在多次点击后错误拼接的问题，并让世界子项默认折叠（侧边栏可展开/收起）
 - Texts：长文本（system prompt/自动回复/Discord 指南与模板等）统一收敛到 `src/texts.ts`，并提供中英双语；世界卡/规则/提案解析兼容中英字段
 - Discord：精简角色卡创建指南提示文案，减少噪音并避免误导
 - World：世界游玩会话（`groupId=world_{id}`）默认仅开放只读工具，避免非创作者对世界/角色文件产生写入副作用

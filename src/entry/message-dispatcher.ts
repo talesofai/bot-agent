@@ -236,6 +236,24 @@ export class MessageDispatcher {
 
     const { groupId, rawBotId, canonicalBotId, botId } = envelope;
 
+    if (!hasDiscordInteractionId(runtime.message.extras)) {
+      feishuLogJson({
+        event: "io.recv",
+        platform: runtime.message.platform,
+        traceId: runtime.traceId,
+        guildId: runtime.message.guildId ?? undefined,
+        groupId,
+        channelId: runtime.message.channelId,
+        userId: runtime.message.userId,
+        messageId: runtime.message.messageId,
+        contentPreview: truncateTextByBytes(
+          redactSensitiveText(runtime.message.content ?? ""),
+          1200,
+        ),
+        contentLength: runtime.message.content?.length ?? 0,
+      });
+    }
+
     if (canonicalBotId !== rawBotId) {
       runtime.log.info(
         { botId: rawBotId, canonicalBotId },
@@ -415,25 +433,6 @@ export class MessageDispatcher {
     envelope: DispatchEnvelope;
     routing: Extract<DispatchRoutingPlan, { kind: "dice" }>;
   }): Promise<void> {
-    if (!hasDiscordInteractionId(input.runtime.message.extras)) {
-      feishuLogJson({
-        event: "io.recv",
-        platform: input.runtime.message.platform,
-        command: "dice",
-        traceId: input.runtime.traceId,
-        guildId: input.runtime.message.guildId ?? undefined,
-        groupId: input.envelope.groupId,
-        channelId: input.runtime.message.channelId,
-        userId: input.runtime.message.userId,
-        messageId: input.runtime.message.messageId,
-        contentPreview: truncateTextByBytes(
-          redactSensitiveText(input.runtime.message.content ?? ""),
-          1200,
-        ),
-        contentLength: input.runtime.message.content?.length ?? 0,
-      });
-    }
-
     input.runtime.log.info(
       {
         id: input.runtime.message.messageId,
@@ -476,25 +475,6 @@ export class MessageDispatcher {
     groupConfig: GroupConfig;
     routing: Extract<DispatchRoutingPlan, { kind: "command" }>;
   }): Promise<void> {
-    if (!hasDiscordInteractionId(input.runtime.message.extras)) {
-      feishuLogJson({
-        event: "io.recv",
-        platform: input.runtime.message.platform,
-        command: input.routing.command.type,
-        traceId: input.runtime.traceId,
-        guildId: input.runtime.message.guildId ?? undefined,
-        groupId: input.envelope.groupId,
-        channelId: input.runtime.message.channelId,
-        userId: input.runtime.message.userId,
-        messageId: input.runtime.message.messageId,
-        contentPreview: truncateTextByBytes(
-          redactSensitiveText(input.runtime.message.content ?? ""),
-          1200,
-        ),
-        contentLength: input.runtime.message.content?.length ?? 0,
-      });
-    }
-
     input.runtime.log.info(
       {
         id: input.runtime.message.messageId,
@@ -544,24 +524,6 @@ export class MessageDispatcher {
     envelope: DispatchEnvelope;
     routing: Extract<DispatchRoutingPlan, { kind: "enqueue" }>;
   }): Promise<void> {
-    if (!hasDiscordInteractionId(input.runtime.message.extras)) {
-      feishuLogJson({
-        event: "io.recv",
-        platform: input.runtime.message.platform,
-        traceId: input.runtime.traceId,
-        guildId: input.runtime.message.guildId ?? undefined,
-        groupId: input.envelope.groupId,
-        channelId: input.runtime.message.channelId,
-        userId: input.runtime.message.userId,
-        messageId: input.runtime.message.messageId,
-        contentPreview: truncateTextByBytes(
-          redactSensitiveText(input.runtime.message.content ?? ""),
-          1200,
-        ),
-        contentLength: input.runtime.message.content?.length ?? 0,
-      });
-    }
-
     input.runtime.log.info(
       {
         id: input.runtime.message.messageId,

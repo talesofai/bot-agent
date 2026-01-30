@@ -62,11 +62,14 @@ export class OpencodeServerRunner implements OpencodeRunner {
       });
 
       toolCalls.push(...extractToolCalls(response.parts ?? []));
+      const assistantMessageId =
+        typeof response.info?.id === "string" ? response.info.id : undefined;
 
       const output = extractAssistantText(response) ?? undefined;
       if (output?.trim()) {
         return {
           output,
+          opencodeAssistantMessageId: assistantMessageId,
           historyEntries: [
             { role: "assistant", content: output, createdAt },
           ] satisfies HistoryEntry[],
@@ -81,6 +84,7 @@ export class OpencodeServerRunner implements OpencodeRunner {
       if (questionText) {
         return {
           output: questionText,
+          opencodeAssistantMessageId: assistantMessageId,
           historyEntries: [
             { role: "assistant", content: questionText, createdAt },
           ] satisfies HistoryEntry[],
@@ -90,7 +94,10 @@ export class OpencodeServerRunner implements OpencodeRunner {
       }
 
       if (!shouldContinueAfterToolCalls(response)) {
-        return { toolCalls: toolCalls.length ? toolCalls : undefined };
+        return {
+          opencodeAssistantMessageId: assistantMessageId,
+          toolCalls: toolCalls.length ? toolCalls : undefined,
+        };
       }
 
       // Opencode server may stop after tool-calls and expects the client to

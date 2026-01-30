@@ -9,6 +9,8 @@
 
 ### Added
 
+- Worker：新增 k8s 自测 CLI：`selftest-reset-conversation`（reset 后连发两条消息断言“第二条不复读第一条”）
+- Worker：新增 k8s 自测 CLI：`selftest-duplicate-reply`（模拟重试/超时场景，断言不会复用旧 assistant 回复）
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
 - Chat：新增掷骰快捷指令，发送 `.rd NdM`（`1<=N<=10`、`1<=M<=100`，如 `.rd 2d100`）会直接返回掷骰结果（不走 opencode）
@@ -82,6 +84,7 @@
 - Worker：`SessionWorker.start()` 等待 BullMQ ready，并在 run-loop 失败时触发 shutdown，避免“假启动/假存活”
 - Worker：`session-worker` 的 HTTP server 启动失败视为致命错误并触发 shutdown
 - Worker：`opencode_run` 调用失败/超时兜底；prompt context 初始化失败/超时也会兜底回复并重置 `opencodeSessionId`，避免“不回复/看起来没反应”
+- Worker：不再向 opencode server 传递 `messageID`，避免同一 session 后续消息触发 opencode-server 复用上一条 assistant（stale）导致“秒回/复读”
 - Worker：`opencode_run` 遇到 `TimeoutError` 时会尝试从 opencode server 读取已完成输出并继续回复；若仍在运行则发送进度提示并继续等待（避免让用户“重发一次”）
 - Worker：当 opencode tool 长时间处于 `running`（疑似卡死）时自动清理 opencode session 并重建继续跑，避免世界构建会话“跑很久不出结果”
 - Worker：`opencode_run` 非超时失败会自动重试最多 3 次，减少瞬时波动导致的“处理失败”提示

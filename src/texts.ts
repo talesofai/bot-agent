@@ -194,6 +194,16 @@ export function buildSessionOpencodeTimeoutReply(
   );
 }
 
+export function buildSessionOpencodeResumePrompt(
+  language: UserLanguage | null | undefined,
+): string {
+  return pick(
+    language,
+    "继续处理，我没有收到刚才的消息的回复。",
+    "Continue processing; I didn't receive the reply to the previous message.",
+  );
+}
+
 export function buildOpencodeQuestionToolIntro(
   language: UserLanguage | null | undefined,
 ): string {

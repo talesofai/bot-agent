@@ -258,19 +258,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         return;
       }
       const augmented = await this.maybeAugmentOnboardingMention(parsed);
-      feishuLogJson({
-        event: "io.recv",
-        platform: augmented.platform,
-        guildId: augmented.guildId,
-        channelId: augmented.channelId,
-        userId: augmented.userId,
-        messageId: augmented.messageId,
-        contentPreview: previewTextForLog(augmented.content ?? "", 1200),
-        contentLength: augmented.content?.length ?? 0,
-        hasAttachments: Boolean(
-          message.attachments && message.attachments.size,
-        ),
-      });
       try {
         await this.repairWorldChannelRouting(message);
       } catch (err) {

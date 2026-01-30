@@ -23,10 +23,7 @@ import { runSessionGateLoop } from "./gate-loop";
 import { buildBotAccountId } from "../utils/bot-id";
 import { extractOutputElements } from "./output-elements";
 import { redactSensitiveText } from "../utils/redact";
-import {
-  type OpencodeClient,
-  type OpencodeMessageWithParts,
-} from "../opencode/server-client";
+import type { OpencodeClient } from "../opencode/server-client";
 import { appendInputAuditIfSuspicious } from "../opencode/input-audit";
 import { ensureOpencodeSkills } from "../opencode/skills";
 import { getConfig } from "../config";
@@ -43,8 +40,7 @@ import { UserStateStore, type UserLanguage } from "../user/state-store";
 import {
   buildLanguageDirective,
   buildSessionOpencodeRunFailedReply,
-  buildSessionOpencodeTimeoutReply,
-  buildSessionProgressHeartbeatText,
+  buildSessionOpencodeResumePrompt,
   buildSessionPromptContextFailedReply,
   buildSystemPrompt,
 } from "../texts";
@@ -89,23 +85,6 @@ type SessionProcessorRuntime = {
   bufferKey: SessionBufferKey;
   gateToken: string;
 };
-
-type StaleOpencodeToolCall = {
-  tool: string;
-  messageId: string;
-  startedAtMs: number;
-  ageMs: number;
-  input?: unknown;
-};
-
-type WaitForOpencodeOutputResult =
-  | { kind: "output"; result: Awaited<ReturnType<OpencodeRunner["run"]>> }
-  | { kind: "stale_tool"; stale: StaleOpencodeToolCall }
-  | { kind: "timeout" };
-
-type OpencodeMessageCursor =
-  | { kind: "unknown" }
-  | { kind: "known"; lastMessageId: string | null; messageCount: number };
 
 export class SessionProcessor {
   private logger: Logger;
@@ -374,6 +353,23 @@ export class SessionProcessor {
           { err, isAbort },
           "Failed to build opencode prompt context",
         );
+        feishuLogJson({
+          event: "log.warn",
+          traceId: runtime.traceId,
+          platform: mergedWithTrace.platform,
+          guildId: mergedWithTrace.guildId,
+          channelId: mergedWithTrace.channelId,
+          messageId: mergedWithTrace.messageId,
+          groupId: sessionInfo.meta.groupId,
+          sessionId: sessionInfo.meta.sessionId,
+          userId: sessionInfo.meta.ownerId,
+          key: sessionInfo.meta.key,
+          component: "session-processor",
+          step: "build_prompt_context",
+          msg: `构建opencode上下文失败 abort:${isAbort}`,
+          errName: err instanceof Error ? err.name : undefined,
+          errMessage,
+        });
 
         if (isAbort) {
           try {
@@ -381,6 +377,7 @@ export class SessionProcessor {
             const updated = await this.sessionRepository.updateMeta({
               ...sessionInfo.meta,
               opencodeSessionId: undefined,
+              opencodeLastAssistantMessageId: undefined,
               updatedAt: nowIso,
             });
             sessionInfo.meta = updated.meta;
@@ -450,36 +447,25 @@ export class SessionProcessor {
         characterId: parsedCharacter?.characterId,
       });
 
-      let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
+      const resumePrompt = buildSessionOpencodeResumePrompt(language).trim();
+      const resumeParts = [{ type: "text" as const, text: resumePrompt }];
+
+      let result: Awaited<ReturnType<OpencodeRunner["run"]>> | null = null;
       const maxRunAttempts = 3;
-      let runAttempt = 0;
-      const waitConfig = getConfig();
-      const progressHeartbeatMs = waitConfig.OPENCODE_PROGRESS_HEARTBEAT_MS;
-      const pendingText = buildSessionProgressHeartbeatText(language);
-      let lastProgressSentAtMs = 0;
-      let sentPendingUpdate = false;
-      for (;;) {
-        runAttempt += 1;
-        const cursor = await batchSpan(
-          "opencode_cursor",
-          async () =>
-            this.captureOpencodeMessageCursor({
-              directory: request.directory,
-              opencodeSessionId: request.sessionId,
-              logger: runtime.log,
-            }),
-          { attempt: runAttempt },
-        );
-        const stopProgressHeartbeat = this.startProgressHeartbeat({
-          session: mergedWithTrace,
-          log: runtime.log,
-          intervalMs: progressHeartbeatMs,
-          message: pendingText,
-          onSend: () => {
-            sentPendingUpdate = true;
-            lastProgressSentAtMs = Date.now();
-          },
-        });
+      const originalParts = request.body.parts;
+      let promptMode: "original" | "resume" = "original";
+
+      let lastError: {
+        errName?: string;
+        errMessage: string;
+        status: number | null;
+        isAbort: boolean;
+      } | null = null;
+
+      for (let runAttempt = 1; runAttempt <= maxRunAttempts; runAttempt += 1) {
+        const isFinalAttempt = runAttempt === maxRunAttempts;
+        const isResumeAttempt = promptMode === "resume";
+        request.body.parts = isResumeAttempt ? resumeParts : originalParts;
         try {
           result = await batchSpan(
             "opencode_run",
@@ -499,175 +485,22 @@ export class SessionProcessor {
               attempt: runAttempt,
             },
           );
-          break;
-        } catch (err) {
-          const errMessage = err instanceof Error ? err.message : String(err);
-          const isAbort = isAbortError(err);
-          const status = readHttpStatusCode(err);
-          const shouldResetOpencodeSession = status === 404;
-
-          const shouldRecoverFromAbort = isAbort && cursor.kind === "known";
-
-          if (shouldRecoverFromAbort) {
-            const recovered = await batchSpan(
-              "opencode_recover",
-              async () =>
-                this.tryRecoverOpencodeOutputFromServer({
-                  directory: request.directory,
-                  opencodeSessionId: request.sessionId,
-                  cursor,
-                  logger: runtime.log,
-                }),
-              { attempt: runAttempt },
-            );
-            if (recovered) {
-              result = recovered;
-              break;
-            }
-
-            if (!sentPendingUpdate) {
-              try {
-                await batchSpan(
-                  "send_pending_update",
-                  async () => this.sendResponse(mergedWithTrace, pendingText),
-                  {
-                    outputBytes: Buffer.byteLength(pendingText, "utf8"),
-                    outputPreview: pendingText,
-                    outputPreviewTruncated: false,
-                  },
-                );
-              } catch (sendErr) {
-                runtime.log.error(
-                  { err: sendErr },
-                  "Failed to send pending update",
-                );
-              }
-              sentPendingUpdate = true;
-              lastProgressSentAtMs = Date.now();
-            }
-
-            const waited = await batchSpan(
-              "opencode_wait",
-              async () =>
-                this.waitForOpencodeOutputFromServer({
-                  directory: request.directory,
-                  opencodeSessionId: request.sessionId,
-                  requestBody: request.body,
-                  cursor,
-                  deadlineMs:
-                    Date.now() + waitConfig.OPENCODE_SERVER_WAIT_TIMEOUT_MS,
-                  logger: runtime.log,
-                  progress: {
-                    session: mergedWithTrace,
-                    intervalMs: progressHeartbeatMs,
-                    message: pendingText,
-                    lastSentAtMs: lastProgressSentAtMs,
-                  },
-                }),
-              { attempt: runAttempt },
-            );
-            if (waited.kind === "output") {
-              result = waited.result;
-              break;
-            }
-            if (waited.kind === "stale_tool") {
-              runtime.log.warn(
-                {
-                  tool: waited.stale.tool,
-                  toolAgeMs: waited.stale.ageMs,
-                  toolStartedAtMs: waited.stale.startedAtMs,
-                  toolMessageId: waited.stale.messageId,
-                  toolInput: waited.stale.input,
-                },
-                "Opencode session appears stuck; resetting session",
-              );
-
-              try {
-                await this.opencodeClient.deleteSession({
-                  directory: request.directory,
-                  sessionId: request.sessionId,
-                });
-              } catch (deleteErr) {
-                runtime.log.warn(
-                  { err: deleteErr, opencodeSessionId: request.sessionId },
-                  "Failed to delete stuck opencode session",
-                );
-              }
-
-              const nowIso = new Date().toISOString();
-              const cleared = await this.sessionRepository.updateMeta({
-                ...sessionInfo.meta,
-                opencodeSessionId: undefined,
-                updatedAt: nowIso,
-              });
-              sessionInfo.meta = cleared.meta;
-              const newId = await this.ensureOpencodeSessionId(
-                sessionInfo,
-                buildOpencodeSessionTitle(sessionInfo),
-                {
-                  logger: runtime.log,
-                  traceId: runtime.traceId,
-                  jobId: runtime.jobId,
-                  message: runtime.spanMessage,
-                },
-              );
-              request.sessionId = newId;
-
-              if (runAttempt < maxRunAttempts) {
-                continue;
-              }
-            }
-
-            try {
-              const syncResult = await batchSpan(
-                "sync_workspace_files",
-                async () => {
-                  try {
-                    const changed =
-                      await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
-                    return { ok: true as const, changed };
-                  } catch (syncErr) {
-                    return { ok: false as const, err: syncErr };
-                  }
-                },
-                { reason: "opencode_timeout" },
-              );
-              if (!syncResult.ok) {
-                runtime.log.error(
-                  { err: syncResult.err },
-                  "Workspace file sync failed after opencode timeout",
-                );
-              }
-            } catch (syncErr) {
-              runtime.log.error(
-                { err: syncErr },
-                "Workspace file sync failed after opencode timeout",
-              );
-            }
-
-            runtime.log.warn(
-              { err, attempt: runAttempt, status },
-              "Opencode run timed out without output",
-            );
-            const responseOutput = buildSessionOpencodeTimeoutReply(language);
-            try {
-              await batchSpan(
-                "send_response",
-                async () => this.sendResponse(mergedWithTrace, responseOutput),
-                {
-                  outputBytes: Buffer.byteLength(responseOutput, "utf8"),
-                  outputPreview: responseOutput,
-                  outputPreviewTruncated: false,
-                },
-              );
-            } catch (sendErr) {
-              runtime.log.error(
-                { err: sendErr },
-                "Failed to send fallback response",
-              );
-            }
+          const output = resolveOutput(result.output);
+          const assistantMessageId = resolveOpencodeAssistantMessageId(result);
+          const isStaleReply =
+            Boolean(output) &&
+            Boolean(assistantMessageId) &&
+            assistantMessageId ===
+              sessionInfo.meta.opencodeLastAssistantMessageId;
+          if (isStaleReply) {
+            lastError = {
+              errMessage: "opencode_stale_assistant_message",
+              status: null,
+              isAbort: false,
+            };
+            promptMode = "resume";
             feishuLogJson({
-              event: "ai.finish",
+              event: "log.warn",
               traceId: runtime.traceId,
               platform: mergedWithTrace.platform,
               guildId: mergedWithTrace.guildId,
@@ -679,30 +512,79 @@ export class SessionProcessor {
               key: sessionInfo.meta.key,
               worldId: parsedWorld?.worldId,
               characterId: parsedCharacter?.characterId,
-              outputPreview: responseOutput,
+              component: "session-processor",
+              step: "opencode_run",
+              msg: `opencode返回了上一条assistant消息（疑似未处理本次输入） attempt:${runAttempt}/${maxRunAttempts}`,
+              errName: "StaleAssistantMessage",
+              errMessage: `assistantMessageId=${assistantMessageId} lastAssistantMessageId=${sessionInfo.meta.opencodeLastAssistantMessageId}`,
             });
-            await batchSpan("append_history", async () =>
-              this.appendHistoryFromJob(
-                sessionInfo,
-                mergedWithTrace,
-                historyKey,
-                undefined,
-                undefined,
-                responseOutput,
-                { stderr: "opencode_run_timeout" },
-              ),
-            );
-            await batchSpan("record_activity", async () =>
-              this.recordActivity(sessionInfo, runtime.log),
-            );
-
-            return "continue";
+            if (!isFinalAttempt) {
+              continue;
+            }
+            result = null;
+            break;
+          }
+          if (output) {
+            break;
           }
 
-          if (
-            (!isAbort || cursor.kind === "unknown") &&
-            runAttempt < maxRunAttempts
-          ) {
+          lastError = {
+            errMessage: "opencode_no_output",
+            status: null,
+            isAbort: false,
+          };
+          promptMode = "resume";
+          feishuLogJson({
+            event: "log.warn",
+            traceId: runtime.traceId,
+            platform: mergedWithTrace.platform,
+            guildId: mergedWithTrace.guildId,
+            channelId: mergedWithTrace.channelId,
+            messageId: mergedWithTrace.messageId,
+            groupId: sessionInfo.meta.groupId,
+            sessionId: sessionInfo.meta.sessionId,
+            userId: sessionInfo.meta.ownerId,
+            key: sessionInfo.meta.key,
+            worldId: parsedWorld?.worldId,
+            characterId: parsedCharacter?.characterId,
+            component: "session-processor",
+            step: "opencode_run",
+            msg: `opencode无输出 attempt:${runAttempt}/${maxRunAttempts}`,
+          });
+          if (!isFinalAttempt) {
+            continue;
+          }
+          result = null;
+          break;
+        } catch (err) {
+          const errMessage = err instanceof Error ? err.message : String(err);
+          const errName = err instanceof Error ? err.name : undefined;
+          const isAbort = isAbortError(err);
+          const status = readHttpStatusCode(err);
+          const shouldResetOpencodeSession = status === 404;
+          lastError = { errName, errMessage, status, isAbort };
+
+          feishuLogJson({
+            event: "log.warn",
+            traceId: runtime.traceId,
+            platform: mergedWithTrace.platform,
+            guildId: mergedWithTrace.guildId,
+            channelId: mergedWithTrace.channelId,
+            messageId: mergedWithTrace.messageId,
+            groupId: sessionInfo.meta.groupId,
+            sessionId: sessionInfo.meta.sessionId,
+            userId: sessionInfo.meta.ownerId,
+            key: sessionInfo.meta.key,
+            worldId: parsedWorld?.worldId,
+            characterId: parsedCharacter?.characterId,
+            component: "session-processor",
+            step: "opencode_run",
+            msg: `opencode失败 attempt:${runAttempt}/${maxRunAttempts} abort:${isAbort} status:${status ?? "n/a"}`,
+            errName,
+            errMessage,
+          });
+
+          if (!isFinalAttempt) {
             runtime.log.debug(
               { err, attempt: runAttempt, status },
               "Opencode run failed; retrying",
@@ -712,6 +594,7 @@ export class SessionProcessor {
               const cleared = await this.sessionRepository.updateMeta({
                 ...sessionInfo.meta,
                 opencodeSessionId: undefined,
+                opencodeLastAssistantMessageId: undefined,
                 updatedAt: nowIso,
               });
               sessionInfo.meta = cleared.meta;
@@ -726,6 +609,9 @@ export class SessionProcessor {
                 },
               );
               request.sessionId = newId;
+            }
+            if (isAbort) {
+              promptMode = "resume";
             }
             continue;
           }
@@ -739,82 +625,130 @@ export class SessionProcessor {
             "Opencode run failed",
           );
 
-          try {
-            const syncResult = await batchSpan(
-              "sync_workspace_files",
-              async () => {
-                try {
-                  const changed =
-                    await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
-                  return { ok: true as const, changed };
-                } catch (syncErr) {
-                  return { ok: false as const, err: syncErr };
-                }
-              },
-            );
-            if (!syncResult.ok) {
-              runtime.log.error(
-                { err: syncResult.err },
-                "Workspace file sync failed",
-              );
-            }
-          } catch (syncErr) {
-            runtime.log.error({ err: syncErr }, "Workspace file sync failed");
+          if (shouldResetOpencodeSession) {
+            const nowIso = new Date().toISOString();
+            const cleared = await this.sessionRepository.updateMeta({
+              ...sessionInfo.meta,
+              opencodeSessionId: undefined,
+              opencodeLastAssistantMessageId: undefined,
+              updatedAt: nowIso,
+            });
+            sessionInfo.meta = cleared.meta;
           }
 
-          const responseOutput = buildSessionOpencodeRunFailedReply(language);
+          result = null;
+          break;
+        }
+      }
+
+      if (!result) {
+        feishuLogJson({
+          event: "log.error",
+          traceId: runtime.traceId,
+          platform: mergedWithTrace.platform,
+          guildId: mergedWithTrace.guildId,
+          channelId: mergedWithTrace.channelId,
+          messageId: mergedWithTrace.messageId,
+          groupId: sessionInfo.meta.groupId,
+          sessionId: sessionInfo.meta.sessionId,
+          userId: sessionInfo.meta.ownerId,
+          key: sessionInfo.meta.key,
+          worldId: parsedWorld?.worldId,
+          characterId: parsedCharacter?.characterId,
+          component: "session-processor",
+          step: "opencode_run",
+          msg: `opencode最终失败 attempts:${maxRunAttempts}`,
+          errName: lastError?.errName,
+          errMessage: lastError?.errMessage ?? "unknown",
+        });
+
+        try {
+          const syncResult = await batchSpan(
+            "sync_workspace_files",
+            async () => {
+              try {
+                const changed =
+                  await this.syncWorkspaceFilesFromWorkspace(sessionInfo);
+                return { ok: true as const, changed };
+              } catch (err) {
+                return { ok: false as const, err };
+              }
+            },
+          );
+          if (!syncResult.ok) {
+            runtime.log.error(
+              { err: syncResult.err },
+              "Workspace file sync failed",
+            );
+          }
+        } catch (syncErr) {
+          runtime.log.error({ err: syncErr }, "Workspace file sync failed");
+        }
+
+        const shouldReplyOnFailure = !lastError?.isAbort;
+        const responseOutput = shouldReplyOnFailure
+          ? buildSessionOpencodeRunFailedReply(language)
+          : undefined;
+        const responseOutputBytes = responseOutput
+          ? Buffer.byteLength(responseOutput, "utf8")
+          : 0;
+        const responseOutputPreview = responseOutput
+          ? truncateTextByBytes(responseOutput, 2000)
+          : { content: "", truncated: false };
+        if (responseOutput) {
           try {
             await batchSpan(
               "send_response",
               async () => this.sendResponse(mergedWithTrace, responseOutput),
               {
-                outputBytes: Buffer.byteLength(responseOutput, "utf8"),
-                outputPreview: responseOutput,
-                outputPreviewTruncated: false,
+                outputBytes: responseOutputBytes,
+                outputPreview: responseOutputPreview.content,
+                outputPreviewTruncated: responseOutputPreview.truncated,
+                opencodeRunFailed: true,
               },
             );
           } catch (sendErr) {
             runtime.log.error(
               { err: sendErr },
-              "Failed to send fallback response",
+              "Failed to send opencode failure response",
             );
           }
-          feishuLogJson({
-            event: "ai.finish",
-            traceId: runtime.traceId,
-            platform: mergedWithTrace.platform,
-            guildId: mergedWithTrace.guildId,
-            channelId: mergedWithTrace.channelId,
-            messageId: mergedWithTrace.messageId,
-            groupId: sessionInfo.meta.groupId,
-            sessionId: sessionInfo.meta.sessionId,
-            userId: sessionInfo.meta.ownerId,
-            key: sessionInfo.meta.key,
-            worldId: parsedWorld?.worldId,
-            characterId: parsedCharacter?.characterId,
-            outputPreview: responseOutput,
-          });
-          await batchSpan("append_history", async () =>
-            this.appendHistoryFromJob(
-              sessionInfo,
-              mergedWithTrace,
-              historyKey,
-              undefined,
-              undefined,
-              responseOutput,
-              {
-                stderr: isAbort ? "opencode_run_aborted" : errMessage,
-              },
-            ),
-          );
-          await batchSpan("record_activity", async () =>
-            this.recordActivity(sessionInfo, runtime.log),
-          );
-
-          return "continue";
-        } finally {
-          stopProgressHeartbeat();
         }
+
+        feishuLogJson({
+          event: "ai.finish",
+          traceId: runtime.traceId,
+          platform: mergedWithTrace.platform,
+          guildId: mergedWithTrace.guildId,
+          channelId: mergedWithTrace.channelId,
+          messageId: mergedWithTrace.messageId,
+          groupId: sessionInfo.meta.groupId,
+          sessionId: sessionInfo.meta.sessionId,
+          userId: sessionInfo.meta.ownerId,
+          key: sessionInfo.meta.key,
+          worldId: parsedWorld?.worldId,
+          characterId: parsedCharacter?.characterId,
+          outputPreview: responseOutputPreview.content,
+        });
+        await batchSpan("append_history", async () =>
+          this.appendHistoryFromJob(
+            sessionInfo,
+            mergedWithTrace,
+            historyKey,
+            undefined,
+            undefined,
+            responseOutput,
+            {
+              stderr: lastError?.isAbort
+                ? "opencode_run_aborted"
+                : (lastError?.errMessage ?? "opencode_run_failed"),
+            },
+          ),
+        );
+        await batchSpan("record_activity", async () =>
+          this.recordActivity(sessionInfo, runtime.log),
+        );
+        return "continue";
       }
 
       const stillOwnerAfterRun = await this.bufferStore.claimGate(
@@ -849,10 +783,28 @@ export class SessionProcessor {
       });
 
       if (result.resetOpencodeSession) {
+        feishuLogJson({
+          event: "log.warn",
+          traceId: runtime.traceId,
+          platform: mergedWithTrace.platform,
+          guildId: mergedWithTrace.guildId,
+          channelId: mergedWithTrace.channelId,
+          messageId: mergedWithTrace.messageId,
+          groupId: sessionInfo.meta.groupId,
+          sessionId: sessionInfo.meta.sessionId,
+          userId: sessionInfo.meta.ownerId,
+          key: sessionInfo.meta.key,
+          worldId: parsedWorld?.worldId,
+          characterId: parsedCharacter?.characterId,
+          component: "session-processor",
+          step: "opencode_run",
+          msg: "opencode请求重置session（resetOpencodeSession=true）",
+        });
         const nowIso = new Date().toISOString();
         const updated = await this.sessionRepository.updateMeta({
           ...sessionInfo.meta,
           opencodeSessionId: undefined,
+          opencodeLastAssistantMessageId: undefined,
           updatedAt: nowIso,
         });
         sessionInfo.meta = updated.meta;
@@ -890,6 +842,24 @@ export class SessionProcessor {
           outputPreviewTruncated: responseOutputPreview.truncated,
         },
       );
+
+      const assistantMessageId = resolveOpencodeAssistantMessageId(result);
+      if (assistantMessageId) {
+        try {
+          const nowIso = new Date().toISOString();
+          const updated = await this.sessionRepository.updateMeta({
+            ...sessionInfo.meta,
+            opencodeLastAssistantMessageId: assistantMessageId,
+            updatedAt: nowIso,
+          });
+          sessionInfo.meta = updated.meta;
+        } catch (err) {
+          runtime.log.warn(
+            { err, assistantMessageId },
+            "Failed to persist opencode assistant message id",
+          );
+        }
+      }
       feishuLogJson({
         event: "ai.finish",
         traceId: runtime.traceId,
@@ -1027,20 +997,10 @@ export class SessionProcessor {
       },
     );
 
-    const upstreamMessageId =
-      telemetry?.message?.messageId && telemetry.message.messageId.trim()
-        ? telemetry.message.messageId.trim()
-        : undefined;
-    const opencodeMessageId = upstreamMessageId
-      ? upstreamMessageId.startsWith("msg")
-        ? upstreamMessageId
-        : `msg_${upstreamMessageId}`
-      : undefined;
     const request: OpencodeRequestSpec = {
       directory: sessionInfo.workspacePath,
       sessionId: opencodeSessionId,
       body: {
-        messageID: opencodeMessageId,
         system,
         model: resolveModelRef({
           groupOverride: groupConfig.model,
@@ -1056,36 +1016,6 @@ export class SessionProcessor {
     };
 
     return { history: [], request, promptBytes, language };
-  }
-
-  private async captureOpencodeMessageCursor(input: {
-    directory: string;
-    opencodeSessionId: string;
-    logger: Logger;
-  }): Promise<OpencodeMessageCursor> {
-    try {
-      const messages = await this.opencodeClient.listMessages({
-        directory: input.directory,
-        sessionId: input.opencodeSessionId,
-      });
-      const lastMessageIdRaw =
-        messages.length > 0 ? messages[messages.length - 1]?.info?.id : null;
-      const lastMessageId =
-        typeof lastMessageIdRaw === "string" && lastMessageIdRaw.trim()
-          ? lastMessageIdRaw.trim()
-          : null;
-      return {
-        kind: "known",
-        lastMessageId,
-        messageCount: messages.length,
-      };
-    } catch (err) {
-      input.logger.warn(
-        { err, opencodeSessionId: input.opencodeSessionId },
-        "Failed to capture opencode message cursor",
-      );
-      return { kind: "unknown" };
-    }
   }
 
   private async ensureWorkspaceBindings(
@@ -1695,322 +1625,6 @@ export class SessionProcessor {
     };
   }
 
-  private startProgressHeartbeat(input: {
-    session: SessionEvent;
-    log: Logger;
-    intervalMs: number;
-    message: string;
-    onSend?: () => void;
-  }): () => void {
-    const intervalMs =
-      typeof input.intervalMs === "number" && Number.isFinite(input.intervalMs)
-        ? Math.max(0, Math.floor(input.intervalMs))
-        : 0;
-    const message = input.message?.trim() ?? "";
-    if (!message || intervalMs <= 0) {
-      return () => {};
-    }
-
-    const trigger = () => {
-      void this.sendResponse(input.session, message)
-        .then(() => {
-          input.onSend?.();
-        })
-        .catch((err) => {
-          input.log.debug(
-            {
-              err,
-              platform: input.session.platform,
-              channelId: input.session.channelId,
-              messageId: input.session.messageId,
-            },
-            "Failed to send progress heartbeat",
-          );
-        });
-    };
-    const timer = setInterval(trigger, intervalMs);
-    return () => {
-      clearInterval(timer);
-    };
-  }
-
-  private async tryRecoverOpencodeOutputFromServer(input: {
-    directory: string;
-    opencodeSessionId: string;
-    cursor: OpencodeMessageCursor;
-    logger: Logger;
-  }): Promise<Awaited<ReturnType<OpencodeRunner["run"]>> | null> {
-    if (input.cursor.kind === "unknown") {
-      return null;
-    }
-
-    let messages: OpencodeMessageWithParts[];
-    try {
-      messages = await this.opencodeClient.listMessages({
-        directory: input.directory,
-        sessionId: input.opencodeSessionId,
-      });
-    } catch (err) {
-      input.logger.warn(
-        { err, opencodeSessionId: input.opencodeSessionId },
-        "Failed to list opencode messages",
-      );
-      return null;
-    }
-
-    const cursorSlice = sliceMessagesAfterId(
-      messages,
-      input.cursor.messageCount > 0 ? input.cursor.lastMessageId : null,
-    );
-    if (!cursorSlice.ok) {
-      return null;
-    }
-
-    const recovered = this.extractLatestAssistantTextFromMessages({
-      messages: cursorSlice.messages,
-    });
-    if (!recovered) {
-      return null;
-    }
-
-    const createdAt = new Date().toISOString();
-    return {
-      output: recovered.output,
-      historyEntries: [
-        { role: "assistant", content: recovered.output, createdAt },
-      ],
-    };
-  }
-
-  private async waitForOpencodeOutputFromServer(input: {
-    directory: string;
-    opencodeSessionId: string;
-    requestBody: OpencodeRequestSpec["body"];
-    cursor: OpencodeMessageCursor;
-    deadlineMs: number;
-    logger: Logger;
-    progress?: {
-      session: SessionEvent;
-      intervalMs: number;
-      message: string;
-      lastSentAtMs: number;
-    };
-  }): Promise<WaitForOpencodeOutputResult> {
-    if (input.cursor.kind === "unknown") {
-      return { kind: "timeout" };
-    }
-
-    const continuedAfter = new Set<string>();
-    let backoffMs = 2_000;
-    const config = getConfig();
-    const progress = input.progress;
-    const progressMessage = progress?.message?.trim() ?? "";
-    const progressIntervalMs =
-      typeof progress?.intervalMs === "number" &&
-      Number.isFinite(progress.intervalMs)
-        ? Math.max(0, Math.floor(progress.intervalMs))
-        : 0;
-    let lastProgressSentAtMs =
-      typeof progress?.lastSentAtMs === "number" &&
-      Number.isFinite(progress.lastSentAtMs) &&
-      progress.lastSentAtMs > 0
-        ? progress.lastSentAtMs
-        : Date.now();
-
-    while (Date.now() < input.deadlineMs) {
-      if (progress && progressMessage && progressIntervalMs > 0) {
-        const nowMs = Date.now();
-        if (nowMs - lastProgressSentAtMs >= progressIntervalMs) {
-          try {
-            await this.sendResponse(progress.session, progressMessage);
-            lastProgressSentAtMs = nowMs;
-          } catch (err) {
-            input.logger.debug(
-              { err, opencodeSessionId: input.opencodeSessionId },
-              "Failed to send progress heartbeat during wait loop",
-            );
-          }
-        }
-      }
-
-      let messages: OpencodeMessageWithParts[];
-      try {
-        messages = await this.opencodeClient.listMessages({
-          directory: input.directory,
-          sessionId: input.opencodeSessionId,
-        });
-      } catch (err) {
-        input.logger.warn(
-          { err, opencodeSessionId: input.opencodeSessionId },
-          "Failed to list opencode messages during wait loop",
-        );
-        await sleep(backoffMs);
-        backoffMs = Math.min(10_000, Math.floor(backoffMs * 1.5));
-        continue;
-      }
-
-      const cursorSlice = sliceMessagesAfterId(
-        messages,
-        input.cursor.messageCount > 0 ? input.cursor.lastMessageId : null,
-      );
-      if (!cursorSlice.ok) {
-        return { kind: "timeout" };
-      }
-      messages = cursorSlice.messages;
-
-      const stale = this.findStaleOpencodeToolCall({
-        messages,
-        nowMs: Date.now(),
-        staleAfterMs: config.OPENCODE_TOOL_STUCK_TIMEOUT_MS,
-      });
-      if (stale) {
-        return { kind: "stale_tool", stale };
-      }
-
-      const recovered = this.extractLatestAssistantTextFromMessages({
-        messages,
-      });
-      if (recovered) {
-        const createdAt = new Date().toISOString();
-        return {
-          kind: "output",
-          result: {
-            output: recovered.output,
-            historyEntries: [
-              { role: "assistant", content: recovered.output, createdAt },
-            ],
-          },
-        };
-      }
-
-      const latestAssistant = this.findLatestAssistantMessage({
-        messages,
-      });
-      if (
-        latestAssistant &&
-        shouldContinueAfterToolCalls(latestAssistant) &&
-        !continuedAfter.has(latestAssistant.info.id)
-      ) {
-        continuedAfter.add(latestAssistant.info.id);
-        try {
-          await this.opencodeClient.prompt({
-            directory: input.directory,
-            sessionId: input.opencodeSessionId,
-            body: {
-              ...input.requestBody,
-              parts: [{ type: "text", text: " " }],
-            },
-          });
-        } catch (err) {
-          if (!isAbortError(err)) {
-            input.logger.warn(
-              { err, opencodeSessionId: input.opencodeSessionId },
-              "Opencode continue request failed",
-            );
-          }
-        }
-      }
-
-      await sleep(backoffMs);
-      backoffMs = Math.min(10_000, Math.floor(backoffMs * 1.5));
-    }
-
-    return { kind: "timeout" };
-  }
-
-  private findStaleOpencodeToolCall(input: {
-    messages: OpencodeMessageWithParts[];
-    nowMs: number;
-    staleAfterMs: number;
-  }): StaleOpencodeToolCall | null {
-    let best: StaleOpencodeToolCall | null = null;
-    for (const message of input.messages) {
-      if (!message || !message.info) {
-        continue;
-      }
-      if (message.info.role !== "assistant") {
-        continue;
-      }
-      const parts = message.parts ?? [];
-      for (const part of parts) {
-        if (part.type !== "tool") {
-          continue;
-        }
-        const tool =
-          typeof part["tool"] === "string" ? part["tool"].trim() : "";
-        if (!tool) {
-          continue;
-        }
-        const state = isRecord(part["state"]) ? part["state"] : null;
-        if (!state) {
-          continue;
-        }
-        const status =
-          typeof state["status"] === "string" ? state["status"].trim() : "";
-        if (status !== "running") {
-          continue;
-        }
-        const time = isRecord(state["time"]) ? state["time"] : null;
-        const startedAtMs =
-          time && typeof time["start"] === "number" ? time["start"] : null;
-        if (startedAtMs === null) {
-          continue;
-        }
-        const ageMs = input.nowMs - startedAtMs;
-        if (!Number.isFinite(ageMs) || ageMs < input.staleAfterMs) {
-          continue;
-        }
-
-        const candidate: StaleOpencodeToolCall = {
-          tool,
-          messageId: message.info.id,
-          startedAtMs,
-          ageMs,
-          input: state["input"],
-        };
-        if (!best || candidate.startedAtMs < best.startedAtMs) {
-          best = candidate;
-        }
-      }
-    }
-    return best;
-  }
-
-  private extractLatestAssistantTextFromMessages(input: {
-    messages: OpencodeMessageWithParts[];
-  }): { output: string } | null {
-    for (let idx = input.messages.length - 1; idx >= 0; idx -= 1) {
-      const message = input.messages[idx];
-      if (!message || !message.info) {
-        continue;
-      }
-      if (message.info.role !== "assistant") {
-        continue;
-      }
-      const output = extractTextParts(message.parts);
-      if (output?.trim()) {
-        return { output };
-      }
-    }
-    return null;
-  }
-
-  private findLatestAssistantMessage(input: {
-    messages: OpencodeMessageWithParts[];
-  }): OpencodeMessageWithParts | null {
-    for (let idx = input.messages.length - 1; idx >= 0; idx -= 1) {
-      const message = input.messages[idx];
-      if (!message || !message.info) {
-        continue;
-      }
-      if (message.info.role !== "assistant") {
-        continue;
-      }
-      return message;
-    }
-    return null;
-  }
-
   private logOpencodeToolFailuresToFeishu(input: {
     toolCalls?: OpencodeToolCall[];
     traceId: string;
@@ -2137,21 +1751,15 @@ function resolveOutput(output?: string): string | undefined {
   return output.trim() ? output : undefined;
 }
 
-function sliceMessagesAfterId(
-  messages: OpencodeMessageWithParts[],
-  afterMessageId: string | null,
-): { ok: true; messages: OpencodeMessageWithParts[] } | { ok: false } {
-  const cursor = afterMessageId?.trim() ?? "";
-  if (!cursor) {
-    return { ok: true, messages };
+function resolveOpencodeAssistantMessageId(input: {
+  opencodeAssistantMessageId?: string;
+}): string | undefined {
+  const id = input.opencodeAssistantMessageId;
+  if (typeof id !== "string") {
+    return undefined;
   }
-  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-    const id = messages[idx]?.info?.id;
-    if (id === cursor) {
-      return { ok: true, messages: messages.slice(idx + 1) };
-    }
-  }
-  return { ok: false };
+  const trimmed = id.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function resolveHistoryKey(session: SessionEvent): HistoryKey | null {
@@ -2255,58 +1863,6 @@ function isAbortError(err: unknown): boolean {
     return true;
   }
   return false;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function shouldContinueAfterToolCalls(
-  message: OpencodeMessageWithParts,
-): boolean {
-  const parts = message.parts ?? [];
-  const hasQuestion = parts.some((part) => {
-    if (part.type !== "tool") {
-      return false;
-    }
-    const tool = typeof part["tool"] === "string" ? part["tool"].trim() : "";
-    return tool === "question";
-  });
-  if (hasQuestion) {
-    return false;
-  }
-
-  const hasToolCallsFinish = parts.some((part) => {
-    if (part.type !== "step-finish") {
-      return false;
-    }
-    const reason =
-      typeof part["reason"] === "string" ? part["reason"].trim() : "";
-    return reason === "tool-calls";
-  });
-  if (hasToolCallsFinish) {
-    return true;
-  }
-
-  return parts.some((part) => part.type === "tool");
-}
-
-function extractTextParts(
-  parts: OpencodeMessageWithParts["parts"] | undefined,
-): string | null {
-  const text = (parts ?? [])
-    .filter((part) => part.type === "text" && typeof part.text === "string")
-    .map((part) => String(part.text))
-    .join("");
-  const trimmed = text.trim();
-  return trimmed ? trimmed : null;
-}
-
-async function sleep(ms: number): Promise<void> {
-  if (!Number.isFinite(ms) || ms <= 0) {
-    return;
-  }
-  await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {

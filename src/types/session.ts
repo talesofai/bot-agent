@@ -10,6 +10,7 @@ export interface SessionMeta {
   active?: boolean;
   archivedAt?: string;
   opencodeSessionId?: string;
+  opencodeLastAssistantMessageId?: string;
   nietaToken?: string;
   createdAt: string;
   updatedAt: string;

@@ -14,6 +14,11 @@ export type OpencodeToolCall = {
 
 export interface OpencodeRunResult {
   output?: string;
+  /**
+   * The opencode server assistant message id (if the runner is backed by the server API).
+   * Used to detect stale replies (server returning the previous assistant message again).
+   */
+  opencodeAssistantMessageId?: string;
   historyEntries?: HistoryEntry[];
   streamEvents?: OpencodeStreamEvent[];
   rawStdout?: string;

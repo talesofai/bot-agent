@@ -1,7 +1,9 @@
 import type { Logger } from "pino";
 
 import { getConfig } from "../config";
+import { resolveDataRoot } from "../utils/data-root";
 import { isSafePathSegment } from "../utils/path";
+import { handleWikiRequest } from "./wiki";
 
 export interface HttpServerOptions {
   logger: Logger;
@@ -16,6 +18,7 @@ export interface HttpRequestHandlerContext {
   startedAt: number;
   version: string;
   apiToken: string | null;
+  dataRoot: string;
   onReloadGroup?: (groupId: string) => Promise<boolean>;
 }
 
@@ -29,12 +32,14 @@ export async function startHttpServer(
   const version = await resolveVersion();
   const port = options.port ?? config.HTTP_PORT;
   const apiToken = config.API_TOKEN?.trim() || null;
+  const dataRoot = resolveDataRoot(config);
 
   const context: HttpRequestHandlerContext = {
     logger: options.logger,
     startedAt,
     version,
     apiToken,
+    dataRoot,
     onReloadGroup: options.onReloadGroup,
   };
 
@@ -59,6 +64,15 @@ export function handleHttpRequest(
       status: "ok",
       version: context.version,
       uptime: formatUptime(Date.now() - context.startedAt),
+    });
+  }
+
+  if (url.pathname.startsWith("/wiki")) {
+    return handleWikiRequest(req, context).then((response) => {
+      if (response) {
+        return response;
+      }
+      return new Response("Not Found", { status: 404 });
     });
   }
 

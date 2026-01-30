@@ -167,7 +167,7 @@ export function routeDispatch(input: {
     .digest("hex")
     .slice(0, 12);
 
-  const dice = parseDiceSpec(normalized.trimmedContent);
+  const dice = parseDiceCommand(normalized.trimmedContent);
   if (dice) {
     return {
       kind: "dice",
@@ -211,6 +211,14 @@ export function routeDispatch(input: {
     contentHash,
     contentLength: normalized.trimmedContent.length,
   };
+}
+
+function parseDiceCommand(input: string): DiceSpec | null {
+  const match = input.match(/^\.rd(?:\s+|$)(.*)$/i);
+  if (!match) {
+    return null;
+  }
+  return parseDiceSpec(match[1]?.trim() ?? "");
 }
 
 export function normalizeDispatchMessage(input: {

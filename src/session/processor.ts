@@ -103,6 +103,10 @@ type WaitForOpencodeOutputResult =
   | { kind: "stale_tool"; stale: StaleOpencodeToolCall }
   | { kind: "timeout" };
 
+type OpencodeMessageCursor =
+  | { kind: "unknown" }
+  | { kind: "known"; lastMessageId: string | null; messageCount: number };
+
 export class SessionProcessor {
   private logger: Logger;
   private adapter: PlatformAdapter;
@@ -449,7 +453,6 @@ export class SessionProcessor {
       let result: Awaited<ReturnType<OpencodeRunner["run"]>>;
       const maxRunAttempts = 3;
       let runAttempt = 0;
-      const opencodeRunStartedAtMs = Date.now();
       const waitConfig = getConfig();
       const progressHeartbeatMs = waitConfig.OPENCODE_PROGRESS_HEARTBEAT_MS;
       const pendingText = buildSessionProgressHeartbeatText(language);
@@ -457,6 +460,16 @@ export class SessionProcessor {
       let sentPendingUpdate = false;
       for (;;) {
         runAttempt += 1;
+        const cursor = await batchSpan(
+          "opencode_cursor",
+          async () =>
+            this.captureOpencodeMessageCursor({
+              directory: request.directory,
+              opencodeSessionId: request.sessionId,
+              logger: runtime.log,
+            }),
+          { attempt: runAttempt },
+        );
         const stopProgressHeartbeat = this.startProgressHeartbeat({
           session: mergedWithTrace,
           log: runtime.log,
@@ -493,14 +506,16 @@ export class SessionProcessor {
           const status = readHttpStatusCode(err);
           const shouldResetOpencodeSession = status === 404;
 
-          if (isAbort) {
+          const shouldRecoverFromAbort = isAbort && cursor.kind === "known";
+
+          if (shouldRecoverFromAbort) {
             const recovered = await batchSpan(
               "opencode_recover",
               async () =>
                 this.tryRecoverOpencodeOutputFromServer({
                   directory: request.directory,
                   opencodeSessionId: request.sessionId,
-                  minCreatedAtMs: opencodeRunStartedAtMs - 60_000,
+                  cursor,
                   logger: runtime.log,
                 }),
               { attempt: runAttempt },
@@ -538,7 +553,7 @@ export class SessionProcessor {
                   directory: request.directory,
                   opencodeSessionId: request.sessionId,
                   requestBody: request.body,
-                  minCreatedAtMs: opencodeRunStartedAtMs - 60_000,
+                  cursor,
                   deadlineMs:
                     Date.now() + waitConfig.OPENCODE_SERVER_WAIT_TIMEOUT_MS,
                   logger: runtime.log,
@@ -684,7 +699,10 @@ export class SessionProcessor {
             return "continue";
           }
 
-          if (!isAbort && runAttempt < maxRunAttempts) {
+          if (
+            (!isAbort || cursor.kind === "unknown") &&
+            runAttempt < maxRunAttempts
+          ) {
             runtime.log.debug(
               { err, attempt: runAttempt, status },
               "Opencode run failed; retrying",
@@ -1038,6 +1056,36 @@ export class SessionProcessor {
     };
 
     return { history: [], request, promptBytes, language };
+  }
+
+  private async captureOpencodeMessageCursor(input: {
+    directory: string;
+    opencodeSessionId: string;
+    logger: Logger;
+  }): Promise<OpencodeMessageCursor> {
+    try {
+      const messages = await this.opencodeClient.listMessages({
+        directory: input.directory,
+        sessionId: input.opencodeSessionId,
+      });
+      const lastMessageIdRaw =
+        messages.length > 0 ? messages[messages.length - 1]?.info?.id : null;
+      const lastMessageId =
+        typeof lastMessageIdRaw === "string" && lastMessageIdRaw.trim()
+          ? lastMessageIdRaw.trim()
+          : null;
+      return {
+        kind: "known",
+        lastMessageId,
+        messageCount: messages.length,
+      };
+    } catch (err) {
+      input.logger.warn(
+        { err, opencodeSessionId: input.opencodeSessionId },
+        "Failed to capture opencode message cursor",
+      );
+      return { kind: "unknown" };
+    }
   }
 
   private async ensureWorkspaceBindings(
@@ -1689,9 +1737,13 @@ export class SessionProcessor {
   private async tryRecoverOpencodeOutputFromServer(input: {
     directory: string;
     opencodeSessionId: string;
-    minCreatedAtMs: number;
+    cursor: OpencodeMessageCursor;
     logger: Logger;
   }): Promise<Awaited<ReturnType<OpencodeRunner["run"]>> | null> {
+    if (input.cursor.kind === "unknown") {
+      return null;
+    }
+
     let messages: OpencodeMessageWithParts[];
     try {
       messages = await this.opencodeClient.listMessages({
@@ -1706,9 +1758,16 @@ export class SessionProcessor {
       return null;
     }
 
-    const recovered = this.extractLatestAssistantTextFromMessages({
+    const cursorSlice = sliceMessagesAfterId(
       messages,
-      minCreatedAtMs: input.minCreatedAtMs,
+      input.cursor.messageCount > 0 ? input.cursor.lastMessageId : null,
+    );
+    if (!cursorSlice.ok) {
+      return null;
+    }
+
+    const recovered = this.extractLatestAssistantTextFromMessages({
+      messages: cursorSlice.messages,
     });
     if (!recovered) {
       return null;
@@ -1727,7 +1786,7 @@ export class SessionProcessor {
     directory: string;
     opencodeSessionId: string;
     requestBody: OpencodeRequestSpec["body"];
-    minCreatedAtMs: number;
+    cursor: OpencodeMessageCursor;
     deadlineMs: number;
     logger: Logger;
     progress?: {
@@ -1737,6 +1796,10 @@ export class SessionProcessor {
       lastSentAtMs: number;
     };
   }): Promise<WaitForOpencodeOutputResult> {
+    if (input.cursor.kind === "unknown") {
+      return { kind: "timeout" };
+    }
+
     const continuedAfter = new Set<string>();
     let backoffMs = 2_000;
     const config = getConfig();
@@ -1786,9 +1849,17 @@ export class SessionProcessor {
         continue;
       }
 
+      const cursorSlice = sliceMessagesAfterId(
+        messages,
+        input.cursor.messageCount > 0 ? input.cursor.lastMessageId : null,
+      );
+      if (!cursorSlice.ok) {
+        return { kind: "timeout" };
+      }
+      messages = cursorSlice.messages;
+
       const stale = this.findStaleOpencodeToolCall({
         messages,
-        minCreatedAtMs: input.minCreatedAtMs,
         nowMs: Date.now(),
         staleAfterMs: config.OPENCODE_TOOL_STUCK_TIMEOUT_MS,
       });
@@ -1798,7 +1869,6 @@ export class SessionProcessor {
 
       const recovered = this.extractLatestAssistantTextFromMessages({
         messages,
-        minCreatedAtMs: input.minCreatedAtMs,
       });
       if (recovered) {
         const createdAt = new Date().toISOString();
@@ -1815,7 +1885,6 @@ export class SessionProcessor {
 
       const latestAssistant = this.findLatestAssistantMessage({
         messages,
-        minCreatedAtMs: input.minCreatedAtMs,
       });
       if (
         latestAssistant &&
@@ -1851,7 +1920,6 @@ export class SessionProcessor {
 
   private findStaleOpencodeToolCall(input: {
     messages: OpencodeMessageWithParts[];
-    minCreatedAtMs: number;
     nowMs: number;
     staleAfterMs: number;
   }): StaleOpencodeToolCall | null {
@@ -1861,13 +1929,6 @@ export class SessionProcessor {
         continue;
       }
       if (message.info.role !== "assistant") {
-        continue;
-      }
-      const created =
-        typeof message.info.time?.created === "number"
-          ? message.info.time.created
-          : null;
-      if (created === null || created < input.minCreatedAtMs) {
         continue;
       }
       const parts = message.parts ?? [];
@@ -1917,7 +1978,6 @@ export class SessionProcessor {
 
   private extractLatestAssistantTextFromMessages(input: {
     messages: OpencodeMessageWithParts[];
-    minCreatedAtMs: number;
   }): { output: string } | null {
     for (let idx = input.messages.length - 1; idx >= 0; idx -= 1) {
       const message = input.messages[idx];
@@ -1925,13 +1985,6 @@ export class SessionProcessor {
         continue;
       }
       if (message.info.role !== "assistant") {
-        continue;
-      }
-      const created =
-        typeof message.info.time?.created === "number"
-          ? message.info.time.created
-          : null;
-      if (created === null || created < input.minCreatedAtMs) {
         continue;
       }
       const output = extractTextParts(message.parts);
@@ -1944,7 +1997,6 @@ export class SessionProcessor {
 
   private findLatestAssistantMessage(input: {
     messages: OpencodeMessageWithParts[];
-    minCreatedAtMs: number;
   }): OpencodeMessageWithParts | null {
     for (let idx = input.messages.length - 1; idx >= 0; idx -= 1) {
       const message = input.messages[idx];
@@ -1952,13 +2004,6 @@ export class SessionProcessor {
         continue;
       }
       if (message.info.role !== "assistant") {
-        continue;
-      }
-      const created =
-        typeof message.info.time?.created === "number"
-          ? message.info.time.created
-          : null;
-      if (created === null || created < input.minCreatedAtMs) {
         continue;
       }
       return message;
@@ -2090,6 +2135,23 @@ function resolveOutput(output?: string): string | undefined {
     return undefined;
   }
   return output.trim() ? output : undefined;
+}
+
+function sliceMessagesAfterId(
+  messages: OpencodeMessageWithParts[],
+  afterMessageId: string | null,
+): { ok: true; messages: OpencodeMessageWithParts[] } | { ok: false } {
+  const cursor = afterMessageId?.trim() ?? "";
+  if (!cursor) {
+    return { ok: true, messages };
+  }
+  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+    const id = messages[idx]?.info?.id;
+    if (id === cursor) {
+      return { ok: true, messages: messages.slice(idx + 1) };
+    }
+  }
+  return { ok: false };
 }
 
 function resolveHistoryKey(session: SessionEvent): HistoryKey | null {

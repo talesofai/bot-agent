@@ -11,10 +11,12 @@
 
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
 - Discord：新增 `/language lang:zh|en`，按用户设置全局回复语言，并影响世界/角色文档写入语言（通过 worker 在每次 prompt 末尾注入语言指令）
-- Chat：新增掷骰快捷指令，发送 `NdM`（`1<=N<=10`、`1<=M<=100`，如 `2d100`）会直接返回掷骰结果（不走 opencode）
+- Chat：新增掷骰快捷指令，发送 `.rd NdM`（`1<=N<=10`、`1<=M<=100`，如 `.rd 2d100`）会直接返回掷骰结果（不走 opencode）
 - Chat：新增 `/nano` 文生图快捷命令：`/nano <描述>` 与 `/nano portrait [额外描述]`（走 TalesOfAI MCP / banana；不需要 @bot）
 - Chat：新增 `/polish <草稿>` 文本润色快捷命令（不需要 @bot；走 opencode skill）
 - Chat：新增 `/quest` 新手任务引导快捷命令（不需要 @bot；走 opencode skill）
+- HTTP：新增只读 Wiki（`/wiki`），用于浏览运行时 `/data` 下 `world/character/canon` 文档（Docsify 渲染，自动生成侧边栏）
+- Discord：新增文档离线编辑工作流：`/world export|import`、`/character export|import`（上传 .md/.markdown/.txt 覆盖；`kind=canon` 写入 `canon/<filename>`）
 - Config：新增 `OPENCODE_SERVER_WAIT_TIMEOUT_MS`（超时恢复阶段的等待上限）与 `OPENCODE_TOOL_STUCK_TIMEOUT_MS`（工具调用卡住判定阈值）
 - Config：新增 `OPENCODE_PROGRESS_HEARTBEAT_MS`（长耗时任务的进度心跳回复间隔）
 - Opencode：server client 新增 `deleteSession`（用于清理卡死会话）
@@ -41,6 +43,8 @@
 - 文档：更新世界系统 TODO，地图/NPC 功能优先走 opencode skill（暂不做独立 slash command）
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - Discord：`/onboard` 不再发 DM；改为在 homeGuild 内创建持久化私密话题（`玩家新手指导`/`创作者新手指导`），并把话题内输入视为 `@bot`（无需显式 mention）
+- UX：`/help` 增加“消息命令”与最短路径；`/onboard` 文案强化“私密引导话题在哪里/丢了怎么找回/如何唤醒 bot”
+- CI：移除 opencode 相关 GitHub workflows（PR tool）
 - Discord：世界构建附件读取支持 `json`，默认单文件上限提升至 8MB（用于容纳较大的设定原文）
 - Discord：世界构建会话支持从粘贴/上传的 JSON 中提取正文（优先解析 `entries[*].content`），写入 `world/source.md`（避免把整坨 JSON 当“设定原文”）
 - Discord：`/world info|rules`、`/character view` 与世界公告快照改为 embed 卡片化展示（不使用附件，避免刷屏式长 Markdown）

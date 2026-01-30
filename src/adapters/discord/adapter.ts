@@ -56,6 +56,7 @@ import { writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { createTraceId } from "../../telemetry";
 import { redactSensitiveText } from "../../utils/redact";
 import { extractTextFromJsonDocument } from "../../utils/json-text";
+import { isSafePathSegment } from "../../utils/path";
 import {
   UserStateStore,
   type UserLanguage,
@@ -67,6 +68,7 @@ import {
   buildDiscordCharacterBuildKickoff,
   buildDiscordCharacterCreateGuide,
   buildDiscordCharacterHelp,
+  buildDiscordHelp,
   buildDiscordOnboardingAutoPrompt,
   buildDiscordOnboardingGuide,
   buildDiscordWorldBuildKickoff,
@@ -861,22 +863,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     if (commandName === "help") {
-      await safeReply(
-        interaction,
-        [
-          "可用指令：",
-          "- /onboard role:player|creator",
-          "- /language lang:zh|en",
-          "- /world help",
-          "- /character help",
-          "- /reset [key:<会话槽位>] [user:<用户>]",
-          "- /resetall [key:<会话槽位>]（管理员）",
-          "- /model name:<模型 ID>",
-          "- /ping",
-          "- /help",
-        ].join("\n"),
-        { ephemeral: true },
-      );
+      const language = await this.userState
+        .getLanguage(interaction.user.id)
+        .catch(() => null);
+      await safeReply(interaction, buildDiscordHelp(language), {
+        ephemeral: true,
+      });
       return;
     }
     if (commandName === "onboard") {
@@ -1103,9 +1095,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       content: buildDiscordOnboardingGuide({ role, language }),
     });
 
+    const roleLabel =
+      language === "en" ? role : role === "creator" ? "创作者" : "玩家";
     await safeReply(
       interaction,
-      `已选择身份：${role}。继续在这里：<#${threadId}>`,
+      language === "en"
+        ? `Role set: ${roleLabel}. Continue here: <#${threadId}> (if you lose it, run /onboard again)`
+        : `已选择身份：${roleLabel}。继续在你的私密引导话题：<#${threadId}>（丢了就再跑 /onboard）`,
       { ephemeral: true },
     );
   }
@@ -1142,6 +1138,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
     if (subcommand === "publish") {
       await this.handleWorldPublish(interaction);
+      return;
+    }
+    if (subcommand === "export") {
+      const worldId = interaction.options.getInteger("world_id") ?? undefined;
+      await this.handleWorldExport(interaction, { worldId });
+      return;
+    }
+    if (subcommand === "import") {
+      const kind = interaction.options.getString("kind", true);
+      const file = interaction.options.getAttachment("file", true);
+      const worldId = interaction.options.getInteger("world_id") ?? undefined;
+      await this.handleWorldImport(interaction, { kind, file, worldId });
       return;
     }
     if (subcommand === "list") {
@@ -1544,6 +1552,219 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await safeReply(interaction, buildDiscordWorldHelp(language), {
       ephemeral: true,
     });
+  }
+
+  private async handleWorldExport(
+    interaction: ChatInputCommandInteraction,
+    input: { worldId?: number },
+  ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
+    const worldId =
+      input.worldId ??
+      (await this.inferWorldIdFromWorldSubspace(interaction).catch(() => null));
+    if (!worldId) {
+      await safeReply(
+        interaction,
+        "缺少 world_id：请在世界子空间/编辑话题内执行，或显式提供 world_id。",
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const meta = await this.worldStore.getWorld(worldId);
+    if (!meta) {
+      await safeReply(interaction, `世界不存在：W${worldId}`, {
+        ephemeral: true,
+      });
+      return;
+    }
+    if (!interaction.guildId || interaction.guildId !== meta.homeGuildId) {
+      await safeReply(
+        interaction,
+        `请在世界入口服务器执行：guild:${meta.homeGuildId}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+    if (meta.creatorId !== interaction.user.id) {
+      await safeReply(interaction, "无权限：只有世界创作者可以导出世界文档。", {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
+    await this.worldFiles.ensureDefaultFiles({
+      worldId: meta.id,
+      worldName: meta.name,
+      creatorId: meta.creatorId,
+      language,
+    });
+
+    const [card, rules, chronicle, tasks, news, canon] = await Promise.all([
+      this.worldFiles.readWorldCard(meta.id),
+      this.worldFiles.readRules(meta.id),
+      this.worldFiles.readCanon(meta.id, "chronicle.md"),
+      this.worldFiles.readCanon(meta.id, "tasks.md"),
+      this.worldFiles.readCanon(meta.id, "news.md"),
+      this.worldFiles.readCanon(meta.id, "canon.md"),
+    ]);
+    if (
+      card === null ||
+      rules === null ||
+      chronicle === null ||
+      tasks === null ||
+      news === null ||
+      canon === null
+    ) {
+      await safeReply(interaction, "世界文档不完整，暂无法导出。", {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const files: Array<{ attachment: Buffer; name: string }> = [
+      {
+        attachment: Buffer.from(card, "utf8"),
+        name: `W${meta.id}-world-card.md`,
+      },
+      { attachment: Buffer.from(rules, "utf8"), name: `W${meta.id}-rules.md` },
+      {
+        attachment: Buffer.from(chronicle, "utf8"),
+        name: `W${meta.id}-chronicle.md`,
+      },
+      { attachment: Buffer.from(tasks, "utf8"), name: `W${meta.id}-tasks.md` },
+      { attachment: Buffer.from(news, "utf8"), name: `W${meta.id}-news.md` },
+      { attachment: Buffer.from(canon, "utf8"), name: `W${meta.id}-canon.md` },
+    ];
+
+    await safeReplyRich(
+      interaction,
+      {
+        content: [
+          `已导出世界文档：W${meta.id} ${meta.name}`,
+          "改完后把文件作为附件上传，然后用 /world import 覆盖对应文档。",
+          "提示：导入 kind=canon 时，会写入 worlds/<id>/canon/<filename>；若文件名带 `W<id>-` 前缀会自动剥离。",
+          "支持 .md/.txt（会覆盖原内容）。",
+        ].join("\n"),
+        files,
+      },
+      { ephemeral: true },
+    );
+  }
+
+  private async handleWorldImport(
+    interaction: ChatInputCommandInteraction,
+    input: { kind: string; file: Attachment; worldId?: number },
+  ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
+    const worldId =
+      input.worldId ??
+      (await this.inferWorldIdFromWorldSubspace(interaction).catch(() => null));
+    if (!worldId) {
+      await safeReply(
+        interaction,
+        "缺少 world_id：请在世界子空间/编辑话题内执行，或显式提供 world_id。",
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const meta = await this.worldStore.getWorld(worldId);
+    if (!meta) {
+      await safeReply(interaction, `世界不存在：W${worldId}`, {
+        ephemeral: true,
+      });
+      return;
+    }
+    if (!interaction.guildId || interaction.guildId !== meta.homeGuildId) {
+      await safeReply(
+        interaction,
+        `请在世界入口服务器执行：guild:${meta.homeGuildId}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+    if (meta.creatorId !== interaction.user.id) {
+      await safeReply(interaction, "无权限：只有世界创作者可以覆盖世界文档。", {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    let doc: { filename: string; content: string };
+    try {
+      doc = await fetchDiscordTextAttachment(input.file, {
+        logger: this.logger,
+        maxBytes: DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES,
+      });
+    } catch (err) {
+      await safeReply(
+        interaction,
+        `读取附件失败：${err instanceof Error ? err.message : String(err)}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    if (!isAllowedWikiImportFilename(doc.filename)) {
+      await safeReply(interaction, "仅支持导入 .md/.markdown/.txt 文件。", {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const kind = input.kind.trim();
+    let target: string;
+    if (kind === "world_card") {
+      await this.worldFiles.writeWorldCard(meta.id, doc.content);
+      target = "world-card.md";
+    } else if (kind === "rules") {
+      await this.worldFiles.writeRules(meta.id, doc.content);
+      target = "rules.md";
+    } else if (kind === "canon") {
+      const canonFilename = resolveCanonImportFilename(meta.id, doc.filename);
+      if (
+        !canonFilename ||
+        !isSafePathSegment(canonFilename) ||
+        !isAllowedWikiImportFilename(canonFilename) ||
+        canonFilename === "world-card.md" ||
+        canonFilename === "rules.md"
+      ) {
+        await safeReply(
+          interaction,
+          "canon 导入文件名不合法：请使用安全文件名（如 canon.md/chronicle.md/tasks.md/news.md），仅允许 .md/.markdown/.txt。",
+          { ephemeral: true },
+        );
+        return;
+      }
+
+      await this.worldFiles.writeCanon(meta.id, canonFilename, doc.content);
+      target = `canon/${canonFilename}`;
+    } else {
+      await safeReply(
+        interaction,
+        `未知 kind：${kind}（可选：world_card/rules/canon）`,
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    await this.worldFiles.appendEvent(meta.id, {
+      type: "world_doc_imported",
+      worldId: meta.id,
+      userId: interaction.user.id,
+      kind,
+      filename: doc.filename,
+    });
+
+    await safeReply(
+      interaction,
+      `已覆盖 W${meta.id} ${meta.name}：${target}（来源：${doc.filename}）`,
+      { ephemeral: true },
+    );
   }
 
   private async handleWorldOpen(
@@ -2692,6 +2913,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.handleCharacterOpen(interaction, characterId);
       return;
     }
+    if (subcommand === "export") {
+      const characterId =
+        interaction.options.getInteger("character_id") ?? undefined;
+      await this.handleCharacterExport(interaction, { characterId });
+      return;
+    }
+    if (subcommand === "import") {
+      const file = interaction.options.getAttachment("file", true);
+      const characterId =
+        interaction.options.getInteger("character_id") ?? undefined;
+      await this.handleCharacterImport(interaction, { file, characterId });
+      return;
+    }
     if (subcommand === "view") {
       const characterId = interaction.options.getInteger("character_id", true);
       await this.handleCharacterView(interaction, characterId);
@@ -2889,6 +3123,138 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await safeReply(interaction, buildDiscordCharacterHelp(language), {
       ephemeral: true,
     });
+  }
+
+  private async handleCharacterExport(
+    interaction: ChatInputCommandInteraction,
+    input: { characterId?: number },
+  ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
+    let characterId: number;
+    try {
+      characterId = await this.resolveCharacterIdFromInteraction(
+        interaction,
+        input.characterId,
+      );
+    } catch (err) {
+      await safeReply(
+        interaction,
+        err instanceof Error ? err.message : String(err),
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const meta = await this.worldStore.getCharacter(characterId);
+    if (!meta) {
+      await safeReply(interaction, `角色不存在：C${characterId}`, {
+        ephemeral: true,
+      });
+      return;
+    }
+    if (meta.creatorId !== interaction.user.id) {
+      await safeReply(interaction, "无权限：只有角色创作者可以导出角色卡。", {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const content = await this.worldFiles.readCharacterCard(meta.id);
+    if (content === null) {
+      await safeReply(interaction, `角色卡文件不存在：C${meta.id}`, {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await safeReplyRich(
+      interaction,
+      {
+        content: [
+          `已导出角色卡：C${meta.id} ${meta.name}`,
+          "改完后把文件作为附件上传，然后用 /character import 覆盖角色卡。",
+          "支持 .md/.txt（会覆盖原内容）。",
+        ].join("\n"),
+        files: [
+          {
+            attachment: Buffer.from(content, "utf8"),
+            name: `C${meta.id}-character.md`,
+          },
+        ],
+      },
+      { ephemeral: true },
+    );
+  }
+
+  private async handleCharacterImport(
+    interaction: ChatInputCommandInteraction,
+    input: { file: Attachment; characterId?: number },
+  ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
+    let characterId: number;
+    try {
+      characterId = await this.resolveCharacterIdFromInteraction(
+        interaction,
+        input.characterId,
+      );
+    } catch (err) {
+      await safeReply(
+        interaction,
+        err instanceof Error ? err.message : String(err),
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const meta = await this.worldStore.getCharacter(characterId);
+    if (!meta) {
+      await safeReply(interaction, `角色不存在：C${characterId}`, {
+        ephemeral: true,
+      });
+      return;
+    }
+    if (meta.creatorId !== interaction.user.id) {
+      await safeReply(interaction, "无权限：只有角色创作者可以覆盖角色卡。", {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    let doc: { filename: string; content: string };
+    try {
+      doc = await fetchDiscordTextAttachment(input.file, {
+        logger: this.logger,
+        maxBytes: DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES,
+      });
+    } catch (err) {
+      await safeReply(
+        interaction,
+        `读取附件失败：${err instanceof Error ? err.message : String(err)}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    if (!isAllowedWikiImportFilename(doc.filename)) {
+      await safeReply(interaction, "仅支持导入 .md/.markdown/.txt 文件。", {
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await this.worldFiles.writeCharacterCard(meta.id, doc.content);
+    await this.worldFiles.appendCharacterEvent(meta.id, {
+      type: "character_card_imported",
+      characterId: meta.id,
+      userId: interaction.user.id,
+      filename: doc.filename,
+    });
+
+    await safeReply(
+      interaction,
+      `已覆盖角色卡：C${meta.id} ${meta.name}（来源：${doc.filename}）`,
+      { ephemeral: true },
+    );
   }
 
   private async handleCharacterView(
@@ -3400,6 +3766,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   }
 
   private async resolveCharacterIdForVisibilityCommand(
+    interaction: ChatInputCommandInteraction,
+    characterId?: number,
+  ): Promise<number> {
+    return this.resolveCharacterIdFromInteraction(interaction, characterId);
+  }
+
+  private async resolveCharacterIdFromInteraction(
     interaction: ChatInputCommandInteraction,
     characterId?: number,
   ): Promise<number> {
@@ -4794,6 +5167,30 @@ function patchCreatorLineInMarkdown(
   return patched ? lines.join("\n") : input;
 }
 
+function isAllowedWikiImportFilename(filename: string): boolean {
+  const trimmed = filename.trim().toLowerCase();
+  return (
+    trimmed.endsWith(".md") ||
+    trimmed.endsWith(".markdown") ||
+    trimmed.endsWith(".txt")
+  );
+}
+
+function resolveCanonImportFilename(
+  worldId: number,
+  rawFilename: string,
+): string {
+  const trimmed = rawFilename.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const prefix = `W${worldId}-`;
+  if (trimmed.startsWith(prefix)) {
+    return trimmed.slice(prefix.length).trim();
+  }
+  return trimmed;
+}
+
 function buildSlashCommands() {
   return [
     new SlashCommandBuilder()
@@ -4898,6 +5295,49 @@ function buildSlashCommands() {
         sub
           .setName("publish")
           .setDescription("发布当前草稿世界（仅创作者，在编辑话题中执行）"),
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("export")
+          .setDescription("导出世界文档（world-card/rules/canon，仅创作者）")
+          .addIntegerOption((option) =>
+            option
+              .setName("world_id")
+              .setDescription("世界ID（在世界子空间/编辑话题内可省略）")
+              .setMinValue(1)
+              .setRequired(false),
+          ),
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("import")
+          .setDescription(
+            "上传并覆盖世界文档（world-card/rules/canon，仅创作者）",
+          )
+          .addStringOption((option) =>
+            option
+              .setName("kind")
+              .setDescription("类型")
+              .addChoices(
+                { name: "world_card", value: "world_card" },
+                { name: "rules", value: "rules" },
+                { name: "canon", value: "canon" },
+              )
+              .setRequired(true),
+          )
+          .addAttachmentOption((option) =>
+            option
+              .setName("file")
+              .setDescription("要覆盖的 Markdown/TXT 文件")
+              .setRequired(true),
+          )
+          .addIntegerOption((option) =>
+            option
+              .setName("world_id")
+              .setDescription("世界ID（在世界子空间/编辑话题内可省略）")
+              .setMinValue(1)
+              .setRequired(false),
+          ),
       )
       .addSubcommand((sub) =>
         sub
@@ -5157,6 +5597,36 @@ function buildSlashCommands() {
               .setDescription("角色ID")
               .setMinValue(1)
               .setRequired(true),
+          ),
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("export")
+          .setDescription("导出角色卡（仅创作者）")
+          .addIntegerOption((option) =>
+            option
+              .setName("character_id")
+              .setDescription("角色ID（在编辑话题中可省略）")
+              .setMinValue(1)
+              .setRequired(false),
+          ),
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("import")
+          .setDescription("上传并覆盖角色卡（仅创作者）")
+          .addAttachmentOption((option) =>
+            option
+              .setName("file")
+              .setDescription("要覆盖的 Markdown/TXT 文件")
+              .setRequired(true),
+          )
+          .addIntegerOption((option) =>
+            option
+              .setName("character_id")
+              .setDescription("角色ID（在编辑话题中可省略）")
+              .setMinValue(1)
+              .setRequired(false),
           ),
       )
       .addSubcommand((sub) =>

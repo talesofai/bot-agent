@@ -463,12 +463,22 @@ export class WorldFileStore {
     if (!safeFilename) {
       throw new Error("filename is required");
     }
+    assertSafePathSegment(safeFilename, "filename");
     return path.join(this.worldDir(worldId), "canon", safeFilename);
   }
 
   async readCanon(worldId: WorldId, filename: string): Promise<string | null> {
     await this.ensureWorldDir(worldId);
     return this.readTextFile(this.canonPath(worldId, filename));
+  }
+
+  async writeCanon(
+    worldId: WorldId,
+    filename: string,
+    content: string,
+  ): Promise<void> {
+    await this.ensureWorldDir(worldId);
+    await this.atomicWrite(this.canonPath(worldId, filename), content);
   }
 
   async appendCanon(

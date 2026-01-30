@@ -12,6 +12,7 @@ import type {
   OpencodeRunInput,
   OpencodeRunResult,
 } from "../../worker/runner";
+import { resetConfig } from "../../config";
 import type {
   PlatformAdapter,
   Bot,
@@ -1093,7 +1094,43 @@ describe("SessionProcessor", () => {
     const adapter = new MemoryAdapter();
     const activityIndex = new MemoryActivityIndex();
     const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
-    const opencodeClient = new FakeOpencodeClient();
+    class CursorAwareOpencodeClient extends FakeOpencodeClient {
+      listCalls = 0;
+      override async listMessages(input: {
+        directory: string;
+        sessionId: string;
+        signal?: AbortSignal;
+      }): Promise<
+        Array<{
+          info: {
+            id: string;
+            sessionID: string;
+            role: "assistant" | "user" | "system";
+            time?: { created?: number; updated?: number };
+          };
+          parts: Array<{ type: string; text?: string }>;
+        }>
+      > {
+        void input.directory;
+        void input.signal;
+        this.listCalls += 1;
+        if (this.listCalls === 1) {
+          return [];
+        }
+        return [
+          {
+            info: {
+              id: "msg_test",
+              sessionID: input.sessionId,
+              role: "assistant",
+              time: { created: Date.now() },
+            },
+            parts: [{ type: "text", text: "ok" }],
+          },
+        ];
+      }
+    }
+    const opencodeClient = new CursorAwareOpencodeClient();
 
     const jobData: SessionJobData = {
       botId: "qq-123",
@@ -1163,6 +1200,143 @@ describe("SessionProcessor", () => {
 
     expect(runner.runs).toBe(1);
     expect(adapter.messages).toEqual(["ok"]);
+  });
+
+  test("does not replay stale opencode output when timeout recovery finds no new messages", async () => {
+    const originalWaitTimeout = process.env.OPENCODE_SERVER_WAIT_TIMEOUT_MS;
+    const originalHeartbeat = process.env.OPENCODE_PROGRESS_HEARTBEAT_MS;
+    process.env.OPENCODE_SERVER_WAIT_TIMEOUT_MS = "1000";
+    process.env.OPENCODE_PROGRESS_HEARTBEAT_MS = "0";
+    resetConfig();
+
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+
+    class StaleOnlyOpencodeClient extends FakeOpencodeClient {
+      override async listMessages(input: {
+        directory: string;
+        sessionId: string;
+        signal?: AbortSignal;
+      }): Promise<
+        Array<{
+          info: {
+            id: string;
+            sessionID: string;
+            role: "assistant" | "user" | "system";
+            time?: { created?: number; updated?: number };
+          };
+          parts: Array<{ type: string; text?: string }>;
+        }>
+      > {
+        void input.directory;
+        void input.signal;
+        return [
+          {
+            info: {
+              id: "msg_old",
+              sessionID: input.sessionId,
+              role: "assistant",
+              time: { created: Date.now() },
+            },
+            parts: [{ type: "text", text: "old" }],
+          },
+        ];
+      }
+    }
+    const opencodeClient = new StaleOnlyOpencodeClient();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const message: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "123",
+      userId: jobData.userId,
+      guildId: jobData.groupId,
+      channelId: jobData.groupId,
+      messageId: "msg-1",
+      content: "hello",
+      elements: [{ type: "text", text: "hello" }],
+      timestamp: Date.now(),
+      extras: {},
+    };
+    const acquired = await bufferStore.appendAndRequestJob(
+      bufferKey,
+      message,
+      jobData.gateToken,
+    );
+    expect(acquired).toBe(jobData.gateToken);
+
+    class TimeoutRunner implements OpencodeRunner {
+      runs = 0;
+      async run(): Promise<OpencodeRunResult> {
+        this.runs += 1;
+        const err = new Error("The operation timed out") as Error & {
+          name: string;
+        };
+        err.name = "TimeoutError";
+        throw err;
+      }
+    }
+    const runner = new TimeoutRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+    });
+
+    try {
+      await processor.process({ id: 0, data: jobData }, jobData);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+      if (originalWaitTimeout === undefined) {
+        delete process.env.OPENCODE_SERVER_WAIT_TIMEOUT_MS;
+      } else {
+        process.env.OPENCODE_SERVER_WAIT_TIMEOUT_MS = originalWaitTimeout;
+      }
+      if (originalHeartbeat === undefined) {
+        delete process.env.OPENCODE_PROGRESS_HEARTBEAT_MS;
+      } else {
+        process.env.OPENCODE_PROGRESS_HEARTBEAT_MS = originalHeartbeat;
+      }
+      resetConfig();
+    }
+
+    expect(runner.runs).toBe(1);
+    expect(adapter.messages.length).toBeGreaterThan(0);
+    expect(adapter.messages).not.toContain("old");
   });
 
   test("replies only after three consecutive opencode run failures", async () => {

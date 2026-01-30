@@ -25,5 +25,6 @@ tmp
 /deployments/k8s/llbot-secret.yaml
 /deployments/k8s/*-ingress.yaml
 !/deployments/k8s/opencode-web-ingress.yaml
+!/deployments/k8s/opencode-bot-agent-wiki-ingress.yaml
 /data/
 /.github-agent-data

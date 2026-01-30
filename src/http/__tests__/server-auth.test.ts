@@ -11,6 +11,7 @@ describe("HTTP server auth", () => {
       startedAt: 0,
       version: "test",
       apiToken: null,
+      dataRoot: "/data",
       onReloadGroup: async () => true,
     };
 
@@ -36,6 +37,7 @@ describe("HTTP server auth", () => {
       startedAt: 0,
       version: "test",
       apiToken: "secret-token",
+      dataRoot: "/data",
       onReloadGroup: async (groupId) => groupId === "group-1",
     };
 

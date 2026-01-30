@@ -14,8 +14,8 @@ describe("routeDispatch dice", () => {
       guildId: "guild",
       channelId: "channel",
       messageId: "msg",
-      content: "2d100",
-      elements: [{ type: "text", text: "2d100" }],
+      content: ".rd 2d100",
+      elements: [{ type: "text", text: ".rd 2d100" }],
       timestamp: Date.now(),
       extras: {},
     };
@@ -43,8 +43,8 @@ describe("routeDispatch dice", () => {
       guildId: "guild",
       channelId: "channel",
       messageId: "msg",
-      content: "#2 2d6",
-      elements: [{ type: "text", text: "#2 2d6" }],
+      content: "#2 .rd 2d6",
+      elements: [{ type: "text", text: "#2 .rd 2d6" }],
       timestamp: Date.now(),
       extras: {},
     };
@@ -72,8 +72,8 @@ describe("routeDispatch dice", () => {
       guildId: "guild",
       channelId: "channel",
       messageId: "msg",
-      content: "#0 10d20",
-      elements: [{ type: "text", text: "#0 10d20" }],
+      content: "#0 .rd 10d20",
+      elements: [{ type: "text", text: "#0 .rd 10d20" }],
       timestamp: Date.now(),
       extras: {},
     };

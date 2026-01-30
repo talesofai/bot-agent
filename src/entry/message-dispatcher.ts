@@ -35,6 +35,7 @@ import {
   type DispatchRoutingPlan,
   type ManagementCommand,
 } from "./dispatch-plan";
+import { extractSessionKey } from "./trigger";
 import { formatDiceResult, rollDice } from "../utils/dice";
 
 export { resolveDispatchGroupId } from "./dispatch-plan";
@@ -302,12 +303,17 @@ export class MessageDispatcher {
       async () => this.routerStore?.getSnapshot(),
     );
 
-    const routing = routeDispatch({
+    const pendingRouting = await this.resolvePendingUserInputRouting({
       message: runtime.message,
+      envelope,
+    });
+
+    const routing = routeDispatch({
+      message: pendingRouting.message,
       groupConfig: auth.groupConfig,
       routerSnapshot,
       botId,
-      forceEnqueue,
+      forceEnqueue: forceEnqueue || pendingRouting.forceEnqueue,
     });
 
     await this.handleDispatchRouting({
@@ -316,6 +322,49 @@ export class MessageDispatcher {
       groupConfig: auth.groupConfig,
       routing,
     });
+  }
+
+  private async resolvePendingUserInputRouting(input: {
+    message: SessionEvent;
+    envelope: DispatchEnvelope;
+  }): Promise<{ message: SessionEvent; forceEnqueue: boolean }> {
+    const extracted = extractSessionKey(input.message.content);
+    const explicitKey = extracted.prefixLength > 0 ? extracted.key : null;
+
+    const pendingKey: number | null =
+      explicitKey !== null
+        ? (await this.sessionRepository
+            .hasPendingOpencodeUserInput({
+              botId: input.envelope.botId,
+              groupId: input.envelope.groupId,
+              userId: input.envelope.userId,
+              key: explicitKey,
+              channelId: input.message.channelId,
+            })
+            .catch(() => false))
+          ? explicitKey
+          : null
+        : await this.sessionRepository
+            .findPendingOpencodeUserInputKeyByChannel({
+              botId: input.envelope.botId,
+              groupId: input.envelope.groupId,
+              userId: input.envelope.userId,
+              channelId: input.message.channelId,
+            })
+            .catch(() => null);
+
+    if (pendingKey === null) {
+      return { message: input.message, forceEnqueue: false };
+    }
+
+    if (explicitKey !== null) {
+      return { message: input.message, forceEnqueue: true };
+    }
+
+    return {
+      message: prefixSessionKey(input.message, pendingKey),
+      forceEnqueue: true,
+    };
   }
 
   private async handleDispatchRouting(input: {
@@ -1171,6 +1220,15 @@ export class MessageDispatcher {
     }
     return message;
   }
+}
+
+function prefixSessionKey(message: SessionEvent, key: number): SessionEvent {
+  const prefix = `#${key} `;
+  return {
+    ...message,
+    content: `${prefix}${message.content}`,
+    elements: [{ type: "text", text: prefix }, ...message.elements],
+  };
 }
 
 function shouldForceEnqueueForGroupId(groupId: string): boolean {

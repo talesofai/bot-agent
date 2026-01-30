@@ -1,5 +1,15 @@
 export type SessionStatus = "idle" | "running";
 
+export type OpencodePendingUserInput = {
+  kind: "question";
+  channelId: string;
+  /** Platform message id that triggered the question (if any). */
+  platformMessageId?: string;
+  opencodeAssistantMessageId?: string;
+  opencodeCallId?: string;
+  createdAt: string;
+};
+
 export interface SessionMeta {
   sessionId: string;
   groupId: string;
@@ -11,6 +21,7 @@ export interface SessionMeta {
   archivedAt?: string;
   opencodeSessionId?: string;
   opencodeLastAssistantMessageId?: string;
+  opencodePendingUserInput?: OpencodePendingUserInput;
   nietaToken?: string;
   createdAt: string;
   updatedAt: string;

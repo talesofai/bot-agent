@@ -782,7 +782,7 @@ export class SessionProcessor {
         characterId: parsedCharacter?.characterId,
       });
 
-      if (result.resetOpencodeSession) {
+      if (result.pendingUserInput?.kind === "question") {
         feishuLogJson({
           event: "log.warn",
           traceId: runtime.traceId,
@@ -798,13 +798,28 @@ export class SessionProcessor {
           characterId: parsedCharacter?.characterId,
           component: "session-processor",
           step: "opencode_run",
-          msg: "opencode请求重置session（resetOpencodeSession=true）",
+          msg: "opencode请求用户输入（question tool）",
         });
         const nowIso = new Date().toISOString();
         const updated = await this.sessionRepository.updateMeta({
           ...sessionInfo.meta,
-          opencodeSessionId: undefined,
-          opencodeLastAssistantMessageId: undefined,
+          opencodePendingUserInput: {
+            kind: "question",
+            channelId: mergedWithTrace.channelId,
+            platformMessageId: mergedWithTrace.messageId,
+            opencodeAssistantMessageId:
+              resolveOpencodeAssistantMessageId(result),
+            opencodeCallId: result.pendingUserInput.opencodeCallId,
+            createdAt: nowIso,
+          },
+          updatedAt: nowIso,
+        });
+        sessionInfo.meta = updated.meta;
+      } else if (sessionInfo.meta.opencodePendingUserInput) {
+        const nowIso = new Date().toISOString();
+        const updated = await this.sessionRepository.updateMeta({
+          ...sessionInfo.meta,
+          opencodePendingUserInput: undefined,
           updatedAt: nowIso,
         });
         sessionInfo.meta = updated.meta;

@@ -273,13 +273,14 @@ describe("OpencodeServerRunner", () => {
     });
   });
 
-  test("formats question tool as plain text and requests session reset", async () => {
+  test("formats question tool as plain text and requests user input", async () => {
     const { client } = createFakeClient([
       {
         parts: [
           {
             type: "tool",
             tool: "question",
+            callID: "call_test",
             state: {
               status: "running",
               input: {
@@ -340,7 +341,10 @@ describe("OpencodeServerRunner", () => {
 
     expect(result.output).toContain("设定补充需求");
     expect(result.output).toContain("世界基本设定");
-    expect(result.resetOpencodeSession).toBe(true);
+    expect(result.pendingUserInput).toEqual({
+      kind: "question",
+      opencodeCallId: "call_test",
+    });
   });
 
   test("throws when aborted before start", async () => {

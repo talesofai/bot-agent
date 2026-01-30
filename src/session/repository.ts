@@ -58,6 +58,95 @@ export class SessionRepository {
       .filter((userId) => isSafePathSegment(userId));
   }
 
+  async hasPendingOpencodeUserInput(input: {
+    botId: string;
+    groupId: string;
+    userId: string;
+    key: number;
+    channelId?: string;
+  }): Promise<boolean> {
+    assertSafePathSegment(input.botId, "botId");
+    assertSafePathSegment(input.groupId, "groupId");
+    assertSafePathSegment(input.userId, "userId");
+    assertValidSessionKey(input.key);
+
+    const paths = this.buildUserPaths(input.botId, input.groupId, input.userId);
+    const index = await this.readSessionIndex(paths.indexPath);
+    const sessionId = index.active[String(input.key)];
+    if (!sessionId || !isSafePathSegment(sessionId)) {
+      return false;
+    }
+
+    const sessionPaths = this.buildSessionPaths(
+      input.botId,
+      input.groupId,
+      input.userId,
+      sessionId,
+    );
+    const meta = await this.readMeta(sessionPaths.metaPath);
+    const pending = meta?.opencodePendingUserInput;
+    if (!pending || pending.kind !== "question") {
+      return false;
+    }
+
+    const expectedChannelId = input.channelId?.trim();
+    if (expectedChannelId && pending.channelId !== expectedChannelId) {
+      return false;
+    }
+    return true;
+  }
+
+  async findPendingOpencodeUserInputKeyByChannel(input: {
+    botId: string;
+    groupId: string;
+    userId: string;
+    channelId: string;
+  }): Promise<number | null> {
+    assertSafePathSegment(input.botId, "botId");
+    assertSafePathSegment(input.groupId, "groupId");
+    assertSafePathSegment(input.userId, "userId");
+
+    const channelId = input.channelId.trim();
+    if (!channelId) {
+      return null;
+    }
+
+    const paths = this.buildUserPaths(input.botId, input.groupId, input.userId);
+    const index = await this.readSessionIndex(paths.indexPath);
+
+    const candidates: number[] = [];
+    for (const [key, sessionId] of Object.entries(index.active)) {
+      const parsedKey = Number(key);
+      if (!Number.isInteger(parsedKey) || parsedKey < 0) {
+        continue;
+      }
+      if (!sessionId || !isSafePathSegment(sessionId)) {
+        continue;
+      }
+      const sessionPaths = this.buildSessionPaths(
+        input.botId,
+        input.groupId,
+        input.userId,
+        sessionId,
+      );
+      const meta = await this.readMeta(sessionPaths.metaPath);
+      const pending = meta?.opencodePendingUserInput;
+      if (!pending || pending.kind !== "question") {
+        continue;
+      }
+      if (pending.channelId !== channelId) {
+        continue;
+      }
+      candidates.push(parsedKey);
+    }
+
+    if (candidates.length === 0) {
+      return null;
+    }
+    candidates.sort((a, b) => a - b);
+    return candidates[0] ?? null;
+  }
+
   async resolveActiveSessionId(
     botId: string,
     groupId: string,

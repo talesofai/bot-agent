@@ -192,6 +192,82 @@ class MemoryEchoStore {
   async close(): Promise<void> {}
 }
 
+describe("MessageDispatcher pending user input", () => {
+  test("enqueues plain answers when opencode is waiting for a question reply", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const adapter = new MemoryAdapter();
+    const groupStore = new GroupStore({ dataDir: tempDir, logger });
+    await groupStore.init();
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+
+    const bufferStore = new CapturingSessionBuffer();
+    const sessionQueue = new CapturingSessionQueue();
+    const dispatcher = new MessageDispatcher({
+      adapter,
+      groupStore,
+      routerStore: null,
+      sessionRepository,
+      sessionQueue: sessionQueue as unknown as BullmqSessionQueue,
+      bufferStore,
+      echoTracker: new EchoTracker({ store: new MemoryEchoStore() }),
+      logger,
+    });
+
+    try {
+      await groupStore.updateGroupConfig("guild-1", (config) => ({
+        ...config,
+        triggerMode: "mention",
+        maxSessions: 2,
+      }));
+
+      const botId = "qq-bot-1";
+      const groupId = "guild-1";
+      const userId = "user-1";
+      const key = 1;
+      const sessionId = await sessionRepository.resolveActiveSessionId(
+        botId,
+        groupId,
+        userId,
+        key,
+      );
+      const now = new Date().toISOString();
+      await sessionRepository.createSession({
+        sessionId,
+        groupId,
+        botId,
+        ownerId: userId,
+        key,
+        status: "idle",
+        active: true,
+        opencodePendingUserInput: {
+          kind: "question",
+          channelId: "channel-1",
+          createdAt: now,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await dispatcher.dispatch({
+        ...baseMessage,
+        content: "平台世界",
+        elements: [{ type: "text", text: "平台世界" }],
+        messageId: "msg-2",
+      });
+
+      expect(sessionQueue.jobs).toHaveLength(1);
+      expect(sessionQueue.jobs[0]?.key).toBe(1);
+      expect(bufferStore.lastMessage?.content).toBe("平台世界");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("MessageDispatcher management commands", () => {
   test("allows Discord guild owner to reset all even when adminUsers is empty", async () => {
     const tempDir = makeTempDir();

@@ -77,18 +77,21 @@ export class OpencodeServerRunner implements OpencodeRunner {
         };
       }
 
-      const questionText = formatQuestionToolAsText(
+      const question = formatQuestionToolAsText(
         response,
         input.language ?? null,
       );
-      if (questionText) {
+      if (question) {
         return {
-          output: questionText,
+          output: question.text,
           opencodeAssistantMessageId: assistantMessageId,
           historyEntries: [
-            { role: "assistant", content: questionText, createdAt },
+            { role: "assistant", content: question.text, createdAt },
           ] satisfies HistoryEntry[],
-          resetOpencodeSession: true,
+          pendingUserInput: {
+            kind: "question",
+            opencodeCallId: question.opencodeCallId,
+          },
           toolCalls: toolCalls.length ? toolCalls : undefined,
         };
       }
@@ -142,19 +145,27 @@ function shouldContinueAfterToolCalls(
 function formatQuestionToolAsText(
   response: OpencodeAssistantMessageWithParts,
   language: UserLanguage | null,
-): string | null {
+): { text: string; opencodeCallId?: string } | null {
   const parts = response.parts ?? [];
   const toolPart = findToolPart(parts, "question");
   if (!toolPart) {
     return null;
   }
 
+  const callId =
+    typeof toolPart.callID === "string" && toolPart.callID.trim()
+      ? toolPart.callID.trim()
+      : undefined;
+
   const state = isRecord(toolPart.state) ? toolPart.state : null;
   const input = state && isRecord(state.input) ? state.input : null;
   const questions =
     input && Array.isArray(input.questions) ? input.questions : [];
   if (questions.length === 0) {
-    return buildOpencodeQuestionToolNoQuestionsFallback(language);
+    return {
+      text: buildOpencodeQuestionToolNoQuestionsFallback(language),
+      opencodeCallId: callId,
+    };
   }
 
   const lines: string[] = [];
@@ -207,7 +218,7 @@ function formatQuestionToolAsText(
 
   lines.push("", buildOpencodeQuestionToolFooter(language));
   const text = lines.join("\n").trim();
-  return text ? text : null;
+  return text ? { text, opencodeCallId: callId } : null;
 }
 
 function findToolPart(

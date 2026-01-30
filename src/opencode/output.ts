@@ -12,6 +12,11 @@ export type OpencodeToolCall = {
   errorMessage?: string;
 };
 
+export type OpencodePendingUserInput = {
+  kind: "question";
+  opencodeCallId?: string;
+};
+
 export interface OpencodeRunResult {
   output?: string;
   /**
@@ -25,10 +30,10 @@ export interface OpencodeRunResult {
   rawStderr?: string;
   toolCalls?: OpencodeToolCall[];
   /**
-   * Hint from runner that the current opencode session is stuck (e.g. waiting for
-   * an interactive UI tool) and should be reset before the next turn.
+   * Hint from runner that the current opencode session is waiting for explicit
+   * user input (e.g. the interactive `question` tool).
    */
-  resetOpencodeSession?: boolean;
+  pendingUserInput?: OpencodePendingUserInput;
 }
 
 export function parseOpencodeOutput(

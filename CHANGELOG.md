@@ -87,6 +87,7 @@
 - Discord：当 SlashCommand 回复/延迟失败时，补齐飞书 `log.warn` 事件，便于定位 Discord “程序未响应”根因
 - World：当世界子空间的 Category 被手动删除/缺失时，worldId 推断逻辑会降级为按已知频道 ID 匹配并回填 `channel->worldId`，避免 `/world info|rules|stats|join` 无法识别当前世界
 - Discord：`/world info|rules|stats|status` 在世界子空间频道内可省略 `world_id`
+- Opencode：支持 `question` 工具的交互式问答：先把问题/选项发给用户并标记 pending；随后用户的回答会自动入队到同一 session/key 并继续交给 opencode 处理（避免卡死）
 - Discord：新增 `/world remove`（管理员）清理世界 meta/集合与 worlds 文件，并 best-effort 删除 Discord 资源
 - Discord：世界构建仅上传无效附件时不再触发 opencode 入队（避免重复回复“缺设定”），并区分“文件过大/类型不支持/内容为空”提示
 - Discord：对同一条消息的“相同回复”做短 TTL 去重，减少队列重试/网络抖动导致的重复回复

@@ -1310,6 +1310,137 @@ describe("SessionProcessor", () => {
     }
   });
 
+  test("persists pending question state and clears after the next successful reply", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const opencodeClient = new FakeOpencodeClient();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    class QuestionRunner implements OpencodeRunner {
+      runs = 0;
+
+      async run(): Promise<OpencodeRunResult> {
+        this.runs += 1;
+        if (this.runs === 1) {
+          return {
+            output: "请选择：A / B",
+            opencodeAssistantMessageId: "assistant-question",
+            pendingUserInput: { kind: "question", opencodeCallId: "call-1" },
+          };
+        }
+        return { output: "OK", opencodeAssistantMessageId: "assistant-ok" };
+      }
+    }
+    const runner = new QuestionRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+    });
+
+    try {
+      const msg1: SessionEvent = {
+        type: "message",
+        platform: "qq",
+        selfId: "123",
+        userId: jobData.userId,
+        guildId: jobData.groupId,
+        channelId: "channel-1",
+        messageId: "msg-1",
+        content: "trigger-question",
+        elements: [{ type: "text", text: "trigger-question" }],
+        timestamp: Date.now(),
+        extras: {},
+      };
+      const acquired1 = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        msg1,
+        jobData.gateToken,
+      );
+      expect(acquired1).toBe(jobData.gateToken);
+      await processor.process({ id: 0, data: jobData }, jobData);
+
+      const afterQuestion = await sessionRepository.loadSession(
+        jobData.botId,
+        jobData.groupId,
+        jobData.userId,
+        jobData.sessionId,
+      );
+      expect(afterQuestion?.meta.opencodePendingUserInput).toMatchObject({
+        kind: "question",
+        channelId: "channel-1",
+        platformMessageId: "msg-1",
+        opencodeAssistantMessageId: "assistant-question",
+        opencodeCallId: "call-1",
+      });
+      expect(afterQuestion?.meta.opencodeSessionId).toBeTruthy();
+
+      const msg2: SessionEvent = {
+        ...msg1,
+        messageId: "msg-2",
+        content: "A",
+        elements: [{ type: "text", text: "A" }],
+        timestamp: Date.now(),
+      };
+      const acquired2 = await bufferStore.appendAndRequestJob(
+        bufferKey,
+        msg2,
+        jobData.gateToken,
+      );
+      expect(acquired2).toBe(jobData.gateToken);
+      await processor.process({ id: 1, data: jobData }, jobData);
+
+      const afterAnswer = await sessionRepository.loadSession(
+        jobData.botId,
+        jobData.groupId,
+        jobData.userId,
+        jobData.sessionId,
+      );
+      expect(afterAnswer?.meta.opencodePendingUserInput).toBeUndefined();
+      expect(afterAnswer?.meta.opencodeLastAssistantMessageId).toBe(
+        "assistant-ok",
+      );
+
+      expect(runner.runs).toBe(2);
+      expect(adapter.messages).toEqual(["请选择：A / B", "OK"]);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("replies only after three consecutive opencode run failures", async () => {
     const tempDir = makeTempDir();
     const logger = pino({ level: "silent" });

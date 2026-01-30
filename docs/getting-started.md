@@ -32,6 +32,9 @@ cp configs/example.env configs/.env
 # LuckyLilliaBot WebUI token（不要留空）
 WEBUI_TOKEN=change-me
 
+# 启用 QQ（必须显式设置；否则默认不启用 QQ）
+LLBOT_PLATFORM=qq
+
 # opencode server（Docker Compose 默认已包含；本机直跑需要自行启动并填 URL）
 OPENCODE_SERVER_URL=http://opencode-server:4096
 
@@ -74,7 +77,7 @@ docker compose -f deployments/docker/docker-compose.llbot-local.yml logs luckyli
 
 你可以在消息开头加 `#<key>` 切换会话编号，例如 `#2 继续刚才的话题`。不提供前缀时默认使用 key 0。
 
-如果你在本机直接运行 `opencode-bot-agent`（非 Docker 网络），请先确保 Redis 与 PostgreSQL 可用，并让本地 llbot 将自己的 WS 地址注册到 Redis（例如 `ws://localhost:3000`）。然后在 `configs/.env` 中设置 `REDIS_URL=redis://localhost:6379` 与 `DATABASE_URL=postgres://...`（无需设置平台选择；配置 `DISCORD_TOKEN` 时会同时启用 Discord）。注意：本项目默认不在运行时执行 DDL，请先在数据库执行迁移脚本创建/升级 `history_entries`：
+如果你在本机直接运行 `opencode-bot-agent`（非 Docker 网络），请先确保 Redis 与 PostgreSQL 可用，并让本地 llbot 将自己的 WS 地址注册到 Redis（例如 `ws://localhost:3000`）。然后在 `configs/.env` 中设置 `REDIS_URL=redis://localhost:6379` 与 `DATABASE_URL=postgres://...`（启用 QQ 需要显式设置 `LLBOT_PLATFORM=qq`；配置 `DISCORD_TOKEN` 时会同时启用 Discord）。注意：本项目默认不在运行时执行 DDL，请先在数据库执行迁移脚本创建/升级 `history_entries`：
 
 ```bash
 psql "$DATABASE_URL" -f deployments/docker/postgres-init/001-history-entries.sql

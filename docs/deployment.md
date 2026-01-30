@@ -188,7 +188,7 @@ LLBot 的 Kubernetes 资源见：
 ### Bot Agent Deployment
 
 Adapter 与 Worker 分离部署，入口命令分别为 `start:adapter` / `start:worker`。
-无需配置 `PLATFORM`；默认启用 QQ，提供 `DISCORD_TOKEN` 时会同时启用 Discord。
+无需配置 `PLATFORM`（历史字段，已不用）；默认 `LLBOT_PLATFORM=discord`（即默认不启用 QQ）。如需启用 QQ，请设置 `LLBOT_PLATFORM=qq` 并配置 llbot 注册表；提供 `DISCORD_TOKEN` 时会同时启用 Discord。
 
 此外需要部署独立的 opencode server（HTTP），供 Worker 调用：
 

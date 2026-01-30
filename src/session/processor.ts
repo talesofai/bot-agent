@@ -1628,7 +1628,7 @@ export class SessionProcessor {
     const trigger = () => {
       void sendTyping.call(this.adapter, session).catch((err) => {
         log.debug(
-          { err, sessionId: session.messageId, platform: session.platform },
+          { err, messageId: session.messageId, platform: session.platform },
           "Failed to send typing indicator",
         );
       });

@@ -79,7 +79,8 @@ OPENCODE_MODELS=gpt-5.2,gpt-5.1
 
 ```env
 # 平台启用
-# 默认开启 QQ；配置 DISCORD_TOKEN 时同时启用 Discord
+# 默认仅启用 Discord（提供 DISCORD_TOKEN 时启用 Discord 适配器）
+# 只有显式设置 LLBOT_PLATFORM=qq 才会启用 QQ（并通过 Redis 注册表发现 llbot）
 
 # llbot Redis 注册表前缀
 LLBOT_REGISTRY_PREFIX=llbot:registry
@@ -93,7 +94,7 @@ LLBOT_REGISTRY_REFRESH_SEC=10
 # 注册器参数（仅 llbot 注册器使用）
 LLBOT_REGISTRY_BOT_ID=
 LLBOT_REGISTRY_WS_URL=
-LLBOT_PLATFORM=qq
+LLBOT_PLATFORM=discord
 
 # Discord 平台配置（提供 token 即自动启用 Discord 适配器）
 DISCORD_TOKEN=
@@ -102,7 +103,7 @@ DISCORD_APPLICATION_ID=
 # WebSocket 重连配置（当前使用内置默认值）
 ```
 
-> Adapter 进程默认连接 QQ 注册表；提供 `DISCORD_TOKEN` 时会同时连接 Discord。
+> 当 `LLBOT_PLATFORM=qq` 时，Adapter 进程会连接 QQ 注册表；提供 `DISCORD_TOKEN` 时会同时启用 Discord。
 > Discord Slash Commands（`/reset`、`/resetall`、`/model`、`/ping`、`/help`）需要额外配置 `DISCORD_APPLICATION_ID`（Discord 应用 ID），否则会跳过注册。
 > 管理指令 `/model` 会读取 `OPENCODE_MODELS` 白名单，请确保 Adapter 进程也注入了该环境变量。
 

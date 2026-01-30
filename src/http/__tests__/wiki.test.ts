@@ -23,7 +23,10 @@ describe("/wiki", () => {
       context,
     );
     expect(index.status).toBe(200);
-    expect(await index.text()).toContain("docsify");
+    const indexHtml = await index.text();
+    expect(indexHtml).toContain("docsify");
+    expect(indexHtml).toContain("subMaxLevel: 0");
+    expect(indexHtml).not.toContain("sidebarDisplayLevel");
 
     const readme = await handleHttpRequest(
       new Request("http://test/wiki/README.md"),

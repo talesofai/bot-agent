@@ -109,6 +109,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private logger: Logger;
   private client: Client;
   private sender: MessageSender;
+  private pendingInteractionReplies: Map<
+    string,
+    { interaction: ChatInputCommandInteraction; createdAtMs: number }
+  > = new Map();
   private botUserId: string | null = null;
   private bot: Bot | null = null;
   private slashCommandsEnabled = false;
@@ -224,6 +228,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     content: string,
     options?: SendMessageOptions,
   ): Promise<void> {
+    const interaction = this.takePendingInteractionReply(session);
+    if (interaction) {
+      const updated = await tryEditInteractionReply(interaction, content, {
+        ephemeral: true,
+      });
+      if (updated) {
+        return;
+      }
+    }
     await this.sender.send(session, content, options);
   }
 
@@ -897,14 +910,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const channelId = interaction.channelId;
       if (!channelId) {
         await safeReply(interaction, "缺少 channelId，无法处理该指令。", {
-          ephemeral: false,
+          ephemeral: true,
         });
         return;
       }
       const botId = this.botUserId ?? this.client.user?.id ?? "";
       if (!botId) {
         await safeReply(interaction, "Bot 尚未就绪，请稍后重试。", {
-          ephemeral: false,
+          ephemeral: true,
         });
         return;
       }
@@ -913,7 +926,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const targetUser = interaction.options.getUser("user");
       const content = key !== null ? `#${key} /reset` : "/reset";
 
-      await safeReply(interaction, "收到，正在重置对话…", { ephemeral: false });
+      await safeReply(interaction, "收到，正在重置对话…", { ephemeral: true });
+      this.rememberPendingInteractionReply(interaction);
 
       if (this.listenerCount("event") === 0) {
         return;
@@ -953,14 +967,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const channelId = interaction.channelId;
       if (!channelId) {
         await safeReply(interaction, "缺少 channelId，无法处理该指令。", {
-          ephemeral: false,
+          ephemeral: true,
         });
         return;
       }
       const botId = this.botUserId ?? this.client.user?.id ?? "";
       if (!botId) {
         await safeReply(interaction, "Bot 尚未就绪，请稍后重试。", {
-          ephemeral: false,
+          ephemeral: true,
         });
         return;
       }
@@ -969,8 +983,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const content = key !== null ? `#${key} /reset all` : "/reset all";
 
       await safeReply(interaction, "收到，正在重置全群对话…", {
-        ephemeral: false,
+        ephemeral: true,
       });
+      this.rememberPendingInteractionReply(interaction);
 
       if (this.listenerCount("event") === 0) {
         return;
@@ -1009,14 +1024,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const channelId = interaction.channelId;
       if (!channelId) {
         await safeReply(interaction, "缺少 channelId，无法处理该指令。", {
-          ephemeral: false,
+          ephemeral: true,
         });
         return;
       }
       const botId = this.botUserId ?? this.client.user?.id ?? "";
       if (!botId) {
         await safeReply(interaction, "Bot 尚未就绪，请稍后重试。", {
-          ephemeral: false,
+          ephemeral: true,
         });
         return;
       }
@@ -1024,7 +1039,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const name = interaction.options.getString("name", true).trim();
       const content = `/model ${name}`;
 
-      await safeReply(interaction, "收到，正在切换模型…", { ephemeral: false });
+      await safeReply(interaction, "收到，正在切换模型…", { ephemeral: true });
+      this.rememberPendingInteractionReply(interaction);
 
       if (this.listenerCount("event") === 0) {
         return;
@@ -1104,6 +1120,65 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         : `已选择身份：${roleLabel}。继续在你的私密引导话题：<#${threadId}>（丢了就再跑 /onboard）`,
       { ephemeral: true },
     );
+  }
+
+  private rememberPendingInteractionReply(
+    interaction: ChatInputCommandInteraction,
+  ): void {
+    const now = Date.now();
+    this.pendingInteractionReplies.set(interaction.id, {
+      interaction,
+      createdAtMs: now,
+    });
+    if (this.pendingInteractionReplies.size <= 200) {
+      return;
+    }
+    for (const [interactionId, entry] of this.pendingInteractionReplies) {
+      if (now - entry.createdAtMs > 15 * 60 * 1000) {
+        this.pendingInteractionReplies.delete(interactionId);
+      }
+    }
+  }
+
+  private takePendingInteractionReply(
+    session: SessionEvent,
+  ): ChatInputCommandInteraction | null {
+    if (session.platform !== "discord") {
+      return null;
+    }
+    if (!session.extras || typeof session.extras !== "object") {
+      return null;
+    }
+    const extras = session.extras as Record<string, unknown>;
+    if (extras["synthetic"] === true) {
+      return null;
+    }
+    const commandName =
+      typeof extras["commandName"] === "string" ? extras["commandName"] : "";
+    if (
+      commandName !== "reset" &&
+      commandName !== "resetall" &&
+      commandName !== "model"
+    ) {
+      return null;
+    }
+    const interactionId =
+      typeof extras["interactionId"] === "string"
+        ? extras["interactionId"]
+        : "";
+    if (!interactionId.trim()) {
+      return null;
+    }
+
+    const entry = this.pendingInteractionReplies.get(interactionId);
+    if (!entry) {
+      return null;
+    }
+    this.pendingInteractionReplies.delete(interactionId);
+    if (Date.now() - entry.createdAtMs > 15 * 60 * 1000) {
+      return null;
+    }
+    return entry.interaction;
   }
 
   private async handleLanguage(
@@ -6164,6 +6239,46 @@ async function safeReply(
       channelId: interaction.channelId,
       ephemeral: options.ephemeral,
     });
+  }
+}
+
+async function tryEditInteractionReply(
+  interaction: ChatInputCommandInteraction,
+  content: string,
+  options: { ephemeral: boolean },
+): Promise<boolean> {
+  feishuLogJson({
+    event: "discord.command.reply",
+    command: buildInteractionCommand(interaction),
+    interactionId: interaction.id,
+    userId: interaction.user.id,
+    guildId: interaction.guildId ?? undefined,
+    channelId: interaction.channelId,
+    ephemeral: options.ephemeral,
+    contentPreview: previewTextForLog(content, 1200),
+    contentLength: content.length,
+  });
+  try {
+    if (interaction.replied || interaction.deferred) {
+      await interaction.editReply({ content });
+      return true;
+    }
+    await interaction.reply({ content, ephemeral: options.ephemeral });
+    return true;
+  } catch (err) {
+    feishuLogJson({
+      event: "log.warn",
+      msg: "Failed to edit discord interaction reply",
+      errName: err instanceof Error ? err.name : "Error",
+      errMessage: err instanceof Error ? err.message : String(err),
+      command: buildInteractionCommand(interaction),
+      interactionId: interaction.id,
+      userId: interaction.user.id,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+      ephemeral: options.ephemeral,
+    });
+    return false;
   }
 }
 

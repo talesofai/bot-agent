@@ -58,6 +58,7 @@
 - Discord：`/world create` 不接收参数；设定原文在编辑话题内通过多轮消息/附件补全
 - Discord：世界子空间 `world-info` 重命名为 `world-announcements`（公告区，世界背景/正典内容放此处），并新增 `world-discussion`（讨论区）
 - Discord：Slash Commands 默认公开；涉及创作/管理的指令（如 `/world create|open|publish|remove`、`/character create|open|publish|unpublish`）默认使用 ephemeral，避免刷屏与泄露私密信息
+- Discord：`/reset`、`/resetall`、`/model` 改为编辑 interaction 回复（ephemeral，仅调用者可见），避免在频道内刷出管理操作回执
 - Discord：为容易超时的 SlashCommand 增加 `deferReply`（如 `/world list|info|rules|stats|search|join`、`/world open`、`/character create|open|act`），避免 Discord 显示“程序未响应”
 - Discord：`/world info` 与 `world-announcements` 快照会展示创作者 `@mention` + 名称，并在展示层把世界卡中的“创建者”字段从纯数字替换为可读形式
 - Telemetry：飞书 webhook 输出由 JSON 改为更可读的“单行日志（logfmt）”，并补齐 Discord SlashCommand 输入/输出事件

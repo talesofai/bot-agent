@@ -9,6 +9,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.0.31] - 2026-01-30
+
+### Added
+
 - Worker：新增 k8s 自测 CLI：`selftest-reset-conversation`（reset 后连发两条消息断言“第二条不复读第一条”）
 - Worker：新增 k8s 自测 CLI：`selftest-duplicate-reply`（模拟重试/超时场景，断言不会复用旧 assistant 回复）
 - Discord：新增世界系统（`/world help|create|open|publish|list|search|canon|submit|approve|check|info|rules|stats|status|join|remove`），世界全局共享（单 `homeGuild`）
@@ -42,6 +50,7 @@
 
 ### Changed
 
+- Dev：版本号升级到 `0.0.31`
 - 文档：更新世界系统 TODO，地图/NPC 功能优先走 opencode skill（暂不做独立 slash command）
 - History：worker 默认使用 `NoopHistoryStore`（上下文只依赖 opencode session，不再依赖 Postgres history）
 - Discord：`/onboard` 不再发 DM；改为在 homeGuild 内创建持久化私密话题（`玩家新手指导`/`创作者新手指导`），并把话题内输入视为 `@bot`（无需显式 mention）

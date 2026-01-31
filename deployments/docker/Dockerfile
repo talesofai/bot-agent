@@ -23,6 +23,7 @@ RUN git init \
 COPY tsconfig.json ./
 COPY src ./src
 COPY configs ./configs
+COPY docs/discord_commands ./docs/discord_commands
 
 RUN rm -rf .git
 
@@ -52,6 +53,7 @@ RUN echo "opencode install cache bust: ${OPENCODE_INSTALL_CACHE_BUST}" \
 # Copy app artifacts
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/configs /app/configs
+COPY --from=builder /app/docs /app/docs
 COPY --from=builder /app/package.json /app/package.json
 COPY --from=builder /app/bun.lock /app/bun.lock
 COPY --from=builder /app/tsconfig.json /app/tsconfig.json

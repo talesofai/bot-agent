@@ -9,7 +9,12 @@
 
 ### Added
 
+- HTTP：Wiki 支持中/英双语（`/wiki/zh/`、`/wiki/en/`），并新增“指令 Commands”栏目展示 Discord 指令简介
+- 文档：新增 `docs/discord_commands/`（中/英双语）用于集中说明 Discord 指令用法
+
 ### Changed
+
+- Docker：镜像构建将 `docs/discord_commands/` 一并打包（保证 Wiki 在容器内可读取指令文档）
 
 ### Fixed
 

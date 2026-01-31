@@ -41,8 +41,59 @@ describe("/wiki", () => {
     );
     expect(sidebar.status).toBe(200);
     const sidebarText = await sidebar.text();
+    expect(sidebarText).toContain("指令");
     expect(sidebarText).toContain("世界 Worlds");
     expect(sidebarText).toContain("角色 Characters");
+  });
+
+  test("supports i18n pages and serves command docs", async () => {
+    const logger = pino({ level: "silent" });
+    const dataRoot = await mkdtemp(path.join(os.tmpdir(), "wiki-i18n-"));
+    const context: HttpRequestHandlerContext = {
+      logger,
+      startedAt: 0,
+      version: "test",
+      apiToken: null,
+      dataRoot,
+    };
+
+    const enIndex = await handleHttpRequest(
+      new Request("http://test/wiki/en"),
+      context,
+    );
+    expect(enIndex.status).toBe(200);
+    expect(await enIndex.text()).toContain("docsify");
+
+    const enReadme = await handleHttpRequest(
+      new Request("http://test/wiki/en/README.md"),
+      context,
+    );
+    expect(enReadme.status).toBe(200);
+    expect(await enReadme.text()).toContain("Read-only");
+
+    const enSidebar = await handleHttpRequest(
+      new Request("http://test/wiki/en/_sidebar.md"),
+      context,
+    );
+    expect(enSidebar.status).toBe(200);
+    const enSidebarText = await enSidebar.text();
+    expect(enSidebarText).toContain("Commands");
+    expect(enSidebarText).toContain("Worlds");
+    expect(enSidebarText).toContain("Characters");
+
+    const zhCommands = await handleHttpRequest(
+      new Request("http://test/wiki/commands/README.md"),
+      context,
+    );
+    expect(zhCommands.status).toBe(200);
+    expect(await zhCommands.text()).toContain("Discord");
+
+    const enCommands = await handleHttpRequest(
+      new Request("http://test/wiki/en/commands/README.md"),
+      context,
+    );
+    expect(enCommands.status).toBe(200);
+    expect(await enCommands.text()).toContain("Discord");
   });
 
   test("lists worlds/characters and serves markdown from dataRoot", async () => {

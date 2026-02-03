@@ -11,6 +11,8 @@
 
 - HTTP：Wiki 支持中/英双语（`/wiki/zh/`、`/wiki/en/`），并新增“指令 Commands”栏目展示 Discord 指令简介
 - 文档：新增 `docs/discord_commands/`（中/英双语）用于集中说明 Discord 指令用法
+- 文档：新增 Discord 玩家上手指南 `docs/how-to-play.zh.md`
+- 文档：新增 Discord 指令合集 `docs/discord_commands/ALL.md`（用于 Wiki 统一引用）
 
 ### Changed
 

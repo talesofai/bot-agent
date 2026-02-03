@@ -957,11 +957,14 @@ export class SessionProcessor {
       );
     };
 
+    const language = await span("resolve_user_language", async () =>
+      this.userState.getLanguage(sessionInfo.meta.ownerId),
+    );
     const groupConfig = await span("load_group_config", async () =>
       this.getGroupConfig(groupId),
     );
     const agentPrompt = await span("load_agent_prompt", async () =>
-      this.getAgentPrompt(groupId),
+      this.getAgentPrompt(groupId, language),
     );
 
     await span("ensure_workspace_bindings", async () =>
@@ -977,9 +980,6 @@ export class SessionProcessor {
     );
     const resolvedInput = resolveSessionInput(promptInput);
     const rawUserText = resolvedInput.trim();
-    const language = await span("resolve_user_language", async () =>
-      this.userState.getLanguage(sessionInfo.meta.ownerId),
-    );
     const systemPrompt = buildSystemPrompt(agentPrompt, language);
     const system = buildOpencodeSystemContext({
       systemPrompt,
@@ -1447,10 +1447,16 @@ export class SessionProcessor {
     return this.groupRepository.loadConfig(groupPath);
   }
 
-  private async getAgentPrompt(groupId: string): Promise<string> {
+  private async getAgentPrompt(
+    groupId: string,
+    language: UserLanguage | null,
+  ): Promise<string> {
     await this.groupRepository.ensureGroupDir(groupId);
     const groupPath = this.sessionRepository.getGroupPath(groupId);
-    const agentContent = await this.groupRepository.loadAgentPrompt(groupPath);
+    const agentContent = await this.groupRepository.loadAgentPromptForLanguage(
+      groupPath,
+      language,
+    );
     return agentContent.content;
   }
 

@@ -2,5 +2,6 @@ data/**
 dist/**
 example/**
 configs/default-agent.md
+configs/default-agent.en.md
 node_modules/**
 coverage/**

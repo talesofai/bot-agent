@@ -22,9 +22,15 @@ import {
   type Skill,
 } from "../types/group";
 import { assertSafePathSegment } from "../utils/path";
+import type { UserLanguage } from "../user/state-store";
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const DEFAULT_AGENT_MD_PATH = join(PROJECT_ROOT, "configs", "default-agent.md");
+const DEFAULT_AGENT_EN_MD_PATH = join(
+  PROJECT_ROOT,
+  "configs",
+  "default-agent.en.md",
+);
 
 const DEFAULT_CONFIG_YAML = `# 群配置
 enabled: true
@@ -54,7 +60,8 @@ export interface GroupFileRepositoryOptions {
 export class GroupFileRepository {
   private dataDir: string;
   private logger: Logger;
-  private cachedDefaultAgent: string | null = null;
+  private cachedDefaultAgentZh: string | null = null;
+  private cachedDefaultAgentEn: string | null = null;
 
   constructor(options: GroupFileRepositoryOptions) {
     this.dataDir = options.dataDir;
@@ -72,9 +79,16 @@ export class GroupFileRepository {
 
     const agentPath = join(groupPath, "agent.md");
     if (!(await this.exists(agentPath))) {
-      const defaultAgent = await this.loadDefaultAgentTemplate();
+      const defaultAgent = await this.loadDefaultAgentTemplate("zh");
       await writeFile(agentPath, defaultAgent);
       this.logger.debug({ groupId }, "Created default agent.md");
+    }
+
+    const agentEnPath = join(groupPath, "agent.en.md");
+    if (!(await this.exists(agentEnPath))) {
+      const defaultAgentEn = await this.loadDefaultAgentTemplate("en");
+      await writeFile(agentEnPath, defaultAgentEn);
+      this.logger.debug({ groupId }, "Created default agent.en.md");
     }
 
     const configPath = join(groupPath, "config.yaml");
@@ -86,17 +100,37 @@ export class GroupFileRepository {
     return groupPath;
   }
 
-  private async loadDefaultAgentTemplate(): Promise<string> {
-    if (this.cachedDefaultAgent !== null) {
-      return this.cachedDefaultAgent;
+  private async loadDefaultAgentTemplate(
+    language: UserLanguage,
+  ): Promise<string> {
+    if (language === "en") {
+      if (this.cachedDefaultAgentEn !== null) {
+        return this.cachedDefaultAgentEn;
+      }
+    } else {
+      if (this.cachedDefaultAgentZh !== null) {
+        return this.cachedDefaultAgentZh;
+      }
     }
     try {
-      const content = await readFile(DEFAULT_AGENT_MD_PATH, "utf-8");
-      this.cachedDefaultAgent = content;
+      const path =
+        language === "en" ? DEFAULT_AGENT_EN_MD_PATH : DEFAULT_AGENT_MD_PATH;
+      const content = await readFile(path, "utf-8");
+      if (language === "en") {
+        this.cachedDefaultAgentEn = content;
+      } else {
+        this.cachedDefaultAgentZh = content;
+      }
       return content;
     } catch (err) {
+      const path =
+        language === "en" ? DEFAULT_AGENT_EN_MD_PATH : DEFAULT_AGENT_MD_PATH;
       throw new Error(
-        `Missing default agent template at ${DEFAULT_AGENT_MD_PATH}; please provide configs/default-agent.md`,
+        `Missing default agent template at ${path}; please provide ${
+          language === "en"
+            ? "configs/default-agent.en.md"
+            : "configs/default-agent.md"
+        }`,
         { cause: err },
       );
     }
@@ -159,10 +193,31 @@ export class GroupFileRepository {
     const content = await readFile(agentPath, "utf-8");
     const parsed = this.parseAgentMd(content);
     if (parsed.content.trim() === "" && basename(groupPath) === "0") {
-      const defaultAgent = await this.loadDefaultAgentTemplate();
+      const defaultAgent = await this.loadDefaultAgentTemplate("zh");
       return this.parseAgentMd(defaultAgent);
     }
     return parsed;
+  }
+
+  async loadAgentPromptForLanguage(
+    groupPath: string,
+    language: UserLanguage | null | undefined,
+  ): Promise<AgentContent> {
+    if (language === "en") {
+      const agentPath = join(groupPath, "agent.en.md");
+      if (!(await this.exists(agentPath))) {
+        const defaultAgent = await this.loadDefaultAgentTemplate("en");
+        return this.parseAgentMd(defaultAgent);
+      }
+      const content = await readFile(agentPath, "utf-8");
+      const parsed = this.parseAgentMd(content);
+      if (parsed.content.trim() === "" && basename(groupPath) === "0") {
+        const defaultAgent = await this.loadDefaultAgentTemplate("en");
+        return this.parseAgentMd(defaultAgent);
+      }
+      return parsed;
+    }
+    return this.loadAgentPrompt(groupPath);
   }
 
   parseAgentMd(content: string): AgentContent {

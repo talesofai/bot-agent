@@ -15,6 +15,7 @@
 ### Changed
 
 - Docker：镜像构建将 `docs/discord_commands/` 一并打包（保证 Wiki 在容器内可读取指令文档）
+- Agent：更新默认奈塔人设模板（中英分文档）为最新预设；并在首次构建 system prompt 时按用户语言选择 `agent.md`/`agent.en.md`；同时清理不可执行的“清理/拉黑”等规则
 
 ### Fixed
 

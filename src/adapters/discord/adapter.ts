@@ -258,6 +258,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     try {
+      try {
+        const handled = await this.maybeUpdateWorldShowcaseCover(message);
+        if (handled) {
+          return;
+        }
+      } catch (err) {
+        this.logger.warn(
+          { err },
+          "Failed to handle world showcase cover update",
+        );
+      }
+
       const parsed = parseMessage(message, this.botUserId ?? undefined);
       if (!parsed) {
         return;
@@ -331,6 +343,126 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     } catch (err) {
       this.logger.error({ err }, "Failed to handle Discord message");
     }
+  }
+
+  private async maybeUpdateWorldShowcaseCover(
+    message: Message,
+  ): Promise<boolean> {
+    if (!message.guildId || !message.guild) {
+      return false;
+    }
+    if (message.author?.bot) {
+      return false;
+    }
+
+    const threadId = message.channelId?.trim() ?? "";
+    if (!threadId) {
+      return false;
+    }
+    const worldId =
+      await this.worldStore.getWorldIdByShowcaseThreadId(threadId);
+    if (!worldId) {
+      return false;
+    }
+    const meta = await this.worldStore.getWorld(worldId);
+    if (!meta) {
+      return false;
+    }
+    if (meta.creatorId !== message.author.id) {
+      return false;
+    }
+
+    const content = message.content?.trim() ?? "";
+    if (!isWorldShowcaseCoverIntent(content)) {
+      return false;
+    }
+
+    const image = pickFirstImageAttachment(message);
+    if (!image) {
+      await message.reply(
+        "缺少图片：请附带一张图片，并在消息里包含 `#cover`（或“封面”）。",
+      );
+      return true;
+    }
+
+    const showcase = await this.worldStore.getWorldShowcasePost(worldId);
+    if (!showcase) {
+      return false;
+    }
+    if (showcase.threadId !== threadId) {
+      return false;
+    }
+
+    const channel = await this.client.channels
+      .fetch(threadId)
+      .catch(() => null);
+    if (!channel || typeof channel !== "object") {
+      return false;
+    }
+    const messages = (channel as unknown as { messages?: unknown }).messages;
+    const fetcher =
+      messages && typeof messages === "object"
+        ? (messages as { fetch?: unknown }).fetch
+        : null;
+    if (typeof fetcher !== "function") {
+      return false;
+    }
+
+    const target = await (
+      messages as { fetch: (id: string) => Promise<unknown> }
+    )
+      .fetch(showcase.messageId)
+      .catch(() => null);
+    if (!target || typeof target !== "object") {
+      return false;
+    }
+    const editor = (target as { edit?: unknown }).edit;
+    if (typeof editor !== "function") {
+      return false;
+    }
+
+    const embedsRaw =
+      "embeds" in target &&
+      Array.isArray((target as { embeds?: unknown }).embeds)
+        ? ((target as unknown as { embeds: Array<{ toJSON?: () => APIEmbed }> })
+            .embeds ?? [])
+        : [];
+
+    const language = await this.userState
+      .getLanguage(meta.creatorId)
+      .catch(() => null);
+    const [card, rules] = await Promise.all([
+      this.worldFiles.readWorldCard(worldId),
+      this.worldFiles.readRules(worldId),
+    ]);
+    const fallbackEmbeds = buildWorldShowcasePost({
+      worldId: meta.id,
+      worldName: meta.name,
+      creatorId: meta.creatorId,
+      language,
+      card,
+      rules,
+    }).embeds;
+
+    const embeds: APIEmbed[] =
+      embedsRaw.length > 0
+        ? embedsRaw.map((embed) =>
+            typeof embed.toJSON === "function"
+              ? embed.toJSON()
+              : (embed as unknown as APIEmbed),
+          )
+        : fallbackEmbeds;
+
+    const first = embeds[0] ?? {};
+    embeds[0] = { ...first, image: { url: image.url } };
+
+    await (
+      target as unknown as {
+        edit: (payload: { embeds: APIEmbed[] }) => Promise<unknown>;
+      }
+    ).edit({ embeds });
+    await message.reply("已设置封面。");
+    return true;
   }
 
   private async maybeAugmentOnboardingMention(
@@ -2118,6 +2250,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       ].join("\n"),
       { ephemeral: true },
     );
+
+    void this.publishWorldShowcasePost({
+      guild,
+      worldId: meta.id,
+      worldName,
+      creatorId: meta.creatorId,
+      language,
+    }).catch((err) => {
+      this.logger.warn(
+        { err, worldId: meta.id, guildId: meta.homeGuildId },
+        "Failed to publish world showcase post",
+      );
+    });
   }
 
   private async handleWorldList(
@@ -4879,6 +5024,242 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     };
   }
 
+  private async publishWorldShowcasePost(input: {
+    guild: Guild;
+    worldId: number;
+    worldName: string;
+    creatorId: string;
+    language: UserLanguage | null;
+  }): Promise<void> {
+    const exists = await this.worldStore.getWorldShowcasePost(input.worldId);
+    if (exists) {
+      return;
+    }
+
+    const botUserId = this.botUserId ?? this.client.user?.id ?? "";
+    if (!botUserId) {
+      return;
+    }
+
+    const showcase = await this.ensureWorldShowcaseChannel({
+      guild: input.guild,
+      botUserId,
+      reason: `world showcase ensure for W${input.worldId}`,
+    });
+    const channel = await input.guild.channels
+      .fetch(showcase.channelId)
+      .catch(() => null);
+    if (!channel) {
+      return;
+    }
+
+    const threadName = `W${input.worldId} ${input.worldName}`.slice(0, 100);
+    const reason = `world publish W${input.worldId}`;
+
+    const [card, rules] = await Promise.all([
+      this.worldFiles.readWorldCard(input.worldId),
+      this.worldFiles.readRules(input.worldId),
+    ]);
+    const opener = buildWorldShowcaseForumOpener({
+      worldId: input.worldId,
+      worldName: input.worldName,
+      creatorId: input.creatorId,
+      language: input.language,
+      card,
+    });
+
+    let threadId: string | null = null;
+    if (showcase.mode === "forum") {
+      const creator = (
+        channel as unknown as {
+          threads?: {
+            create?: (input: Record<string, unknown>) => Promise<unknown>;
+          };
+        }
+      ).threads?.create;
+      if (typeof creator === "function") {
+        const created = await (
+          channel as unknown as {
+            threads: {
+              create: (
+                input: Record<string, unknown>,
+              ) => Promise<{ id: string }>;
+            };
+          }
+        ).threads.create({
+          name: threadName,
+          message: {
+            content: opener,
+          },
+          reason,
+        });
+        threadId = created.id;
+      }
+    } else {
+      const creator = (
+        channel as unknown as {
+          threads?: {
+            create?: (input: Record<string, unknown>) => Promise<unknown>;
+          };
+        }
+      ).threads?.create;
+      if (typeof creator === "function") {
+        const created = await (
+          channel as unknown as {
+            threads: {
+              create: (
+                input: Record<string, unknown>,
+              ) => Promise<{ id: string }>;
+            };
+          }
+        ).threads.create({
+          name: threadName,
+          type: ChannelType.PublicThread,
+          autoArchiveDuration: 10080,
+          reason,
+        });
+        threadId = created.id;
+      }
+    }
+    if (!threadId) {
+      return;
+    }
+
+    const payload = buildWorldShowcasePost({
+      worldId: input.worldId,
+      worldName: input.worldName,
+      creatorId: input.creatorId,
+      language: input.language,
+      card,
+      rules,
+    });
+    const messageId = await this.sendRichToChannelAndGetId({
+      channelId: threadId,
+      content: payload.content,
+      embeds: payload.embeds,
+    });
+    if (!messageId) {
+      return;
+    }
+
+    await this.worldStore.setWorldShowcasePost({
+      worldId: input.worldId,
+      channelId: showcase.channelId,
+      threadId,
+      messageId,
+    });
+  }
+
+  private async ensureWorldShowcaseChannel(input: {
+    guild: Guild;
+    botUserId: string;
+    reason: string;
+  }): Promise<{ channelId: string; mode: "forum" | "text" }> {
+    const channelName = "world-showcase";
+    const overwrites = buildWorldShowcaseOverwrites({
+      everyoneRoleId: input.guild.roles.everyone.id,
+      botUserId: input.botUserId,
+    });
+
+    const existing = input.guild.channels.cache.find(
+      (candidate) =>
+        (candidate.type === ChannelType.GuildForum ||
+          candidate.type === ChannelType.GuildText) &&
+        candidate.name === channelName,
+    );
+    if (existing) {
+      try {
+        const setter = (
+          existing as unknown as { permissionOverwrites?: { set?: unknown } }
+        ).permissionOverwrites?.set;
+        if (typeof setter === "function") {
+          await (
+            existing as unknown as {
+              permissionOverwrites: {
+                set: (
+                  overwrites: Array<{
+                    id: string;
+                    allow?: bigint[];
+                    deny?: bigint[];
+                  }>,
+                  reason?: string,
+                ) => Promise<unknown>;
+              };
+            }
+          ).permissionOverwrites.set(overwrites, input.reason);
+        }
+      } catch {
+        // ignore
+      }
+      return {
+        channelId: existing.id,
+        mode: existing.type === ChannelType.GuildForum ? "forum" : "text",
+      };
+    }
+
+    try {
+      const forum = await input.guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildForum,
+        permissionOverwrites: overwrites,
+        reason: input.reason,
+      });
+      return { channelId: forum.id, mode: "forum" };
+    } catch (err) {
+      this.logger.warn(
+        { err },
+        "Failed to create forum channel; fallback to text",
+      );
+    }
+
+    const text = await input.guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      permissionOverwrites: overwrites,
+      reason: input.reason,
+    });
+    return { channelId: text.id, mode: "text" };
+  }
+
+  private async sendRichToChannelAndGetId(input: {
+    channelId: string;
+    content?: string;
+    embeds?: APIEmbed[];
+  }): Promise<string | null> {
+    const channel = await this.client.channels
+      .fetch(input.channelId)
+      .catch(() => null);
+    if (!channel || typeof channel !== "object") {
+      return null;
+    }
+    if (
+      !("send" in channel) ||
+      typeof (channel as { send?: unknown }).send !== "function"
+    ) {
+      return null;
+    }
+    const payload: { content?: string; embeds?: APIEmbed[] } = {};
+    const content = input.content?.trim() ?? "";
+    if (content) {
+      payload.content = content;
+    }
+    if (input.embeds && input.embeds.length > 0) {
+      payload.embeds = input.embeds;
+    }
+    if (!payload.content && (!payload.embeds || payload.embeds.length === 0)) {
+      return null;
+    }
+
+    const sent = await (
+      channel as { send: (payload: unknown) => Promise<unknown> }
+    ).send(payload);
+    if (!sent || typeof sent !== "object" || !("id" in sent)) {
+      return null;
+    }
+    const id = String(sent.id);
+    return id.trim() ? id : null;
+  }
+
   private async sendWorldCreateRules(input: {
     guildId?: string;
     channelId: string;
@@ -6034,6 +6415,38 @@ function buildWorldBaseOverwrites(input: {
   };
 }
 
+function buildWorldShowcaseOverwrites(input: {
+  everyoneRoleId: string;
+  botUserId: string;
+}): Array<{ id: string; allow?: bigint[]; deny?: bigint[] }> {
+  const view = PermissionFlagsBits.ViewChannel;
+  const readHistory = PermissionFlagsBits.ReadMessageHistory;
+  const send = PermissionFlagsBits.SendMessages;
+  const sendInThreads = PermissionFlagsBits.SendMessagesInThreads;
+  const useCommands = PermissionFlagsBits.UseApplicationCommands;
+  const createPublicThreads = PermissionFlagsBits.CreatePublicThreads;
+  const manageThreads = PermissionFlagsBits.ManageThreads;
+
+  return [
+    {
+      id: input.everyoneRoleId,
+      allow: [view, readHistory, sendInThreads, useCommands],
+      deny: [send],
+    },
+    {
+      id: input.botUserId,
+      allow: [
+        view,
+        readHistory,
+        send,
+        sendInThreads,
+        createPublicThreads,
+        manageThreads,
+      ],
+    },
+  ];
+}
+
 function resolveUserLanguageFromDiscordLocale(
   locale: string | null | undefined,
 ): UserLanguage | null {
@@ -6297,6 +6710,145 @@ function parseWorldSubmissionMarkdown(content: string): {
   return { kind, title, submitterUserId, content: body };
 }
 
+function buildWorldShowcaseForumOpener(input: {
+  worldId: number;
+  worldName: string;
+  creatorId: string;
+  language: UserLanguage | null;
+  card: string | null;
+}): string {
+  const summary = extractWorldOneLiner(input.card);
+  const tags = extractWorldCardField(input.card, {
+    zh: "类型标签",
+    en: "Tags",
+  });
+  const creator = input.creatorId.trim()
+    ? `<@${input.creatorId}>`
+    : "(unknown)";
+  if (input.language === "en") {
+    return [
+      `World published: W${input.worldId} ${input.worldName}`,
+      summary ? `One-liner: ${summary}` : null,
+      tags ? `Tags: ${tags}` : null,
+      `Join: /world join world_id:${input.worldId}`,
+      `Creator: ${creator}`,
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n");
+  }
+  return [
+    `世界已发布：W${input.worldId} ${input.worldName}`,
+    summary ? `一句话：${summary}` : null,
+    tags ? `类型标签：${tags}` : null,
+    `加入：/world join world_id:${input.worldId}`,
+    `创作者：${creator}`,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+}
+
+function buildWorldShowcasePost(input: {
+  worldId: number;
+  worldName: string;
+  creatorId: string;
+  language: UserLanguage | null;
+  card: string | null;
+  rules: string | null;
+}): { content: string; embeds: APIEmbed[] } {
+  const creator = input.creatorId.trim()
+    ? `<@${input.creatorId}>`
+    : "(unknown)";
+  const summary = extractWorldOneLiner(input.card);
+  const tags = extractWorldCardField(input.card, {
+    zh: "类型标签",
+    en: "Tags",
+  });
+  const era = extractWorldCardField(input.card, {
+    zh: "时代背景",
+    en: "Era / Setting",
+  });
+  const tone = extractWorldCardField(input.card, {
+    zh: "整体氛围",
+    en: "Overall Tone",
+  });
+  const core = extractWorldCardField(input.card, {
+    zh: "核心元素",
+    en: "Core Elements",
+  });
+  const safeCore = core ? clampText(core, 800) : null;
+  const safeRules = input.rules?.trim()
+    ? clampText(input.rules.trim(), 1200)
+    : "";
+
+  const join = `/world join world_id:${input.worldId}`;
+  const embed: APIEmbed = {
+    title: `W${input.worldId} ${input.worldName}`,
+    description: summary ?? undefined,
+    fields: [
+      ...(tags
+        ? [{ name: input.language === "en" ? "Tags" : "类型标签", value: tags }]
+        : []),
+      ...(era
+        ? [
+            {
+              name: input.language === "en" ? "Era / Setting" : "时代背景",
+              value: era,
+            },
+          ]
+        : []),
+      ...(tone
+        ? [
+            {
+              name: input.language === "en" ? "Overall Tone" : "整体氛围",
+              value: tone,
+            },
+          ]
+        : []),
+      ...(safeCore
+        ? [
+            {
+              name: input.language === "en" ? "Core Elements" : "核心元素",
+              value: safeCore,
+            },
+          ]
+        : []),
+      { name: input.language === "en" ? "Creator" : "创作者", value: creator },
+      { name: input.language === "en" ? "Join" : "加入", value: `\`${join}\`` },
+    ],
+    footer: {
+      text:
+        input.language === "en"
+          ? "Creator: reply with an image + #cover to set cover."
+          : "创作者：回复图片并带 #cover（或“封面”）即可设置封面。",
+    },
+  };
+
+  const content =
+    input.language === "en"
+      ? [
+          `Creator: ${creator}`,
+          `Join: \`${join}\``,
+          "Post your onboarding / images in this thread.",
+          "Set cover: reply with an image and include `#cover`.",
+        ].join("\n")
+      : [
+          `创作者：${creator}`,
+          `加入：\`${join}\``,
+          "你可以在本帖继续补充引导/图片/链接。",
+          "设置封面：创作者回复图片并带 `#cover`（或“封面”）。",
+        ].join("\n");
+
+  const embeds: APIEmbed[] = [embed];
+  if (safeRules) {
+    embeds.push({
+      title:
+        input.language === "en" ? "World Rules (Excerpt)" : "世界规则（节选）",
+      description: safeRules,
+    });
+  }
+  return { content, embeds };
+}
+
 function extractWorldOneLiner(card: string | null): string | null {
   const raw = (card ?? "").trim();
   if (!raw) return null;
@@ -6310,6 +6862,71 @@ function extractWorldOneLiner(card: string | null): string | null {
   const summary = (bulletMatch?.[1] ?? tableMatch?.[1] ?? "").trim();
   if (!summary) return null;
   return summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
+}
+
+function extractWorldCardField(
+  card: string | null,
+  key: { zh: string; en: string },
+): string | null {
+  const raw = (card ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const label = `${escapeRegExp(key.zh)}|${escapeRegExp(key.en)}`;
+  const bulletMatch = normalized.match(
+    new RegExp(`^\\\\s*-\\\\s*(?:${label})\\\\s*[:：]\\\\s*(.+)\\\\s*$`, "m"),
+  );
+  const tableMatch = normalized.match(
+    new RegExp(
+      `^\\\\s*\\\\|\\\\s*(?:${label})\\\\s*\\\\|\\\\s*([^|\\\\n]+?)\\\\s*\\\\|`,
+      "m",
+    ),
+  );
+  const value = (bulletMatch?.[1] ?? tableMatch?.[1] ?? "").trim();
+  return value ? clampText(value, 200) : null;
+}
+
+function clampText(text: string, maxLen: number): string {
+  const normalized = text.trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > maxLen
+    ? `${normalized.slice(0, maxLen)}…`
+    : normalized;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isWorldShowcaseCoverIntent(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.includes("封面")) {
+    return true;
+  }
+  return /(^|\s)#cover(\s|$)/i.test(normalized);
+}
+
+function pickFirstImageAttachment(
+  message: Message,
+): { url: string; name?: string } | null {
+  if (!message.attachments || message.attachments.size === 0) {
+    return null;
+  }
+  for (const attachment of message.attachments.values()) {
+    const contentType = attachment.contentType?.toLowerCase() ?? "";
+    const name = attachment.name?.toLowerCase() ?? "";
+    if (contentType.startsWith("image/")) {
+      return { url: attachment.url, name: attachment.name ?? undefined };
+    }
+    if (name.match(/\.(png|jpe?g|gif|webp)$/)) {
+      return { url: attachment.url, name: attachment.name ?? undefined };
+    }
+  }
+  return null;
 }
 
 function extractWorldNameFromCard(card: string | null): string | null {

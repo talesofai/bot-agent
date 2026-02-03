@@ -233,6 +233,86 @@ export class WorldStore {
     await multi.exec();
   }
 
+  async setWorldShowcasePost(input: {
+    worldId: WorldId;
+    channelId: string;
+    threadId: string;
+    messageId: string;
+  }): Promise<void> {
+    const worldId = normalizeWorldId(input.worldId);
+    const channelId = input.channelId.trim();
+    const threadId = input.threadId.trim();
+    const messageId = input.messageId.trim();
+    if (!channelId) {
+      throw new Error("channelId is required");
+    }
+    if (!threadId) {
+      throw new Error("threadId is required");
+    }
+    if (!messageId) {
+      throw new Error("messageId is required");
+    }
+    assertSafePathSegment(channelId, "channelId");
+    assertSafePathSegment(threadId, "threadId");
+    assertSafePathSegment(messageId, "messageId");
+
+    const multi = this.redis.multi();
+    multi.hset(this.worldMetaKey(worldId), {
+      showcaseChannelId: channelId,
+      showcaseThreadId: threadId,
+      showcaseMessageId: messageId,
+    });
+    multi.set(this.showcaseThreadWorldKey(threadId), String(worldId));
+    await multi.exec();
+  }
+
+  async getWorldShowcasePost(worldId: WorldId): Promise<{
+    channelId: string;
+    threadId: string;
+    messageId: string;
+  } | null> {
+    const normalized = normalizeWorldId(worldId);
+    const [channelId, threadId, messageId] = await this.redis.hmget(
+      this.worldMetaKey(normalized),
+      "showcaseChannelId",
+      "showcaseThreadId",
+      "showcaseMessageId",
+    );
+    const safeChannelId = channelId?.trim() ?? "";
+    const safeThreadId = threadId?.trim() ?? "";
+    const safeMessageId = messageId?.trim() ?? "";
+    if (!safeChannelId || !safeThreadId || !safeMessageId) {
+      return null;
+    }
+    if (
+      !isSafePathSegment(safeChannelId) ||
+      !isSafePathSegment(safeThreadId) ||
+      !isSafePathSegment(safeMessageId)
+    ) {
+      return null;
+    }
+    return {
+      channelId: safeChannelId,
+      threadId: safeThreadId,
+      messageId: safeMessageId,
+    };
+  }
+
+  async getWorldIdByShowcaseThreadId(
+    threadId: string,
+  ): Promise<WorldId | null> {
+    const safeThreadId = threadId.trim();
+    if (!safeThreadId || !isSafePathSegment(safeThreadId)) {
+      return null;
+    }
+    const raw = await this.redis.get(this.showcaseThreadWorldKey(safeThreadId));
+    if (!raw) {
+      return null;
+    }
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
   async getWorld(worldId: WorldId): Promise<WorldMeta | null> {
     const normalized = normalizeWorldId(worldId);
     const raw = await this.redis.hgetall(this.worldMetaKey(normalized));
@@ -722,6 +802,15 @@ export class WorldStore {
       throw new Error("channelId is required");
     }
     return this.key(`channel:${trimmed}:group`);
+  }
+
+  private showcaseThreadWorldKey(threadId: string): string {
+    const trimmed = threadId.trim();
+    if (!trimmed) {
+      throw new Error("threadId is required");
+    }
+    assertSafePathSegment(trimmed, "threadId");
+    return this.key(`showcase_thread:${trimmed}:world`);
   }
 
   private categoryWorldKey(categoryId: string): string {

@@ -195,8 +195,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     this.slashCommandsEnabled = true;
 
     this.client.on("interactionCreate", (interaction) => {
-      void this.handleInteraction(interaction).catch((err) => {
+      void this.handleInteraction(interaction).catch(async (err) => {
         this.logger.error({ err }, "Failed to handle Discord interaction");
+        if (!interaction.isChatInputCommand()) {
+          return;
+        }
+        const message = `处理失败：${err instanceof Error ? err.message : String(err)}`;
+        await safeReply(interaction, message, { ephemeral: true });
       });
     });
 
@@ -258,6 +263,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         return;
       }
       const augmented = await this.maybeAugmentOnboardingMention(parsed);
+      try {
+        await this.maybeSeedUserLanguageFromText(
+          augmented.userId,
+          augmented.content,
+        );
+      } catch (err) {
+        this.logger.warn({ err }, "Failed to infer user language from message");
+      }
       try {
         await this.repairWorldChannelRouting(message);
       } catch (err) {
@@ -834,10 +847,49 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
   }
 
+  private async maybeSeedUserLanguage(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<void> {
+    const existing = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
+    if (existing) {
+      return;
+    }
+    const inferred = resolveUserLanguageFromDiscordLocale(interaction.locale);
+    if (!inferred) {
+      return;
+    }
+    await this.userState
+      .setLanguage(interaction.user.id, inferred)
+      .catch(() => {
+        // ignore
+      });
+  }
+
+  private async maybeSeedUserLanguageFromText(
+    userId: string,
+    text: string,
+  ): Promise<void> {
+    const existing = await this.userState.getLanguage(userId).catch(() => null);
+    if (existing) {
+      return;
+    }
+    const inferred = inferUserLanguageFromText(text);
+    if (!inferred) {
+      return;
+    }
+    await this.userState.setLanguage(userId, inferred).catch(() => {
+      // ignore
+    });
+  }
+
   private async handleInteraction(interaction: Interaction): Promise<void> {
     if (!interaction.isChatInputCommand()) {
       return;
     }
+
+    await this.maybeSeedUserLanguage(interaction);
 
     const commandName = interaction.commandName;
     feishuLogJson({
@@ -3067,113 +3119,134 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       userId: interaction.user.id,
     });
     await safeDefer(interaction, { ephemeral: true });
-    const language = await this.userState
-      .getLanguage(interaction.user.id)
-      .catch(() => null);
-    const visibilityRaw =
-      (interaction.options.getString(
-        "visibility",
-      ) as CharacterVisibility | null) ?? "private";
-    const visibility: CharacterVisibility =
-      visibilityRaw === "public" ? "public" : "private";
-    const description =
-      interaction.options.getString("description")?.trim() ?? "";
-    const nameRaw = interaction.options.getString("name")?.trim() ?? "";
+    let characterId: number | null = null;
+    try {
+      const language = await this.userState
+        .getLanguage(interaction.user.id)
+        .catch(() => null);
+      const visibilityRaw =
+        (interaction.options.getString(
+          "visibility",
+        ) as CharacterVisibility | null) ?? "private";
+      const visibility: CharacterVisibility =
+        visibilityRaw === "public" ? "public" : "private";
+      const description =
+        interaction.options.getString("description")?.trim() ?? "";
+      const nameRaw = interaction.options.getString("name")?.trim() ?? "";
 
-    const characterId = await this.worldStore.nextCharacterId();
-    const nowIso = new Date().toISOString();
-    const name = nameRaw || `Character-${characterId}`;
-    await this.worldStore.createCharacter({
-      id: characterId,
-      creatorId: interaction.user.id,
-      name,
-      visibility,
-      status: "active",
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    });
-    await this.worldFiles.writeCharacterCard(
-      characterId,
-      buildDefaultCharacterCard({
-        characterId,
-        name,
+      characterId = await this.worldStore.nextCharacterId();
+      const nowIso = new Date().toISOString();
+      const name = nameRaw || `Character-${characterId}`;
+      await this.worldStore.createCharacter({
+        id: characterId,
         creatorId: interaction.user.id,
-        description,
+        name,
+        visibility,
+        status: "active",
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+      await this.worldFiles.writeCharacterCard(
+        characterId,
+        buildDefaultCharacterCard({
+          characterId,
+          name,
+          creatorId: interaction.user.id,
+          description,
+          language,
+        }),
+      );
+      await this.worldFiles.appendCharacterEvent(characterId, {
+        type: "character_created",
+        characterId,
+        userId: interaction.user.id,
+      });
+      await this.userState.markCharacterCreated(interaction.user.id);
+
+      await this.ensureCharacterBuildGroupAgent({
+        characterId,
+        characterName: name,
         language,
-      }),
-    );
-    await this.worldFiles.appendCharacterEvent(characterId, {
-      type: "character_created",
-      characterId,
-      userId: interaction.user.id,
-    });
-    await this.userState.markCharacterCreated(interaction.user.id);
+      });
 
-    await this.ensureCharacterBuildGroupAgent({
-      characterId,
-      characterName: name,
-      language,
-    });
+      const workshop = await this.createCreatorOnlyChannel({
+        guild: interaction.guild,
+        name: `character-workshop-${interaction.user.id}`,
+        creatorUserId: interaction.user.id,
+        reason: `character workshop ensure for ${interaction.user.id}`,
+      });
+      const thread = await this.tryCreatePrivateThread({
+        guild: interaction.guild,
+        parentChannelId: workshop.id,
+        name: `角色创建 C${characterId}`,
+        reason: `character create C${characterId} by ${interaction.user.id}`,
+        memberUserId: interaction.user.id,
+      });
 
-    let buildConversationChannelId = interaction.channelId;
-    let buildConversationMention = "(创建失败)";
+      const buildConversationChannelId = thread?.threadId ?? workshop.id;
+      const buildConversationMention = `<#${buildConversationChannelId}>`;
 
-    const workshop = await this.createCreatorOnlyChannel({
-      guild: interaction.guild,
-      name: `character-workshop-${interaction.user.id}`,
-      creatorUserId: interaction.user.id,
-      reason: `character workshop ensure for ${interaction.user.id}`,
-    });
-    const thread = await this.tryCreatePrivateThread({
-      guild: interaction.guild,
-      parentChannelId: workshop.id,
-      name: `角色创建 C${characterId}`,
-      reason: `character create C${characterId} by ${interaction.user.id}`,
-      memberUserId: interaction.user.id,
-    });
-    if (!thread) {
-      throw new Error(
-        "无法创建角色编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
+      await this.worldStore.setCharacterBuildChannelId({
+        characterId,
+        channelId: buildConversationChannelId,
+      });
+      await this.worldStore.setChannelGroupId(
+        buildConversationChannelId,
+        buildCharacterBuildGroupId(characterId),
+      );
+
+      await this.sendCharacterCreateRules({
+        guildId: interaction.guildId,
+        channelId: buildConversationChannelId,
+        characterId,
+        language,
+        traceId,
+      });
+
+      feishuLogJson({
+        event: "discord.character.create.success",
+        traceId,
+        interactionId: interaction.id,
+        characterId,
+        characterName: name,
+        visibility,
+        buildConversationChannelId,
+      });
+      await safeReply(
+        interaction,
+        [
+          `角色已创建：C${characterId} ${name}（visibility=${visibility}）`,
+          `完善角色卡：${buildConversationMention}`,
+          `设为默认角色：/character use character_id:${characterId}`,
+          thread
+            ? ""
+            : "提示：当前无法创建私密话题，已降级为工作坊频道（请检查 bot 的线程权限）。",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        { ephemeral: true },
+      );
+    } catch (err) {
+      this.logger.error({ err }, "Failed to create character");
+      feishuLogJson({
+        event: "discord.character.create.error",
+        traceId,
+        interactionId: interaction.id,
+        characterId: characterId ?? undefined,
+        errName: err instanceof Error ? err.name : "Error",
+        errMessage: err instanceof Error ? err.message : String(err),
+      });
+      await safeReply(
+        interaction,
+        [
+          `创建失败：${err instanceof Error ? err.message : String(err)}`,
+          characterId ? `（角色可能已创建：C${characterId}）` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        { ephemeral: true },
       );
     }
-    buildConversationChannelId = thread.threadId;
-    buildConversationMention = `<#${thread.threadId}>`;
-
-    await this.worldStore.setCharacterBuildChannelId({
-      characterId,
-      channelId: buildConversationChannelId,
-    });
-    await this.worldStore.setChannelGroupId(
-      buildConversationChannelId,
-      buildCharacterBuildGroupId(characterId),
-    );
-
-    await this.sendCharacterCreateRules({
-      guildId: interaction.guildId,
-      channelId: buildConversationChannelId,
-      characterId,
-      language,
-      traceId,
-    });
-
-    feishuLogJson({
-      event: "discord.character.create.success",
-      traceId,
-      interactionId: interaction.id,
-      characterId,
-      characterName: name,
-      visibility,
-      buildConversationChannelId,
-    });
-    await safeReply(
-      interaction,
-      [
-        `角色已创建：C${characterId} ${name}（visibility=${visibility}）`,
-        `完善角色卡：${buildConversationMention}`,
-        `设为默认角色：/character use character_id:${characterId}`,
-      ].join("\n"),
-      { ephemeral: true },
-    );
   }
 
   private async handleCharacterHelp(
@@ -3483,105 +3556,119 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     characterId: number,
   ): Promise<void> {
     await safeDefer(interaction, { ephemeral: true });
-    const language = await this.userState
-      .getLanguage(interaction.user.id)
-      .catch(() => null);
-    const meta = await this.worldStore.getCharacter(characterId);
-    if (!meta) {
-      await safeReply(interaction, `角色不存在：C${characterId}`, {
-        ephemeral: true,
+    try {
+      const language = await this.userState
+        .getLanguage(interaction.user.id)
+        .catch(() => null);
+      const meta = await this.worldStore.getCharacter(characterId);
+      if (!meta) {
+        await safeReply(interaction, `角色不存在：C${characterId}`, {
+          ephemeral: true,
+        });
+        return;
+      }
+      if (meta.creatorId !== interaction.user.id) {
+        await safeReply(interaction, "无权限：只有角色创作者可以编辑角色卡。", {
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await this.ensureCharacterBuildGroupAgent({
+        characterId: meta.id,
+        characterName: meta.name,
+        language,
       });
-      return;
-    }
-    if (meta.creatorId !== interaction.user.id) {
-      await safeReply(interaction, "无权限：只有角色创作者可以编辑角色卡。", {
-        ephemeral: true,
+
+      if (!interaction.guildId || !interaction.guild) {
+        await safeReply(interaction, "该指令仅支持在服务器内使用。", {
+          ephemeral: true,
+        });
+        return;
+      }
+      const homeGuildId = getConfig().DISCORD_HOME_GUILD_ID?.trim();
+      if (homeGuildId && interaction.guildId !== homeGuildId) {
+        await safeReply(
+          interaction,
+          `请在 homeGuild 执行：guild:${homeGuildId}`,
+          { ephemeral: true },
+        );
+        return;
+      }
+
+      const workshop = await this.createCreatorOnlyChannel({
+        guild: interaction.guild,
+        name: `character-workshop-${interaction.user.id}`,
+        creatorUserId: interaction.user.id,
+        reason: `character workshop ensure for ${interaction.user.id}`,
       });
-      return;
-    }
 
-    await this.ensureCharacterBuildGroupAgent({
-      characterId: meta.id,
-      characterName: meta.name,
-      language,
-    });
+      const existingThreadId = meta.buildChannelId?.trim() || "";
+      const fetched = existingThreadId
+        ? await interaction.guild.channels
+            .fetch(existingThreadId)
+            .catch(() => null)
+        : null;
 
-    if (!interaction.guildId || !interaction.guild) {
-      await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-        ephemeral: true,
-      });
-      return;
-    }
-    const homeGuildId = getConfig().DISCORD_HOME_GUILD_ID?.trim();
-    if (homeGuildId && interaction.guildId !== homeGuildId) {
-      await safeReply(
-        interaction,
-        `请在 homeGuild 执行：guild:${homeGuildId}`,
-        { ephemeral: true },
-      );
-      return;
-    }
-
-    const workshop = await this.createCreatorOnlyChannel({
-      guild: interaction.guild,
-      name: `character-workshop-${interaction.user.id}`,
-      creatorUserId: interaction.user.id,
-      reason: `character workshop ensure for ${interaction.user.id}`,
-    });
-
-    const existingThreadId = meta.buildChannelId?.trim() || "";
-    const fetched = existingThreadId
-      ? await interaction.guild.channels
-          .fetch(existingThreadId)
-          .catch(() => null)
-      : null;
-
-    let conversationChannelId: string;
-    if (fetched) {
-      conversationChannelId = existingThreadId;
-      try {
+      let conversationChannelId: string;
+      let degraded = false;
+      if (fetched) {
+        conversationChannelId = existingThreadId;
         await this.reopenPrivateThreadForUser(fetched, interaction.user.id, {
           reason: `character open C${meta.id}`,
         });
-      } catch {
-        // ignore
+      } else {
+        const thread = await this.tryCreatePrivateThread({
+          guild: interaction.guild,
+          parentChannelId: workshop.id,
+          name: `角色编辑 C${meta.id}`,
+          reason: `character open C${meta.id} by ${interaction.user.id}`,
+          memberUserId: interaction.user.id,
+        });
+        conversationChannelId = thread?.threadId ?? workshop.id;
+        degraded = !thread;
+
+        await this.worldStore.setCharacterBuildChannelId({
+          characterId: meta.id,
+          channelId: conversationChannelId,
+        });
+        await this.sendCharacterCreateRules({
+          guildId: interaction.guildId,
+          channelId: conversationChannelId,
+          characterId: meta.id,
+          language,
+        });
       }
-    } else {
-      const thread = await this.tryCreatePrivateThread({
-        guild: interaction.guild,
-        parentChannelId: workshop.id,
-        name: `角色编辑 C${meta.id}`,
-        reason: `character open C${meta.id} by ${interaction.user.id}`,
-        memberUserId: interaction.user.id,
-      });
-      if (!thread) {
-        throw new Error(
-          "无法创建角色编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
-        );
-      }
-      conversationChannelId = thread.threadId;
-      await this.worldStore.setCharacterBuildChannelId({
-        characterId: meta.id,
-        channelId: conversationChannelId,
-      });
-      await this.sendCharacterCreateRules({
-        guildId: interaction.guildId,
-        channelId: conversationChannelId,
-        characterId: meta.id,
-        language,
-      });
+
+      await this.worldStore.setChannelGroupId(
+        conversationChannelId,
+        buildCharacterBuildGroupId(meta.id),
+      );
+
+      await safeReply(
+        interaction,
+        [
+          `已打开角色卡编辑：C${meta.id} ${meta.name}`,
+          `编辑话题：<#${conversationChannelId}>`,
+          degraded
+            ? "提示：当前无法创建私密话题，已降级为工作坊频道（请检查 bot 的线程权限）。"
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        { ephemeral: true },
+      );
+    } catch (err) {
+      this.logger.error(
+        { err, characterId },
+        "Failed to open character editor",
+      );
+      await safeReply(
+        interaction,
+        `打开失败：${err instanceof Error ? err.message : String(err)}`,
+        { ephemeral: true },
+      );
     }
-
-    await this.worldStore.setChannelGroupId(
-      conversationChannelId,
-      buildCharacterBuildGroupId(meta.id),
-    );
-
-    await safeReply(
-      interaction,
-      `已打开角色卡编辑：C${meta.id} ${meta.name}\n编辑话题：<#${conversationChannelId}>`,
-      { ephemeral: true },
-    );
   }
 
   private async handleCharacterUse(
@@ -4104,23 +4191,56 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return null;
     }
 
-    const thread = await (
-      parentChannel as unknown as {
-        threads: {
-          create: (input: Record<string, unknown>) => Promise<{
-            id: string;
-            members?: { add: (userId: string) => Promise<unknown> };
-          }>;
-        };
+    let thread: {
+      id: string;
+      members?: { add: (userId: string) => Promise<unknown> };
+    };
+    try {
+      thread = await (
+        parentChannel as unknown as {
+          threads: {
+            create: (input: Record<string, unknown>) => Promise<{
+              id: string;
+              members?: { add: (userId: string) => Promise<unknown> };
+            }>;
+          };
+        }
+      ).threads.create({
+        name: input.name,
+        type: ChannelType.PrivateThread,
+        invitable: false,
+        autoArchiveDuration: 1440,
+        reason: input.reason,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err, parentChannelId: resolvedParentId, threadName: input.name },
+        "Failed to create private thread",
+      );
+      return null;
+    }
+
+    try {
+      await thread.members?.add(input.memberUserId);
+    } catch (err) {
+      this.logger.warn(
+        { err, threadId: thread.id, memberUserId: input.memberUserId },
+        "Failed to add member to private thread",
+      );
+      try {
+        const deleter = (thread as unknown as { delete?: unknown }).delete;
+        if (typeof deleter === "function") {
+          await (
+            thread as unknown as {
+              delete: (reason?: string) => Promise<unknown>;
+            }
+          ).delete(input.reason);
+        }
+      } catch {
+        // ignore
       }
-    ).threads.create({
-      name: input.name,
-      type: ChannelType.PrivateThread,
-      invitable: false,
-      autoArchiveDuration: 1440,
-      reason: input.reason,
-    });
-    await thread.members?.add(input.memberUserId);
+      return null;
+    }
 
     const parentChannelId =
       parentChannel &&
@@ -4186,6 +4306,39 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         candidate.name === channelName,
     );
     if (existing) {
+      try {
+        const botUserId = this.botUserId ?? this.client.user?.id ?? "";
+        if (botUserId) {
+          const overwrites = buildDraftCreatorOnlyOverwrites({
+            everyoneRoleId: input.guild.roles.everyone.id,
+            creatorUserId: input.creatorUserId,
+            botUserId,
+          });
+          const setter = (
+            existing as unknown as {
+              permissionOverwrites?: { set?: unknown };
+            }
+          ).permissionOverwrites?.set;
+          if (typeof setter === "function") {
+            await (
+              existing as unknown as {
+                permissionOverwrites: {
+                  set: (
+                    overwrites: Array<{
+                      id: string;
+                      allow?: bigint[];
+                      deny?: bigint[];
+                    }>,
+                    reason?: string,
+                  ) => Promise<unknown>;
+                };
+              }
+            ).permissionOverwrites.set(overwrites, input.reason);
+          }
+        }
+      } catch {
+        // ignore
+      }
       return { id: existing.id };
     }
 
@@ -4270,17 +4423,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       reason: input.reason,
       memberUserId: input.userId,
     });
-    if (!thread) {
-      throw new Error(
-        "无法创建新手指导话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
-      );
-    }
+    const channelId = thread?.threadId ?? workshop.id;
     await this.userState.setOnboardingThreadId({
       userId: input.userId,
       role: input.role,
-      threadId: thread.threadId,
+      threadId: channelId,
     });
-    return thread.threadId;
+    return channelId;
   }
 
   private async migrateWorldAgents(): Promise<void> {
@@ -5885,6 +6034,37 @@ function buildWorldBaseOverwrites(input: {
   };
 }
 
+function resolveUserLanguageFromDiscordLocale(
+  locale: string | null | undefined,
+): UserLanguage | null {
+  const normalized =
+    typeof locale === "string" ? locale.trim().toLowerCase() : "";
+  if (normalized.startsWith("zh")) {
+    return "zh";
+  }
+  if (normalized.startsWith("en")) {
+    return "en";
+  }
+  return null;
+}
+
+function inferUserLanguageFromText(text: string): UserLanguage | null {
+  const normalized = text.trim();
+  if (!normalized) {
+    return null;
+  }
+  if (/[\u4e00-\u9fff]/u.test(normalized)) {
+    return "zh";
+  }
+  if (/^[/.]/.test(normalized)) {
+    return null;
+  }
+  if (/[a-zA-Z]{2,}/.test(normalized)) {
+    return "en";
+  }
+  return null;
+}
+
 function buildDraftCreatorOnlyOverwrites(input: {
   everyoneRoleId: string;
   creatorUserId: string;
@@ -5895,6 +6075,7 @@ function buildDraftCreatorOnlyOverwrites(input: {
   const send = PermissionFlagsBits.SendMessages;
   const sendInThreads = PermissionFlagsBits.SendMessagesInThreads;
   const createPrivateThreads = PermissionFlagsBits.CreatePrivateThreads;
+  const manageThreads = PermissionFlagsBits.ManageThreads;
 
   const allowBot =
     input.botUserId && input.botUserId.trim()
@@ -5907,6 +6088,7 @@ function buildDraftCreatorOnlyOverwrites(input: {
               send,
               sendInThreads,
               createPrivateThreads,
+              manageThreads,
             ],
           },
         ]

@@ -1069,12 +1069,14 @@ export class SessionProcessor {
       mkdir(characterDir, { recursive: true }),
     ]);
 
-    const [card, rules, source, characterCard] = await Promise.all([
-      this.worldFiles.readWorldCard(worldId),
-      this.worldFiles.readRules(worldId),
-      this.worldFiles.readSourceDocument(worldId),
-      this.worldFiles.readCharacterCard(characterId),
-    ]);
+    const [card, rules, source, characterCard, characterSource] =
+      await Promise.all([
+        this.worldFiles.readWorldCard(worldId),
+        this.worldFiles.readRules(worldId),
+        this.worldFiles.readSourceDocument(worldId),
+        this.worldFiles.readCharacterCard(characterId),
+        this.worldFiles.readCharacterSourceDocument(characterId),
+      ]);
 
     await Promise.all([
       atomicWrite(
@@ -1096,6 +1098,13 @@ export class SessionProcessor {
       await atomicWrite(sourcePath, source);
     } else {
       await rm(sourcePath, { force: true });
+    }
+
+    const characterSourcePath = path.join(characterDir, "source.md");
+    if (characterSource?.trim()) {
+      await atomicWrite(characterSourcePath, characterSource);
+    } else {
+      await rm(characterSourcePath, { force: true });
     }
   }
 
@@ -1166,11 +1175,21 @@ export class SessionProcessor {
     const dir = path.join(sessionInfo.workspacePath, "character");
     await mkdir(dir, { recursive: true });
 
-    const card = await this.worldFiles.readCharacterCard(characterId);
+    const [card, source] = await Promise.all([
+      this.worldFiles.readCharacterCard(characterId),
+      this.worldFiles.readCharacterSourceDocument(characterId),
+    ]);
     await atomicWrite(
       path.join(dir, "character-card.md"),
       card ?? `# 角色卡（C${characterId}）\n`,
     );
+
+    const sourcePath = path.join(dir, "source.md");
+    if (source?.trim()) {
+      await atomicWrite(sourcePath, source);
+    } else {
+      await rm(sourcePath, { force: true });
+    }
   }
 
   private async syncWorkspaceFilesFromWorkspace(

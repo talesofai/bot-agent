@@ -75,6 +75,20 @@ export class WorldFileStore {
     return dir;
   }
 
+  private characterSourceLatestPath(characterId: number): string {
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    return path.join(this.characterDir(), `${characterId}.source.md`);
+  }
+
+  private characterSourceArchiveDir(characterId: number): string {
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    return path.join(this.characterDir(), "sources", String(characterId));
+  }
+
   async writeWorldCard(worldId: WorldId, content: string): Promise<void> {
     await this.atomicWrite(this.worldFilePath(worldId, "world_card"), content);
   }
@@ -181,6 +195,63 @@ export class WorldFileStore {
 
   async readSourceDocument(worldId: WorldId): Promise<string | null> {
     return this.readTextFile(this.worldFilePath(worldId, "source_latest"));
+  }
+
+  async writeCharacterSourceDocument(
+    characterId: number,
+    input: {
+      filename: string;
+      content: string;
+    },
+  ): Promise<{ latestPath: string; archivedPath: string }> {
+    await this.ensureCharacterDir();
+    const safeFilename = sanitizeSourceFilename(input.filename);
+    const archivedDir = this.characterSourceArchiveDir(characterId);
+    await mkdir(archivedDir, { recursive: true });
+    const archivedName = `${Date.now()}-${safeFilename}`;
+    const archivedPath = path.join(archivedDir, archivedName);
+    await this.atomicWrite(archivedPath, input.content);
+
+    const latestPath = this.characterSourceLatestPath(characterId);
+    await this.atomicWrite(latestPath, input.content);
+    return { latestPath, archivedPath };
+  }
+
+  async appendCharacterSourceDocument(
+    characterId: number,
+    input: {
+      content: string;
+      filename?: string;
+    },
+  ): Promise<{ latestPath: string; archivedPath?: string }> {
+    const latestPath = this.characterSourceLatestPath(characterId);
+    await mkdir(path.dirname(latestPath), { recursive: true });
+
+    const normalized = input.content.endsWith("\n")
+      ? input.content
+      : `${input.content}\n`;
+    await appendFile(latestPath, normalized, "utf8");
+
+    if (!input.filename) {
+      return { latestPath };
+    }
+
+    const safeFilename = sanitizeSourceFilename(input.filename);
+    const archivedDir = this.characterSourceArchiveDir(characterId);
+    await mkdir(archivedDir, { recursive: true });
+    const archivedName = `${Date.now()}-${safeFilename}`;
+    const archivedPath = path.join(archivedDir, archivedName);
+    await this.atomicWrite(archivedPath, normalized);
+    return { latestPath, archivedPath };
+  }
+
+  async readCharacterSourceDocument(
+    characterId: number,
+  ): Promise<string | null> {
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      return null;
+    }
+    return this.readTextFile(this.characterSourceLatestPath(characterId));
   }
 
   async ensureDefaultFiles(input: {

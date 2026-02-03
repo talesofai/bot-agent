@@ -78,6 +78,7 @@ import {
   buildWorldAgentPrompt,
   buildWorldBuildAgentPrompt,
   buildWorldCharacterBuildAgentPrompt,
+  buildCharacterSourceSeedContent,
   buildWorldSourceSeedContent,
   buildWorldSubmissionMarkdown,
 } from "../../texts";
@@ -295,6 +296,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
 
       let parsedWorldGroup: ReturnType<typeof parseWorldGroup> | null = null;
+      let parsedCharacterGroup: ReturnType<typeof parseCharacterGroup> | null =
+        null;
       if (
         (augmented.content && augmented.content.trim()) ||
         (message.attachments && message.attachments.size)
@@ -302,7 +305,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         const groupId = await this.worldStore
           .getGroupIdByChannel(message.channelId)
           .catch(() => null);
-        parsedWorldGroup = groupId ? parseWorldGroup(groupId) : null;
+        if (groupId) {
+          parsedWorldGroup = parseWorldGroup(groupId);
+          parsedCharacterGroup = parseCharacterGroup(groupId);
+        }
       }
 
       try {
@@ -314,6 +320,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       } catch (err) {
         this.logger.warn({ err }, "Failed to ingest world build text");
       }
+      try {
+        await this.ingestCharacterBuildMessageContent(
+          message,
+          augmented,
+          parsedCharacterGroup,
+        );
+      } catch (err) {
+        this.logger.warn({ err }, "Failed to ingest character build text");
+      }
       let shouldEmitEvent = true;
       try {
         shouldEmitEvent = await this.ingestWorldBuildAttachments(
@@ -323,6 +338,20 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         );
       } catch (err) {
         this.logger.warn({ err }, "Failed to ingest world build attachments");
+      }
+      try {
+        shouldEmitEvent =
+          shouldEmitEvent &&
+          (await this.ingestCharacterBuildAttachments(
+            message,
+            augmented,
+            parsedCharacterGroup,
+          ));
+      } catch (err) {
+        this.logger.warn(
+          { err },
+          "Failed to ingest character build attachments",
+        );
       }
       if (!shouldEmitEvent) {
         return;
@@ -951,6 +980,232 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const sectionTitle = extracted ? "## 用户文本（JSON 提取）" : "## 用户文本";
 
     await this.worldFiles.appendSourceDocument(parsed.worldId, {
+      content: [
+        sectionTitle,
+        `- 时间：${nowIso}`,
+        `- 用户：${authorLabel}`,
+        ``,
+        normalizedContent.trimEnd(),
+        ``,
+        ``,
+      ].join("\n"),
+    });
+  }
+
+  private async ingestCharacterBuildAttachments(
+    message: Message,
+    session: SessionEvent<DiscordMessageExtras>,
+    parsedCharacterGroup?: ReturnType<typeof parseCharacterGroup> | null,
+  ): Promise<boolean> {
+    if (!message.attachments || message.attachments.size === 0) {
+      return true;
+    }
+
+    const parsed =
+      parsedCharacterGroup ??
+      (await this.worldStore
+        .getGroupIdByChannel(message.channelId)
+        .then((groupId) => (groupId ? parseCharacterGroup(groupId) : null))
+        .catch(() => null));
+    if (!parsed) {
+      return true;
+    }
+
+    const characterId = parsed.characterId;
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      return true;
+    }
+
+    const uploaded: Array<{
+      filename: string;
+      content: string;
+      extractedFromJson: boolean;
+    }> = [];
+    const rejectedTooLarge: string[] = [];
+    const rejectedUnsupported: string[] = [];
+    const rejectedOther: string[] = [];
+    const rejectedEmpty: string[] = [];
+
+    for (const attachment of message.attachments.values()) {
+      try {
+        const doc = await fetchDiscordTextAttachment(attachment, {
+          logger: this.logger,
+          maxBytes: DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES,
+        });
+        const extracted = extractTextFromJsonDocument(doc.content);
+        uploaded.push({
+          filename: doc.filename,
+          content: extracted?.extracted ?? doc.content,
+          extractedFromJson: Boolean(extracted),
+        });
+      } catch (err) {
+        const filename = (attachment.name ?? "").trim() || "document";
+        const reason = err instanceof Error ? err.message : String(err);
+        if (reason.includes("attachment too large")) {
+          rejectedTooLarge.push(filename);
+        } else if (reason.includes("unsupported attachment type")) {
+          rejectedUnsupported.push(filename);
+        } else if (reason.includes("attachment is empty")) {
+          rejectedEmpty.push(filename);
+        } else {
+          rejectedOther.push(filename);
+        }
+      }
+    }
+
+    if (uploaded.length === 0) {
+      const rejected = [
+        ...rejectedTooLarge,
+        ...rejectedUnsupported,
+        ...rejectedEmpty,
+        ...rejectedOther,
+      ];
+      if (rejected.length === 0) {
+        return true;
+      }
+
+      const limitMb = Math.floor(
+        DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES / (1024 * 1024),
+      );
+      const supported = `支持：txt/md/json（以及可解析的 docx）`;
+      const lines: string[] = [];
+      if (rejectedTooLarge.length > 0) {
+        lines.push(
+          `设定文档过大（单个文件最大 ${limitMb}MB）：${rejectedTooLarge.join(", ")}`,
+        );
+      }
+      if (rejectedUnsupported.length > 0) {
+        lines.push(`设定文档类型不支持：${rejectedUnsupported.join(", ")}`);
+      }
+      if (rejectedEmpty.length > 0) {
+        lines.push(`设定文档内容为空：${rejectedEmpty.join(", ")}`);
+      }
+      if (rejectedOther.length > 0) {
+        lines.push(`设定文档暂未读取：${rejectedOther.join(", ")}`);
+      }
+      lines.push(supported);
+
+      await this.sendMessage(session, lines.join("\n"));
+
+      const hasUserText = Boolean(session.content && session.content.trim());
+      return hasUserText;
+    }
+
+    const nowIso = new Date().toISOString();
+    const merged =
+      uploaded.length === 1
+        ? [
+            `# 上传文档：${uploaded[0].filename}`,
+            `- 时间：${nowIso}`,
+            uploaded[0].extractedFromJson ? `- 解析：已从 JSON 提取正文` : null,
+            ``,
+            uploaded[0].content.trimEnd(),
+          ].join("\n")
+        : uploaded
+            .map((doc) =>
+              [
+                `# 上传文档：${doc.filename}`,
+                `- 时间：${nowIso}`,
+                doc.extractedFromJson ? `- 解析：已从 JSON 提取正文` : null,
+                ``,
+                doc.content.trimEnd(),
+                ``,
+                `---`,
+                ``,
+              ].join("\n"),
+            )
+            .join("\n")
+            .trimEnd();
+    const filename =
+      uploaded.length === 1 ? uploaded[0].filename : "uploads.md";
+
+    await this.worldFiles.appendCharacterSourceDocument(characterId, {
+      filename,
+      content: `${merged.trimEnd()}\n\n`,
+    });
+    for (const doc of uploaded) {
+      await this.worldFiles.appendCharacterEvent(characterId, {
+        type: "character_source_uploaded",
+        characterId,
+        guildId: message.guildId,
+        userId: message.author.id,
+        filename: doc.filename,
+        messageId: message.id,
+      });
+    }
+
+    const ignoredLines: string[] = [];
+    if (rejectedTooLarge.length > 0) {
+      const limitMb = Math.floor(
+        DEFAULT_DISCORD_TEXT_ATTACHMENT_MAX_BYTES / (1024 * 1024),
+      );
+      ignoredLines.push(
+        `文件过大（单个最大 ${limitMb}MB）：${rejectedTooLarge.join(", ")}`,
+      );
+    }
+    if (rejectedUnsupported.length > 0) {
+      ignoredLines.push(`类型不支持：${rejectedUnsupported.join(", ")}`);
+    }
+    if (rejectedEmpty.length > 0) {
+      ignoredLines.push(`内容为空：${rejectedEmpty.join(", ")}`);
+    }
+    if (rejectedOther.length > 0) {
+      ignoredLines.push(`未读取：${rejectedOther.join(", ")}`);
+    }
+
+    if (ignoredLines.length > 0) {
+      await this.sendMessage(
+        session,
+        `已读取并写入 character/source.md（${uploaded.length} 个文档）。以下文件被忽略：\n${ignoredLines.map((line) => `- ${line}`).join("\n")}`,
+      );
+    } else if (!session.content?.trim()) {
+      await this.sendMessage(
+        session,
+        `已读取并写入 character/source.md（${uploaded.length} 个文档）。`,
+      );
+    }
+
+    return true;
+  }
+
+  private async ingestCharacterBuildMessageContent(
+    message: Message,
+    session: SessionEvent<DiscordMessageExtras>,
+    parsedCharacterGroup?: ReturnType<typeof parseCharacterGroup> | null,
+  ): Promise<void> {
+    const rawContent = session.content ?? "";
+    if (!rawContent.trim()) {
+      return;
+    }
+
+    const parsed =
+      parsedCharacterGroup ??
+      (await this.worldStore
+        .getGroupIdByChannel(message.channelId)
+        .then((groupId) => (groupId ? parseCharacterGroup(groupId) : null))
+        .catch(() => null));
+    if (!parsed) {
+      return;
+    }
+
+    const characterId = parsed.characterId;
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      return;
+    }
+
+    const ts = Number.isFinite(message.createdTimestamp)
+      ? message.createdTimestamp
+      : Date.now();
+    const nowIso = new Date(ts).toISOString();
+    const authorLabel = session.extras.authorName?.trim()
+      ? `${session.extras.authorName} (${session.userId})`
+      : session.userId;
+
+    const extracted = extractTextFromJsonDocument(rawContent);
+    const normalizedContent = extracted?.extracted ?? rawContent;
+    const sectionTitle = extracted ? "## 用户文本（JSON 提取）" : "## 用户文本";
+
+    await this.worldFiles.appendCharacterSourceDocument(characterId, {
       content: [
         sectionTitle,
         `- 时间：${nowIso}`,
@@ -3301,10 +3556,21 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           language,
         }),
       );
+      const source = {
+        filename: "source.md",
+        content: buildCharacterSourceSeedContent(language),
+      };
+      await this.worldFiles.writeCharacterSourceDocument(characterId, source);
       await this.worldFiles.appendCharacterEvent(characterId, {
         type: "character_created",
         characterId,
         userId: interaction.user.id,
+      });
+      await this.worldFiles.appendCharacterEvent(characterId, {
+        type: "character_source_uploaded",
+        characterId,
+        userId: interaction.user.id,
+        filename: source.filename,
       });
       await this.userState.markCharacterCreated(interaction.user.id);
 

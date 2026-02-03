@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildCharacterBuildAgentPrompt,
+  buildDiscordCharacterCreateGuide,
   buildDiscordHelp,
   buildDiscordOnboardingAutoPrompt,
   buildDiscordOnboardingGuide,
@@ -60,5 +62,25 @@ describe("Discord help/onboarding texts", () => {
     expect(guide).toContain("/character create");
     expect(guide).toContain("/world join");
     expect(guide).toContain("no @ needed");
+  });
+
+  test("buildDiscordCharacterCreateGuide (zh) mentions uploads and character/source.md", () => {
+    const guide = buildDiscordCharacterCreateGuide({
+      characterId: 1,
+      language: null,
+    });
+    expect(guide).toContain("上传");
+    expect(guide).toContain("character/source.md");
+    expect(guide).toContain("/character publish");
+  });
+
+  test("buildCharacterBuildAgentPrompt mentions character/source.md", () => {
+    const prompt = buildCharacterBuildAgentPrompt({
+      characterId: 1,
+      characterName: "Test",
+      language: null,
+    });
+    expect(prompt).toContain("character/source.md");
+    expect(prompt).toContain("character/character-card.md");
   });
 });

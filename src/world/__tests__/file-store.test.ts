@@ -78,6 +78,78 @@ describe("WorldFileStore source documents", () => {
   });
 });
 
+describe("WorldFileStore character source documents", () => {
+  test("writeCharacterSourceDocument writes latest + archived copy", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const store = new WorldFileStore({ logger, dataRoot: tempDir });
+
+    try {
+      const result = await store.writeCharacterSourceDocument(1, {
+        filename: "My Character.md",
+        content: "hello character",
+      });
+
+      expect(result.latestPath.endsWith("/characters/1.source.md")).toBe(true);
+      expect(result.archivedPath.includes("/characters/sources/1/")).toBe(true);
+      expect(result.archivedPath.endsWith("my-character.md")).toBe(true);
+
+      expect(readFileSync(result.latestPath, "utf8")).toContain(
+        "hello character",
+      );
+      expect(readFileSync(result.archivedPath, "utf8")).toContain(
+        "hello character",
+      );
+
+      const latest = await store.readCharacterSourceDocument(1);
+      expect(latest).toContain("hello character");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("appendCharacterSourceDocument appends to latest and can write archived chunks", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const store = new WorldFileStore({ logger, dataRoot: tempDir });
+
+    try {
+      await store.writeCharacterSourceDocument(1, {
+        filename: "base.md",
+        content: "base",
+      });
+
+      const firstAppend = await store.appendCharacterSourceDocument(1, {
+        content: "append-1",
+      });
+      expect(firstAppend.latestPath.endsWith("/characters/1.source.md")).toBe(
+        true,
+      );
+
+      const secondAppend = await store.appendCharacterSourceDocument(1, {
+        filename: "more.md",
+        content: "append-2",
+      });
+
+      const latest = await store.readCharacterSourceDocument(1);
+      expect(latest).toContain("base");
+      expect(latest).toContain("append-1");
+      expect(latest).toContain("append-2");
+
+      expect(secondAppend.archivedPath).toBeTruthy();
+      expect(
+        secondAppend.archivedPath?.includes("/characters/sources/1/"),
+      ).toBe(true);
+      expect(secondAppend.archivedPath?.endsWith("more.md")).toBe(true);
+      expect(readFileSync(secondAppend.archivedPath!, "utf8")).toContain(
+        "append-2",
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("WorldFileStore stats", () => {
   test("ensureMember maintains visitorCount under parallel joins", async () => {
     const tempDir = makeTempDir();

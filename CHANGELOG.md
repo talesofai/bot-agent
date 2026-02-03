@@ -26,6 +26,7 @@
 - Worker：修复发送 typing indicator 失败时的日志字段（不再把 `messageId` 误记为 `sessionId`）
 - 文档：修正平台默认启用说明（与实现一致：默认 `LLBOT_PLATFORM=discord`，仅在 `LLBOT_PLATFORM=qq` 时启用 QQ）
 - Discord：修复 `/character create` 等在创建私密 thread 后拉成员时 `Missing Access` 导致交互卡住；失败时会回覆报错并降级到 creator-only 工作坊频道
+- Discord：修复角色构建会话忽略上传设定文件的问题；现在上传 txt/md/json/docx 会自动写入 `character/source.md` 供模型读取
 
 ## [0.0.31] - 2026-01-30
 

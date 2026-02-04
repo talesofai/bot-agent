@@ -1985,15 +1985,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       return;
     }
-    const homeGuildId = getConfig().DISCORD_HOME_GUILD_ID?.trim();
-    if (homeGuildId && interaction.guildId !== homeGuildId) {
-      await safeReply(
-        interaction,
-        `当前仅允许在 homeGuild 创建世界：guild:${homeGuildId}`,
-        { ephemeral: true },
-      );
-      return;
-    }
     const traceId = createTraceId();
     feishuLogJson({
       event: "discord.world.create.start",
@@ -3640,15 +3631,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       return;
     }
-    const homeGuildId = getConfig().DISCORD_HOME_GUILD_ID?.trim();
-    if (homeGuildId && interaction.guildId !== homeGuildId) {
-      await safeReply(
-        interaction,
-        `当前仅允许在 homeGuild 创建角色：guild:${homeGuildId}`,
-        { ephemeral: true },
-      );
-      return;
-    }
 
     const traceId = createTraceId();
     feishuLogJson({
@@ -4136,15 +4118,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         await safeReply(interaction, "该指令仅支持在服务器内使用。", {
           ephemeral: true,
         });
-        return;
-      }
-      const homeGuildId = getConfig().DISCORD_HOME_GUILD_ID?.trim();
-      if (homeGuildId && interaction.guildId !== homeGuildId) {
-        await safeReply(
-          interaction,
-          `请在 homeGuild 执行：guild:${homeGuildId}`,
-          { ephemeral: true },
-        );
         return;
       }
 

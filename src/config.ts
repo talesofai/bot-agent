@@ -54,6 +54,16 @@ const envSchema = z.object({
   DISCORD_APPLICATION_ID: z.string().optional(),
   /** Optional: lock world system to a single home guild. */
   DISCORD_HOME_GUILD_ID: z.string().regex(/^\d+$/).optional(),
+  /** Auto-start onboarding guide after Discord identity roles are assigned. */
+  DISCORD_ONBOARDING_AUTO_START: zEnvBoolean(true),
+  /** Comma-separated role IDs that map to the "creator" identity. */
+  DISCORD_ONBOARDING_IDENTITY_ROLE_IDS_CREATOR: z.string().optional(),
+  /** Comma-separated role IDs that map to the "player" identity. */
+  DISCORD_ONBOARDING_IDENTITY_ROLE_IDS_PLAYER: z.string().optional(),
+  /** Comma-separated role name substrings that map to the "creator" identity (case-insensitive). */
+  DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_CREATOR: z.string().optional(),
+  /** Comma-separated role name substrings that map to the "player" identity (case-insensitive). */
+  DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_PLAYER: z.string().optional(),
   GROUPS_DATA_DIR: z.string().default("/data/groups"),
   DATA_DIR: z.string().optional(),
   OPENCODE_PROMPT_MAX_BYTES: z.coerce

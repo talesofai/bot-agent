@@ -13,6 +13,8 @@ import {
   type Attachment,
   type ChatInputCommandInteraction,
   type Guild,
+  type GuildMember,
+  type PartialGuildMember,
   type Interaction,
   type Message,
 } from "discord.js";
@@ -27,6 +29,10 @@ import type {
 import { logger as defaultLogger } from "../../logger";
 import { parseMessage, type DiscordMessageExtras } from "./parser";
 import { MessageSender } from "./sender";
+import {
+  buildDiscordOnboardingIdentityRoleConfig,
+  resolveDiscordIdentityRoles,
+} from "./onboarding-identity";
 import type { BotMessageStore } from "../../store/bot-message-store";
 import { WorldStore, type CharacterVisibility } from "../../world/store";
 import { WorldFileStore } from "../../world/file-store";
@@ -135,10 +141,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
       ],
-      partials: [Partials.Channel],
+      partials: [Partials.Channel, Partials.GuildMember, Partials.User],
     });
     this.sender = new MessageSender(
       this.client,
@@ -182,6 +189,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     this.client.on("messageCreate", (message) => {
       void this.handleMessage(message);
+    });
+
+    this.client.on("guildMemberUpdate", (oldMember, newMember) => {
+      void this.handleGuildMemberUpdate(oldMember, newMember).catch((err) => {
+        this.logger.warn({ err }, "Failed to handle guild member update");
+      });
     });
 
     this.client.on("error", (err) => {
@@ -372,6 +385,134 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     } catch (err) {
       this.logger.error({ err }, "Failed to handle Discord message");
     }
+  }
+
+  private async handleGuildMemberUpdate(
+    oldMember: GuildMember | PartialGuildMember,
+    newMember: GuildMember | PartialGuildMember,
+  ): Promise<void> {
+    void oldMember;
+    await this.maybeAutoStartOnboardingFromIdentityGroup(newMember);
+  }
+
+  private async maybeAutoStartOnboardingFromIdentityGroup(
+    member: GuildMember | PartialGuildMember,
+  ): Promise<void> {
+    const config = getConfig();
+    if (!config.DISCORD_ONBOARDING_AUTO_START) {
+      return;
+    }
+    const homeGuildId = config.DISCORD_HOME_GUILD_ID?.trim();
+    if (!homeGuildId) {
+      return;
+    }
+    if (member.guild.id !== homeGuildId) {
+      return;
+    }
+    if (member.user?.bot) {
+      return;
+    }
+    const botUserId = this.botUserId ?? this.client.user?.id ?? "";
+    if (!botUserId) {
+      return;
+    }
+
+    const existing = await this.userState.read(member.id);
+    const threadIds = existing?.onboardingThreadIds ?? null;
+    const language = existing?.language ?? null;
+
+    const roleSnapshot = member.partial
+      ? await member.fetch().catch(() => member)
+      : member;
+    const roles = roleSnapshot.roles?.cache?.values
+      ? Array.from(roleSnapshot.roles.cache.values())
+      : [];
+    const roleNames = roles.map((role) => role.name);
+    const roleIds = roles.map((role) => role.id);
+    const roleConfig = buildDiscordOnboardingIdentityRoleConfig({
+      creatorRoleIdsRaw: config.DISCORD_ONBOARDING_IDENTITY_ROLE_IDS_CREATOR,
+      playerRoleIdsRaw: config.DISCORD_ONBOARDING_IDENTITY_ROLE_IDS_PLAYER,
+      creatorRoleNamesRaw:
+        config.DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_CREATOR,
+      playerRoleNamesRaw: config.DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_PLAYER,
+    });
+    const inferred = resolveDiscordIdentityRoles({
+      memberRoleIds: roleIds,
+      memberRoleNames: roleNames,
+      config: roleConfig,
+    });
+    if (!inferred.creator && !inferred.player) {
+      return;
+    }
+
+    const needCreator = inferred.creator && !threadIds?.creator;
+    const needPlayer = inferred.player && !threadIds?.player;
+    if (!needCreator && !needPlayer) {
+      return;
+    }
+
+    const roleToSet: UserRole = inferred.creator ? "creator" : "player";
+    if (!existing?.role) {
+      await this.userState.setRole(member.id, roleToSet);
+    }
+
+    const created: Array<{ role: UserRole; channelId: string }> = [];
+    if (needCreator) {
+      const threadId = await this.ensureOnboardingThread({
+        guild: member.guild,
+        userId: member.id,
+        role: "creator",
+        reason: "onboarding auto start (identity role)",
+      });
+      await this.sendLongTextToChannel({
+        guildId: member.guild.id,
+        channelId: threadId,
+        content: buildDiscordOnboardingGuide({ role: "creator", language }),
+      });
+      created.push({ role: "creator", channelId: threadId });
+    }
+    if (needPlayer) {
+      const threadId = await this.ensureOnboardingThread({
+        guild: member.guild,
+        userId: member.id,
+        role: "player",
+        reason: "onboarding auto start (identity role)",
+      });
+      await this.sendLongTextToChannel({
+        guildId: member.guild.id,
+        channelId: threadId,
+        content: buildDiscordOnboardingGuide({ role: "player", language }),
+      });
+      created.push({ role: "player", channelId: threadId });
+    }
+
+    if (created.length === 0) {
+      return;
+    }
+
+    const dm =
+      language === "en"
+        ? [
+            "I've auto-started your onboarding guide based on your selected identity role(s):",
+            ...created.map((entry) =>
+              entry.role === "creator"
+                ? `- Creator: <#${entry.channelId}>`
+                : `- Player: <#${entry.channelId}>`,
+            ),
+            "",
+            "Tip: you can always run /onboard to recover the entry link.",
+          ].join("\n")
+        : [
+            "我已根据你选择的身份组，自动为你开启新手引导：",
+            ...created.map((entry) =>
+              entry.role === "creator"
+                ? `- 创作者：<#${entry.channelId}>`
+                : `- 玩家：<#${entry.channelId}>`,
+            ),
+            "",
+            "提示：丢了入口可以随时 /onboard 找回。",
+          ].join("\n");
+    await member.send(dm).catch(() => null);
   }
 
   private async maybeUpdateWorldShowcaseCover(

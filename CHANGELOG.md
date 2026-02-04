@@ -14,11 +14,14 @@
 - 文档：新增 Discord 玩家上手指南 `docs/how-to-play.zh.md`
 - 文档：新增 Discord 指令合集 `docs/discord_commands/ALL.md`（用于 Wiki 统一引用）
 - Discord：世界发布后自动在 homeGuild 创建/复用 `world-showcase`（优先 Forum，否则 Text+Thread）并发帖，内容从世界卡/规则提取摘要；创作者可在帖内用 `#cover`/“封面”+图片设置封面
+- Discord：支持 Discord Server Onboarding 身份组：当用户选择身份组并被分配到对应角色后，自动创建/打开私密引导话题并推送指南（无需先发言或手动 `/onboard`）
+- Config：新增 Discord onboarding 自动触发与身份组角色关键词映射配置（`DISCORD_ONBOARDING_AUTO_START`、`DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_*`）
 
 ### Changed
 
 - Docker：镜像构建将 `docs/discord_commands/` 一并打包（保证 Wiki 在容器内可读取指令文档）
 - Agent：更新默认奈塔人设模板（中英分文档）为最新预设；并在首次构建 system prompt 时按用户语言选择 `agent.md`/`agent.en.md`；同时清理不可执行的“清理/拉黑”等规则
+- Discord：Adapter 增加 `GuildMembers` intent 以监听成员角色更新（用于 onboarding 自动引导）
 
 ### Fixed
 

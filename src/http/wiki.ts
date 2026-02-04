@@ -26,6 +26,26 @@ const DISCORD_COMMAND_DOCS_DIR = path.join(
   "docs",
   "discord_commands",
 );
+const WIKI_ASSETS_DIR = path.join(PROJECT_ROOT, "docs", "wiki_assets");
+
+const WIKI_ASSETS: Record<string, { filePath: string; contentType: string }> = {
+  "/assets/docsify.min.js": {
+    filePath: path.join(WIKI_ASSETS_DIR, "docsify.min.js"),
+    contentType: "application/javascript; charset=utf-8",
+  },
+  "/assets/docsify-vue.css": {
+    filePath: path.join(WIKI_ASSETS_DIR, "docsify-vue.css"),
+    contentType: "text/css; charset=utf-8",
+  },
+  "/assets/docsify-sidebar-collapse.min.js": {
+    filePath: path.join(WIKI_ASSETS_DIR, "docsify-sidebar-collapse.min.js"),
+    contentType: "application/javascript; charset=utf-8",
+  },
+  "/assets/docsify-sidebar-collapse.min.css": {
+    filePath: path.join(WIKI_ASSETS_DIR, "docsify-sidebar-collapse.min.css"),
+    contentType: "text/css; charset=utf-8",
+  },
+};
 
 export async function handleWikiRequest(
   req: Request,
@@ -48,6 +68,11 @@ export async function handleWikiRequest(
     return new Response(buildWikiIndexHtml(lang), {
       headers: buildWikiHeaders(CONTENT_TYPE_HTML),
     });
+  }
+
+  const asset = WIKI_ASSETS[subpath];
+  if (asset) {
+    return serveBinaryFile(req, asset.filePath, asset.contentType);
   }
 
   if (subpath === "/README.md") {
@@ -180,6 +205,14 @@ function buildWikiHeaders(contentType: string): Headers {
   });
 }
 
+function buildWikiAssetHeaders(contentType: string): Headers {
+  return new Headers({
+    "content-type": contentType,
+    "cache-control": "public, max-age=604800, immutable",
+    "x-content-type-options": "nosniff",
+  });
+}
+
 function buildWikiIndexHtml(lang: WikiLanguage): string {
   const htmlLang = lang === "en" ? "en" : "zh-CN";
   return [
@@ -189,8 +222,8 @@ function buildWikiIndexHtml(lang: WikiLanguage): string {
     '  <meta charset="utf-8" />',
     '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
     "  <title>World/Character Wiki</title>",
-    '  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css" />',
-    '  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify-sidebar-collapse/dist/sidebar.min.css" />',
+    '  <link rel="stylesheet" href="/wiki/assets/docsify-vue.css" />',
+    '  <link rel="stylesheet" href="/wiki/assets/docsify-sidebar-collapse.min.css" />',
     "</head>",
     "<body>",
     '  <div id="app">Loading...</div>',
@@ -217,8 +250,8 @@ function buildWikiIndexHtml(lang: WikiLanguage): string {
     "      auto2top: true,",
     "    };",
     "  </script>",
-    '  <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>',
-    '  <script src="https://cdn.jsdelivr.net/npm/docsify-sidebar-collapse/dist/docsify-sidebar-collapse.min.js"></script>',
+    '  <script src="/wiki/assets/docsify.min.js"></script>',
+    '  <script src="/wiki/assets/docsify-sidebar-collapse.min.js"></script>',
     "</body>",
     "</html>",
     "",
@@ -448,6 +481,24 @@ async function serveTextFile(
     return new Response("Not Found", { status: 404 });
   }
   return new Response(content, { headers: buildWikiHeaders(contentType) });
+}
+
+async function serveBinaryFile(
+  req: Request,
+  filePath: string,
+  contentType: string,
+): Promise<Response> {
+  let content: Buffer;
+  try {
+    content = await readFile(filePath);
+  } catch {
+    return new Response("Not Found", { status: 404 });
+  }
+  if (req.method === "HEAD") {
+    return new Response(null, { headers: buildWikiAssetHeaders(contentType) });
+  }
+  const body = new Blob([new Uint8Array(content)]);
+  return new Response(body, { headers: buildWikiAssetHeaders(contentType) });
 }
 
 async function readTextFile(filePath: string): Promise<string | null> {

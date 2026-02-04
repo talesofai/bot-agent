@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- Wiki：内置 Docsify 相关静态资源（不再依赖 jsdelivr CDN），避免部分网络环境下页面白屏/“打不开”
 - Worker：当 opencode 同时返回 text 与 `question` tool 时，优先输出 question 并标记为等待用户输入（避免卡住或漏掉交互提问）
 - Worker：修复发送 typing indicator 失败时的日志字段（不再把 `messageId` 误记为 `sessionId`）
 - 文档：修正平台默认启用说明（与实现一致：默认 `LLBOT_PLATFORM=discord`，仅在 `LLBOT_PLATFORM=qq` 时启用 QQ）

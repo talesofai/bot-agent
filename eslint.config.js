@@ -13,6 +13,7 @@ export default [
       "test-results/**",
       "tests/**",
       "commitlint.config.js",
+      "docs/wiki_assets/**",
     ],
   },
   js.configs.recommended,

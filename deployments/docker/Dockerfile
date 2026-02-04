@@ -24,6 +24,7 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY configs ./configs
 COPY docs/discord_commands ./docs/discord_commands
+COPY docs/wiki_assets ./docs/wiki_assets
 
 RUN rm -rf .git
 

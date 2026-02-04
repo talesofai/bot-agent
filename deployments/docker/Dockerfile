@@ -36,8 +36,9 @@ ENV PATH="${BUN_INSTALL}/bin:${PATH}"
 ENV npm_config_registry=https://registry.npmjs.org
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl unzip bash \
+  && apt-get install -y --no-install-recommends ca-certificates curl unzip bash git ripgrep fd-find \
   && curl -fsSL https://bun.sh/install | bash \
+  && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

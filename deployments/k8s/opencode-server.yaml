@@ -37,25 +37,22 @@ spec:
             - |
               set -euo pipefail
 
-              missing_packages=()
+              # Required tools must be baked into the image. No runtime installs.
               if ! command -v git >/dev/null 2>&1; then
-                missing_packages+=(git)
+                echo "Missing required tool: git (bake it into the image)." >&2
+                exit 1
               fi
               if ! command -v rg >/dev/null 2>&1; then
-                missing_packages+=(ripgrep)
+                echo "Missing required tool: rg/ripgrep (bake it into the image)." >&2
+                exit 1
               fi
-              if ! command -v fd >/dev/null 2>&1 && ! command -v fdfind >/dev/null 2>&1; then
-                missing_packages+=(fd-find)
-              fi
-              if [ "${#missing_packages[@]}" -gt 0 ]; then
-                echo "Installing required tools: ${missing_packages[*]}" >&2
-                export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                apt-get install -y --no-install-recommends "${missing_packages[@]}"
-                rm -rf /var/lib/apt/lists/*
-              fi
-              if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
-                ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+              if ! command -v fd >/dev/null 2>&1; then
+                if command -v fdfind >/dev/null 2>&1; then
+                  ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+                else
+                  echo "Missing required tool: fd/fd-find (bake it into the image)." >&2
+                  exit 1
+                fi
               fi
 
               # Opencode's Web UI resolves the current project via git, then lists sessions by `project.worktree`.

@@ -89,6 +89,14 @@ import {
   buildWorldSubmissionMarkdown,
 } from "../../texts";
 
+function pickByLanguage(
+  language: UserLanguage | null | undefined,
+  zh: string,
+  en: string,
+): string {
+  return language === "en" ? en : zh;
+}
+
 export interface DiscordAdapterOptions {
   token?: string;
   applicationId?: string;
@@ -1979,10 +1987,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     flags: { isGuildOwner: boolean; isGuildAdmin: boolean },
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     if (!interaction.guildId || !interaction.guild) {
-      await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "该指令仅支持在服务器内使用。",
+          "This command can only be used in a server.",
+        ),
+        { ephemeral: true },
+      );
       return;
     }
     const traceId = createTraceId();
@@ -2025,7 +2042,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       await safeReply(
         interaction,
-        `无权限：当前 createPolicy=${policy}（默认 admin）。`,
+        pickByLanguage(
+          language,
+          `无权限：当前 createPolicy=${policy}（默认 admin）。`,
+          `Permission denied: createPolicy=${policy} (default: admin).`,
+        ),
         { ephemeral: true },
       );
       return;
@@ -2035,9 +2056,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     try {
       const nowIso = new Date().toISOString();
-      const language = await this.userState
-        .getLanguage(interaction.user.id)
-        .catch(() => null);
       const worldId = await this.worldStore.nextWorldId();
       const worldName = `World-${worldId}`;
       feishuLogJson({
@@ -2100,13 +2118,21 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const thread = await this.tryCreatePrivateThread({
         guild,
         parentChannelId: workshop.id,
-        name: `世界创建 W${worldId}`,
+        name: pickByLanguage(
+          language,
+          `世界创建 W${worldId}`,
+          `World Create W${worldId}`,
+        ),
         reason: `world create W${worldId} by ${interaction.user.id}`,
         memberUserId: interaction.user.id,
       });
       if (!thread) {
         throw new Error(
-          "无法创建世界编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
+          pickByLanguage(
+            language,
+            "无法创建世界编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
+            "Failed to create the world editing thread: please check the bot permission (CreatePrivateThreads).",
+          ),
         );
       }
 
@@ -2153,10 +2179,17 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       await safeReply(
         interaction,
-        [
-          `世界创建已开始：W${worldId}`,
-          `继续创建：${buildConversationMention}`,
-        ].join("\n"),
+        pickByLanguage(
+          language,
+          [
+            `世界创建已开始：W${worldId}`,
+            `继续创建：${buildConversationMention}`,
+          ].join("\n"),
+          [
+            `World creation started: W${worldId}`,
+            `Continue here: ${buildConversationMention}`,
+          ].join("\n"),
+        ),
         { ephemeral: true },
       );
     } catch (err) {
@@ -2170,7 +2203,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       await safeReply(
         interaction,
-        `创建失败：${err instanceof Error ? err.message : String(err)}`,
+        pickByLanguage(
+          language,
+          `创建失败：${err instanceof Error ? err.message : String(err)}`,
+          `Failed: ${err instanceof Error ? err.message : String(err)}`,
+        ),
         { ephemeral: true },
       );
     }
@@ -2410,15 +2447,27 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       .catch(() => null);
     const meta = await this.worldStore.getWorld(worldId);
     if (!meta) {
-      await safeReply(interaction, `世界不存在：W${worldId}`, {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `世界不存在：W${worldId}`,
+          `World not found: W${worldId}`,
+        ),
+        { ephemeral: true },
+      );
       return;
     }
     if (meta.creatorId !== interaction.user.id) {
-      await safeReply(interaction, "无权限：只有世界创作者可以编辑世界。", {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "无权限：只有世界创作者可以编辑世界。",
+          "Permission denied: only the world creator can edit this world.",
+        ),
+        { ephemeral: true },
+      );
       return;
     }
 
@@ -2428,15 +2477,25 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       language,
     });
     if (!interaction.guildId || !interaction.guild) {
-      await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "该指令仅支持在服务器内使用。",
+          "This command can only be used in a server.",
+        ),
+        { ephemeral: true },
+      );
       return;
     }
     if (interaction.guildId !== meta.homeGuildId) {
       await safeReply(
         interaction,
-        `请在世界入口服务器执行：guild:${meta.homeGuildId}`,
+        pickByLanguage(
+          language,
+          `请在世界入口服务器执行：guild:${meta.homeGuildId}`,
+          `Please run this command in the world's entry server: guild:${meta.homeGuildId}`,
+        ),
         { ephemeral: true },
       );
       return;
@@ -2470,13 +2529,21 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const thread = await this.tryCreatePrivateThread({
         guild: interaction.guild,
         parentChannelId: workshop.id,
-        name: `世界编辑 W${meta.id}`,
+        name: pickByLanguage(
+          language,
+          `世界编辑 W${meta.id}`,
+          `World Edit W${meta.id}`,
+        ),
         reason: `world open W${meta.id} by ${interaction.user.id}`,
         memberUserId: interaction.user.id,
       });
       if (!thread) {
         throw new Error(
-          "无法创建世界编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
+          pickByLanguage(
+            language,
+            "无法创建世界编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
+            "Failed to create the world editing thread: please check the bot permission (CreatePrivateThreads).",
+          ),
         );
       }
       buildConversationChannelId = thread.threadId;
@@ -2512,7 +2579,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     await safeReply(
       interaction,
-      `已打开世界编辑：W${meta.id} ${meta.name}\n编辑话题：<#${buildConversationChannelId}>`,
+      pickByLanguage(
+        language,
+        `已打开世界编辑：W${meta.id} ${meta.name}\n编辑话题：<#${buildConversationChannelId}>`,
+        `World editor opened: W${meta.id} ${meta.name}\nThread: <#${buildConversationChannelId}>`,
+      ),
       { ephemeral: true },
     );
   }
@@ -2520,6 +2591,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async handleWorldPublish(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     const groupId = await this.worldStore.getGroupIdByChannel(
       interaction.channelId,
     );
@@ -2527,7 +2601,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!parsed || parsed.kind !== "build") {
       await safeReply(
         interaction,
-        "请先执行 /world create 或 /world open，然后在对应编辑话题执行 /world publish。",
+        pickByLanguage(
+          language,
+          "请先执行 /world create 或 /world open，然后在对应编辑话题执行 /world publish。",
+          "Run /world create or /world open first, then run /world publish inside the corresponding editing thread.",
+        ),
         { ephemeral: true },
       );
       return;
@@ -2535,15 +2613,27 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     const meta = await this.worldStore.getWorld(parsed.worldId);
     if (!meta) {
-      await safeReply(interaction, `世界不存在：W${parsed.worldId}`, {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `世界不存在：W${parsed.worldId}`,
+          `World not found: W${parsed.worldId}`,
+        ),
+        { ephemeral: true },
+      );
       return;
     }
     if (meta.creatorId !== interaction.user.id) {
-      await safeReply(interaction, "无权限：只有世界创作者可以发布世界。", {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "无权限：只有世界创作者可以发布世界。",
+          "Permission denied: only the world creator can publish this world.",
+        ),
+        { ephemeral: true },
+      );
       return;
     }
 
@@ -2552,7 +2642,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (meta.status !== "draft") {
       await safeReply(
         interaction,
-        `世界已发布：W${meta.id} ${meta.name}（status=${meta.status}）`,
+        pickByLanguage(
+          language,
+          `世界已发布：W${meta.id} ${meta.name}（status=${meta.status}）`,
+          `World already published: W${meta.id} ${meta.name} (status=${meta.status})`,
+        ),
         { ephemeral: true },
       );
       return;
@@ -2564,7 +2658,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!guild) {
       await safeReply(
         interaction,
-        `无法获取世界入口服务器：guild:${meta.homeGuildId}`,
+        pickByLanguage(
+          language,
+          `无法获取世界入口服务器：guild:${meta.homeGuildId}`,
+          `Failed to fetch the world's entry server: guild:${meta.homeGuildId}`,
+        ),
         { ephemeral: true },
       );
       return;
@@ -2601,9 +2699,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       voiceChannelId: created.voiceChannelId,
     });
 
-    const language = await this.userState
-      .getLanguage(interaction.user.id)
-      .catch(() => null);
     await this.ensureWorldGroupAgent({
       worldId: meta.id,
       worldName,
@@ -2628,13 +2723,23 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     await safeReply(
       interaction,
-      [
-        `世界已发布：W${meta.id} ${worldName}`,
-        `公告：<#${created.infoChannelId}>`,
-        `讨论：<#${created.discussionChannelId}>`,
-        `提案：<#${created.proposalsChannelId}>`,
-        `加入：/world join world_id:${meta.id}`,
-      ].join("\n"),
+      pickByLanguage(
+        language,
+        [
+          `世界已发布：W${meta.id} ${worldName}`,
+          `公告：<#${created.infoChannelId}>`,
+          `讨论：<#${created.discussionChannelId}>`,
+          `提案：<#${created.proposalsChannelId}>`,
+          `加入：/world join world_id:${meta.id}`,
+        ].join("\n"),
+        [
+          `World published: W${meta.id} ${worldName}`,
+          `Announcements: <#${created.infoChannelId}>`,
+          `Discussion: <#${created.discussionChannelId}>`,
+          `Proposals: <#${created.proposalsChannelId}>`,
+          `Join: /world join world_id:${meta.id}`,
+        ].join("\n"),
+      ),
       { ephemeral: true },
     );
 
@@ -3625,10 +3730,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async handleCharacterCreate(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     if (!interaction.guildId || !interaction.guild) {
-      await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "该指令仅支持在服务器内使用。",
+          "This command can only be used in a server.",
+        ),
+        { ephemeral: true },
+      );
       return;
     }
 
@@ -3644,9 +3758,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await safeDefer(interaction, { ephemeral: true });
     let characterId: number | null = null;
     try {
-      const language = await this.userState
-        .getLanguage(interaction.user.id)
-        .catch(() => null);
       const visibilityRaw =
         (interaction.options.getString(
           "visibility",
@@ -3712,7 +3823,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const thread = await this.tryCreatePrivateThread({
         guild: interaction.guild,
         parentChannelId: workshop.id,
-        name: `角色创建 C${characterId}`,
+        name: pickByLanguage(
+          language,
+          `角色创建 C${characterId}`,
+          `Character Create C${characterId}`,
+        ),
         reason: `character create C${characterId} by ${interaction.user.id}`,
         memberUserId: interaction.user.id,
       });
@@ -3748,16 +3863,29 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       await safeReply(
         interaction,
-        [
-          `角色已创建：C${characterId} ${name}（visibility=${visibility}）`,
-          `完善角色卡：${buildConversationMention}`,
-          `设为默认角色：/character use character_id:${characterId}`,
-          thread
-            ? ""
-            : "提示：当前无法创建私密话题，已降级为工作坊频道（请检查 bot 的线程权限）。",
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        pickByLanguage(
+          language,
+          [
+            `角色已创建：C${characterId} ${name}（visibility=${visibility}）`,
+            `完善角色卡：${buildConversationMention}`,
+            `设为默认角色：/character use character_id:${characterId}`,
+            thread
+              ? ""
+              : "提示：当前无法创建私密话题，已降级为工作坊频道（请检查 bot 的线程权限）。",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          [
+            `Character created: C${characterId} ${name} (visibility=${visibility})`,
+            `Continue editing: ${buildConversationMention}`,
+            `Set as default: /character use character_id:${characterId}`,
+            thread
+              ? ""
+              : "Note: Failed to create a private thread; fell back to the workshop channel (check the bot's thread permissions).",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
         { ephemeral: true },
       );
     } catch (err) {
@@ -3772,12 +3900,21 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       await safeReply(
         interaction,
-        [
-          `创建失败：${err instanceof Error ? err.message : String(err)}`,
-          characterId ? `（角色可能已创建：C${characterId}）` : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        pickByLanguage(
+          language,
+          [
+            `创建失败：${err instanceof Error ? err.message : String(err)}`,
+            characterId ? `（角色可能已创建：C${characterId}）` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          [
+            `Failed: ${err instanceof Error ? err.message : String(err)}`,
+            characterId ? `(Character may already exist: C${characterId})` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
         { ephemeral: true },
       );
     }
@@ -4089,22 +4226,34 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     characterId: number,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     await safeDefer(interaction, { ephemeral: true });
     try {
-      const language = await this.userState
-        .getLanguage(interaction.user.id)
-        .catch(() => null);
       const meta = await this.worldStore.getCharacter(characterId);
       if (!meta) {
-        await safeReply(interaction, `角色不存在：C${characterId}`, {
-          ephemeral: true,
-        });
+        await safeReply(
+          interaction,
+          pickByLanguage(
+            language,
+            `角色不存在：C${characterId}`,
+            `Character not found: C${characterId}`,
+          ),
+          { ephemeral: true },
+        );
         return;
       }
       if (meta.creatorId !== interaction.user.id) {
-        await safeReply(interaction, "无权限：只有角色创作者可以编辑角色卡。", {
-          ephemeral: true,
-        });
+        await safeReply(
+          interaction,
+          pickByLanguage(
+            language,
+            "无权限：只有角色创作者可以编辑角色卡。",
+            "Permission denied: only the character creator can edit this card.",
+          ),
+          { ephemeral: true },
+        );
         return;
       }
 
@@ -4115,9 +4264,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
 
       if (!interaction.guildId || !interaction.guild) {
-        await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-          ephemeral: true,
-        });
+        await safeReply(
+          interaction,
+          pickByLanguage(
+            language,
+            "该指令仅支持在服务器内使用。",
+            "This command can only be used in a server.",
+          ),
+          { ephemeral: true },
+        );
         return;
       }
 
@@ -4146,7 +4301,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         const thread = await this.tryCreatePrivateThread({
           guild: interaction.guild,
           parentChannelId: workshop.id,
-          name: `角色编辑 C${meta.id}`,
+          name: pickByLanguage(
+            language,
+            `角色编辑 C${meta.id}`,
+            `Character Edit C${meta.id}`,
+          ),
           reason: `character open C${meta.id} by ${interaction.user.id}`,
           memberUserId: interaction.user.id,
         });
@@ -4172,15 +4331,27 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
       await safeReply(
         interaction,
-        [
-          `已打开角色卡编辑：C${meta.id} ${meta.name}`,
-          `编辑话题：<#${conversationChannelId}>`,
-          degraded
-            ? "提示：当前无法创建私密话题，已降级为工作坊频道（请检查 bot 的线程权限）。"
-            : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        pickByLanguage(
+          language,
+          [
+            `已打开角色卡编辑：C${meta.id} ${meta.name}`,
+            `编辑话题：<#${conversationChannelId}>`,
+            degraded
+              ? "提示：当前无法创建私密话题，已降级为工作坊频道（请检查 bot 的线程权限）。"
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          [
+            `Character editor opened: C${meta.id} ${meta.name}`,
+            `Thread: <#${conversationChannelId}>`,
+            degraded
+              ? "Note: Failed to create a private thread; fell back to the workshop channel (check the bot's thread permissions)."
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
         { ephemeral: true },
       );
     } catch (err) {
@@ -4190,7 +4361,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       );
       await safeReply(
         interaction,
-        `打开失败：${err instanceof Error ? err.message : String(err)}`,
+        pickByLanguage(
+          language,
+          `打开失败：${err instanceof Error ? err.message : String(err)}`,
+          `Failed: ${err instanceof Error ? err.message : String(err)}`,
+        ),
         { ephemeral: true },
       );
     }
@@ -4200,17 +4375,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     characterId: number,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     const meta = await this.worldStore.getCharacter(characterId);
     if (!meta) {
-      await safeReply(interaction, `角色不存在：C${characterId}`, {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `角色不存在：C${characterId}`,
+          `Character not found: C${characterId}`,
+        ),
+        { ephemeral: false },
+      );
       return;
     }
     if (meta.creatorId !== interaction.user.id) {
-      await safeReply(interaction, "无权限：只能使用你自己创建的角色。", {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "无权限：只能使用你自己创建的角色。",
+          "Permission denied: you can only use characters you created.",
+        ),
+        { ephemeral: false },
+      );
       return;
     }
     await this.worldStore.setGlobalActiveCharacter({
@@ -4219,7 +4409,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     });
     await safeReply(
       interaction,
-      `已设置你的默认角色：C${meta.id} ${meta.name}`,
+      pickByLanguage(
+        language,
+        `已设置你的默认角色：C${meta.id} ${meta.name}`,
+        `Default character set: C${meta.id} ${meta.name}`,
+      ),
       { ephemeral: false },
     );
   }

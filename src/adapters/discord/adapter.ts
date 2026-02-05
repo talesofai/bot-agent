@@ -2525,6 +2525,39 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       } catch {
         // ignore
       }
+      try {
+        const currentName =
+          fetched && typeof fetched === "object" && "name" in fetched
+            ? String((fetched as { name: unknown }).name ?? "")
+            : "";
+        const isCreateThread =
+          currentName.startsWith("世界创建") ||
+          currentName.startsWith("World Create");
+        const desiredName = pickByLanguage(
+          language,
+          isCreateThread ? `世界创建 W${meta.id}` : `世界编辑 W${meta.id}`,
+          isCreateThread
+            ? `World Create W${meta.id}`
+            : `World Edit W${meta.id}`,
+        );
+        const setter =
+          fetched && typeof fetched === "object" && "setName" in fetched
+            ? (fetched as { setName?: unknown }).setName
+            : null;
+        if (
+          typeof setter === "function" &&
+          desiredName.trim() &&
+          desiredName !== currentName
+        ) {
+          await (
+            fetched as unknown as {
+              setName: (name: string, reason?: string) => Promise<unknown>;
+            }
+          ).setName(desiredName, `world thread rename W${meta.id}`);
+        }
+      } catch {
+        // ignore
+      }
     } else {
       const thread = await this.tryCreatePrivateThread({
         guild: interaction.guild,
@@ -4297,6 +4330,39 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         await this.reopenPrivateThreadForUser(fetched, interaction.user.id, {
           reason: `character open C${meta.id}`,
         });
+        try {
+          const currentName =
+            fetched && typeof fetched === "object" && "name" in fetched
+              ? String((fetched as { name: unknown }).name ?? "")
+              : "";
+          const isCreateThread =
+            currentName.startsWith("角色创建") ||
+            currentName.startsWith("Character Create");
+          const desiredName = pickByLanguage(
+            language,
+            isCreateThread ? `角色创建 C${meta.id}` : `角色编辑 C${meta.id}`,
+            isCreateThread
+              ? `Character Create C${meta.id}`
+              : `Character Edit C${meta.id}`,
+          );
+          const setter =
+            fetched && typeof fetched === "object" && "setName" in fetched
+              ? (fetched as { setName?: unknown }).setName
+              : null;
+          if (
+            typeof setter === "function" &&
+            desiredName.trim() &&
+            desiredName !== currentName
+          ) {
+            await (
+              fetched as unknown as {
+                setName: (name: string, reason?: string) => Promise<unknown>;
+              }
+            ).setName(desiredName, `character thread rename C${meta.id}`);
+          }
+        } catch {
+          // ignore
+        }
       } else {
         const thread = await this.tryCreatePrivateThread({
           guild: interaction.guild,

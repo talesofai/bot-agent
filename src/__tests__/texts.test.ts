@@ -35,30 +35,30 @@ describe("Discord help/onboarding texts", () => {
     const prompt = buildDiscordOnboardingAutoPrompt(null);
     expect(prompt).toContain("私密");
     expect(prompt).toContain("无需 @");
-    expect(prompt).toContain("/onboard role:player");
-    expect(prompt).toContain("/onboard role:creator");
+    expect(prompt).toContain("/onboard role:adventurer");
+    expect(prompt).toContain("/onboard role:world creater");
     expect(prompt).toContain("/nano");
     expect(prompt).toContain(".rd 2d6");
   });
 
-  test("buildDiscordOnboardingGuide (creator zh) includes world workflow and recovery hint", () => {
+  test("buildDiscordOnboardingGuide (world creater zh) includes world workflow and recovery hint", () => {
     const guide = buildDiscordOnboardingGuide({
-      role: "creator",
+      role: "world creater",
       language: null,
     });
-    expect(guide).toContain("创作者");
+    expect(guide).toContain("世界创建者");
     expect(guide).toContain("/world create");
     expect(guide).toContain("/world publish");
     expect(guide).toContain("找不到");
-    expect(guide).toContain("/onboard role:creator");
+    expect(guide).toContain("/onboard role:world creater");
   });
 
-  test("buildDiscordOnboardingGuide (player en) includes player workflow and wake hint", () => {
+  test("buildDiscordOnboardingGuide (adventurer en) includes workflow and wake hint", () => {
     const guide = buildDiscordOnboardingGuide({
-      role: "player",
+      role: "adventurer",
       language: "en",
     });
-    expect(guide).toContain("Player Guide");
+    expect(guide).toContain("Adventurer Guide");
     expect(guide).toContain("/character create");
     expect(guide).toContain("/world join");
     expect(guide).toContain("no @ needed");

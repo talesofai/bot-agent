@@ -15,7 +15,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["🌍 I'm a worldbuilder / writer"],
         config,
       }),
-    ).toEqual({ creator: true, player: false });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: false });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -23,7 +23,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["⚔️ I want to roleplay / explore"],
         config,
       }),
-    ).toEqual({ creator: false, player: true });
+    ).toEqual({ admin: false, worldCreater: false, adventurer: true });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -31,7 +31,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["⭐ Both! I create and play"],
         config,
       }),
-    ).toEqual({ creator: true, player: true });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: true });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -39,7 +39,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["adventurer"],
         config,
       }),
-    ).toEqual({ creator: false, player: true });
+    ).toEqual({ admin: false, worldCreater: false, adventurer: true });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -47,7 +47,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["world creater"],
         config,
       }),
-    ).toEqual({ creator: true, player: false });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: false });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -55,7 +55,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["adventurer", "world creater"],
         config,
       }),
-    ).toEqual({ creator: true, player: true });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: true });
   });
 
   test("matches role ids when configured", () => {
@@ -63,8 +63,8 @@ describe("Discord onboarding identity role mapping", () => {
       creatorRoleIdsRaw: "123,not-a-number",
       playerRoleIdsRaw: "456",
     });
-    expect(config.creatorRoleIds).toEqual(["123"]);
-    expect(config.playerRoleIds).toEqual(["456"]);
+    expect(config.worldCreaterRoleIds).toEqual(["123"]);
+    expect(config.adventurerRoleIds).toEqual(["456"]);
 
     expect(
       resolveDiscordIdentityRoles({
@@ -72,7 +72,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["whatever"],
         config,
       }),
-    ).toEqual({ creator: true, player: false });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: false });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -80,7 +80,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["whatever"],
         config,
       }),
-    ).toEqual({ creator: false, player: true });
+    ).toEqual({ admin: false, worldCreater: false, adventurer: true });
   });
 
   test("matches role names by case-insensitive substring when configured", () => {
@@ -95,7 +95,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["【创作者】"],
         config,
       }),
-    ).toEqual({ creator: true, player: false });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: false });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -103,7 +103,7 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["i am a WORLDbuilder / writer"],
         config,
       }),
-    ).toEqual({ creator: true, player: false });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: false });
 
     expect(
       resolveDiscordIdentityRoles({
@@ -111,10 +111,10 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["I want to RolePlay"],
         config,
       }),
-    ).toEqual({ creator: false, player: true });
+    ).toEqual({ admin: false, worldCreater: false, adventurer: true });
   });
 
-  test("does not use heuristics when explicit config is present", () => {
+  test("does not block heuristics when explicit config is present", () => {
     const config = buildDiscordOnboardingIdentityRoleConfig({
       playerRoleIdsRaw: "456",
     });
@@ -125,10 +125,10 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["worldbuilder"],
         config,
       }),
-    ).toEqual({ creator: false, player: false });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: false });
   });
 
-  test("treats 'both' as creator+player even when explicit config is present", () => {
+  test("treats 'both' as worldCreater+adventurer even when explicit config is present", () => {
     const config = buildDiscordOnboardingIdentityRoleConfig({
       creatorRoleNamesRaw: "world creater",
     });
@@ -139,6 +139,6 @@ describe("Discord onboarding identity role mapping", () => {
         memberRoleNames: ["both"],
         config,
       }),
-    ).toEqual({ creator: true, player: true });
+    ).toEqual({ admin: false, worldCreater: true, adventurer: true });
   });
 });

@@ -1,13 +1,17 @@
 export type DiscordOnboardingIdentityRoleConfig = {
-  creatorRoleIds: string[];
-  playerRoleIds: string[];
+  worldCreaterRoleIds: string[];
+  adventurerRoleIds: string[];
   /** Lowercased; matched by substring (contains). */
-  creatorRoleNameIncludes: string[];
+  worldCreaterRoleNameIncludes: string[];
   /** Lowercased; matched by substring (contains). */
-  playerRoleNameIncludes: string[];
+  adventurerRoleNameIncludes: string[];
 };
 
-export type DiscordIdentityRoles = { creator: boolean; player: boolean };
+export type DiscordIdentityRoles = {
+  admin: boolean;
+  worldCreater: boolean;
+  adventurer: boolean;
+};
 
 function parseCsv(raw: string | null | undefined): string[] {
   if (!raw) {
@@ -41,23 +45,23 @@ export function buildDiscordOnboardingIdentityRoleConfig(input: {
   creatorRoleNamesRaw?: string | null;
   playerRoleNamesRaw?: string | null;
 }): DiscordOnboardingIdentityRoleConfig {
-  const creatorRoleIds = parseCsv(input.creatorRoleIdsRaw).filter((id) =>
+  const worldCreaterRoleIds = parseCsv(input.creatorRoleIdsRaw).filter((id) =>
     /^\d+$/.test(id),
   );
-  const playerRoleIds = parseCsv(input.playerRoleIdsRaw).filter((id) =>
+  const adventurerRoleIds = parseCsv(input.playerRoleIdsRaw).filter((id) =>
     /^\d+$/.test(id),
   );
-  const creatorRoleNameIncludes = parseCsv(input.creatorRoleNamesRaw).map(
+  const worldCreaterRoleNameIncludes = parseCsv(input.creatorRoleNamesRaw).map(
     normalizeLower,
   );
-  const playerRoleNameIncludes = parseCsv(input.playerRoleNamesRaw).map(
+  const adventurerRoleNameIncludes = parseCsv(input.playerRoleNamesRaw).map(
     normalizeLower,
   );
   return {
-    creatorRoleIds,
-    playerRoleIds,
-    creatorRoleNameIncludes,
-    playerRoleNameIncludes,
+    worldCreaterRoleIds,
+    adventurerRoleIds,
+    worldCreaterRoleNameIncludes,
+    adventurerRoleNameIncludes,
   };
 }
 
@@ -71,6 +75,14 @@ export function resolveDiscordIdentityRoles(input: {
     .map(normalizeLower)
     .filter(Boolean);
 
+  const admin = roleNamesLower.some(
+    (name) =>
+      name === "admin" ||
+      name.includes("admin") ||
+      name.includes("administrator") ||
+      name.includes("管理员"),
+  );
+
   const hasBoth = roleNamesLower.some(
     (name) =>
       name.includes("both") ||
@@ -79,27 +91,17 @@ export function resolveDiscordIdentityRoles(input: {
       name.includes("也游玩"),
   );
   if (hasBoth) {
-    return { creator: true, player: true };
+    return { admin, worldCreater: true, adventurer: true };
   }
 
   const hasExplicitConfig =
-    input.config.creatorRoleIds.length > 0 ||
-    input.config.playerRoleIds.length > 0 ||
-    input.config.creatorRoleNameIncludes.length > 0 ||
-    input.config.playerRoleNameIncludes.length > 0;
-
-  if (hasExplicitConfig) {
-    const creator =
-      input.config.creatorRoleIds.some((id) => roleIdSet.has(id)) ||
-      anyRoleNameIncludes(roleNamesLower, input.config.creatorRoleNameIncludes);
-    const player =
-      input.config.playerRoleIds.some((id) => roleIdSet.has(id)) ||
-      anyRoleNameIncludes(roleNamesLower, input.config.playerRoleNameIncludes);
-    return { creator, player };
-  }
+    input.config.worldCreaterRoleIds.length > 0 ||
+    input.config.adventurerRoleIds.length > 0 ||
+    input.config.worldCreaterRoleNameIncludes.length > 0 ||
+    input.config.adventurerRoleNameIncludes.length > 0;
 
   // Heuristics (fallback): try to match common role names from Discord onboarding options.
-  const creator = roleNamesLower.some(
+  const heuristicWorldCreater = roleNamesLower.some(
     (name) =>
       name.includes("worldbuilder") ||
       name.includes("writer") ||
@@ -110,7 +112,7 @@ export function resolveDiscordIdentityRoles(input: {
       name.includes("创作者") ||
       name.includes("写手"),
   );
-  const player = roleNamesLower.some(
+  const heuristicAdventurer = roleNamesLower.some(
     (name) =>
       name.includes("roleplay") ||
       name.includes("explore") ||
@@ -120,5 +122,29 @@ export function resolveDiscordIdentityRoles(input: {
       name.includes("跑团"),
   );
 
-  return { creator, player };
+  if (hasExplicitConfig) {
+    const configWorldCreater =
+      input.config.worldCreaterRoleIds.some((id) => roleIdSet.has(id)) ||
+      anyRoleNameIncludes(
+        roleNamesLower,
+        input.config.worldCreaterRoleNameIncludes,
+      );
+    const configAdventurer =
+      input.config.adventurerRoleIds.some((id) => roleIdSet.has(id)) ||
+      anyRoleNameIncludes(
+        roleNamesLower,
+        input.config.adventurerRoleNameIncludes,
+      );
+    return {
+      admin,
+      worldCreater: configWorldCreater || heuristicWorldCreater,
+      adventurer: configAdventurer || heuristicAdventurer,
+    };
+  }
+
+  return {
+    admin,
+    worldCreater: heuristicWorldCreater,
+    adventurer: heuristicAdventurer,
+  };
 }

@@ -97,6 +97,29 @@ function pickByLanguage(
   return language === "en" ? en : zh;
 }
 
+class LocalizedError extends Error {
+  readonly zh: string;
+  readonly en: string;
+
+  constructor(input: { zh: string; en: string }) {
+    super(input.zh);
+    this.zh = input.zh;
+    this.en = input.en;
+    this.name = "LocalizedError";
+  }
+}
+
+function resolveUserMessageFromError(
+  language: UserLanguage | null | undefined,
+  err: unknown,
+  fallback: { zh: string; en: string },
+): string {
+  if (err instanceof LocalizedError) {
+    return language === "en" ? err.en : err.zh;
+  }
+  return language === "en" ? fallback.en : fallback.zh;
+}
+
 export interface DiscordAdapterOptions {
   token?: string;
   applicationId?: string;
@@ -205,6 +228,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
     });
 
+    this.client.on("guildMemberAdd", (member) => {
+      void this.maybeAutoStartOnboardingFromIdentityGroup(member).catch(
+        (err) => {
+          this.logger.warn({ err }, "Failed to handle guild member add");
+        },
+      );
+    });
+
     this.client.on("error", (err) => {
       this.logger.error({ err }, "Discord client error");
     });
@@ -222,8 +253,17 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         if (!interaction.isChatInputCommand()) {
           return;
         }
-        const message = `处理失败：${err instanceof Error ? err.message : String(err)}`;
-        await safeReply(interaction, message, { ephemeral: true });
+        const language = await this.userState
+          .getLanguage(interaction.user.id)
+          .catch(() => null);
+        await safeReply(
+          interaction,
+          resolveUserMessageFromError(language, err, {
+            zh: "处理失败，请稍后重试。",
+            en: "Failed. Please try again.",
+          }),
+          { ephemeral: true },
+        );
       });
     });
 
@@ -410,13 +450,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!config.DISCORD_ONBOARDING_AUTO_START) {
       return;
     }
-    const homeGuildId = config.DISCORD_HOME_GUILD_ID?.trim();
-    if (!homeGuildId) {
-      return;
-    }
-    if (member.guild.id !== homeGuildId) {
-      return;
-    }
     if (member.user?.bot) {
       return;
     }
@@ -449,73 +482,76 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       memberRoleNames: roleNames,
       config: roleConfig,
     });
-    if (!inferred.creator && !inferred.player) {
+    const desiredRoles: UserRole[] = [];
+    if (inferred.admin) {
+      desiredRoles.push("admin");
+    }
+    if (inferred.worldCreater) {
+      desiredRoles.push("world creater");
+    }
+    if (inferred.adventurer) {
+      desiredRoles.push("adventurer");
+    }
+    if (desiredRoles.length === 0) {
       return;
     }
 
-    const needCreator = inferred.creator && !threadIds?.creator;
-    const needPlayer = inferred.player && !threadIds?.player;
-    if (!needCreator && !needPlayer) {
+    const existingThreadIds = threadIds ?? {};
+    const needRoles = desiredRoles.filter(
+      (role) => !existingThreadIds[role]?.trim(),
+    );
+    if (needRoles.length === 0) {
       return;
     }
 
-    const roleToSet: UserRole = inferred.creator ? "creator" : "player";
-    if (!existing?.role) {
-      await this.userState.setRole(member.id, roleToSet);
-    }
+    await this.userState.addRoles(member.id, desiredRoles).catch(() => {
+      // ignore
+    });
 
     const created: Array<{ role: UserRole; channelId: string }> = [];
-    if (needCreator) {
+    for (const role of needRoles) {
       const threadId = await this.ensureOnboardingThread({
         guild: member.guild,
         userId: member.id,
-        role: "creator",
+        role,
+        language,
         reason: "onboarding auto start (identity role)",
       });
       await this.sendLongTextToChannel({
         guildId: member.guild.id,
         channelId: threadId,
-        content: buildDiscordOnboardingGuide({ role: "creator", language }),
+        content: buildDiscordOnboardingGuide({ role, language }),
       });
-      created.push({ role: "creator", channelId: threadId });
-    }
-    if (needPlayer) {
-      const threadId = await this.ensureOnboardingThread({
-        guild: member.guild,
-        userId: member.id,
-        role: "player",
-        reason: "onboarding auto start (identity role)",
-      });
-      await this.sendLongTextToChannel({
-        guildId: member.guild.id,
-        channelId: threadId,
-        content: buildDiscordOnboardingGuide({ role: "player", language }),
-      });
-      created.push({ role: "player", channelId: threadId });
+      created.push({ role, channelId: threadId });
     }
 
     if (created.length === 0) {
       return;
     }
 
+    const roleLabel =
+      language === "en"
+        ? (role: UserRole) => role
+        : (role: UserRole) =>
+            role === "admin"
+              ? "管理员"
+              : role === "world creater"
+                ? "世界创建者"
+                : "冒险者";
     const dm =
       language === "en"
         ? [
             "I've auto-started your onboarding guide based on your selected identity role(s):",
-            ...created.map((entry) =>
-              entry.role === "creator"
-                ? `- Creator: <#${entry.channelId}>`
-                : `- Player: <#${entry.channelId}>`,
+            ...created.map(
+              (entry) => `- ${roleLabel(entry.role)}: <#${entry.channelId}>`,
             ),
             "",
             "Tip: you can always run /onboard to recover the entry link.",
           ].join("\n")
         : [
             "我已根据你选择的身份组，自动为你开启新手引导：",
-            ...created.map((entry) =>
-              entry.role === "creator"
-                ? `- 创作者：<#${entry.channelId}>`
-                : `- 玩家：<#${entry.channelId}>`,
+            ...created.map(
+              (entry) => `- ${roleLabel(entry.role)}：<#${entry.channelId}>`,
             ),
             "",
             "提示：丢了入口可以随时 /onboard 找回。",
@@ -894,12 +930,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   }
 
   private async maybePromptOnboarding(message: Message): Promise<void> {
-    const config = getConfig();
-    const homeGuildId = config.DISCORD_HOME_GUILD_ID?.trim();
-    if (!homeGuildId) {
-      return;
-    }
-    if (!message.guildId || message.guildId !== homeGuildId) {
+    if (!message.guildId) {
       return;
     }
     if (!message.guild) {
@@ -910,18 +941,22 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     const existing = await this.userState.read(message.author.id);
-    const hasAnyThread =
+    const hasAnyThread = Boolean(
       existing?.onboardingThreadIds &&
-      (existing.onboardingThreadIds.player ||
-        existing.onboardingThreadIds.creator);
-    if (existing?.role || hasAnyThread) {
+      Object.values(existing.onboardingThreadIds).some(
+        (value) => typeof value === "string" && value.trim(),
+      ),
+    );
+    const hasAnyRole = Boolean(existing?.roles && existing.roles.length > 0);
+    if (hasAnyRole || hasAnyThread) {
       return;
     }
 
     const threadId = await this.ensureOnboardingThread({
       guild: message.guild,
       userId: message.author.id,
-      role: "player",
+      role: "adventurer",
+      language: existing?.language ?? null,
       reason: "onboarding auto prompt",
     });
     await this.sendLongTextToChannel({
@@ -1659,40 +1694,81 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
     await safeDefer(interaction, { ephemeral: true });
-    const roleRaw = interaction.options.getString("role", true);
-    const role: UserRole = roleRaw === "creator" ? "creator" : "player";
-
-    await this.userState.setRole(interaction.user.id, role);
+    const roleRaw = interaction.options.getString("role", true).trim();
+    const roles: UserRole[] =
+      roleRaw === "both"
+        ? ["adventurer", "world creater"]
+        : roleRaw === "admin"
+          ? ["admin"]
+          : roleRaw === "adventurer"
+            ? ["adventurer"]
+            : roleRaw === "world creater"
+              ? ["world creater"]
+              : ["adventurer"];
+    const uniqueRoles = Array.from(new Set(roles));
+    await this.userState.addRoles(interaction.user.id, uniqueRoles);
     const language = await this.userState
       .getLanguage(interaction.user.id)
       .catch(() => null);
 
     if (!interaction.guildId || !interaction.guild) {
-      await safeReply(interaction, "该指令仅支持在服务器内使用。", {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "该指令仅支持在服务器内使用。",
+          "This command can only be used in a server.",
+        ),
+        { ephemeral: true },
+      );
       return;
     }
 
-    const threadId = await this.ensureOnboardingThread({
-      guild: interaction.guild,
-      userId: interaction.user.id,
-      role,
-      reason: `onboard role=${role}`,
-    });
-    await this.sendLongTextToChannel({
-      guildId: interaction.guildId,
-      channelId: threadId,
-      content: buildDiscordOnboardingGuide({ role, language }),
-    });
+    const created: Array<{ role: UserRole; channelId: string }> = [];
+    for (const role of uniqueRoles) {
+      const threadId = await this.ensureOnboardingThread({
+        guild: interaction.guild,
+        userId: interaction.user.id,
+        role,
+        language,
+        reason: `onboard role=${roleRaw}`,
+      });
+      await this.sendLongTextToChannel({
+        guildId: interaction.guildId,
+        channelId: threadId,
+        content: buildDiscordOnboardingGuide({ role, language }),
+      });
+      created.push({ role, channelId: threadId });
+    }
 
     const roleLabel =
-      language === "en" ? role : role === "creator" ? "创作者" : "玩家";
+      language === "en"
+        ? (role: UserRole) => role
+        : (role: UserRole) =>
+            role === "admin"
+              ? "管理员"
+              : role === "world creater"
+                ? "世界创建者"
+                : "冒险者";
     await safeReply(
       interaction,
       language === "en"
-        ? `Role set: ${roleLabel}. Continue here: <#${threadId}> (if you lose it, run /onboard again)`
-        : `已选择身份：${roleLabel}。继续在你的私密引导话题：<#${threadId}>（丢了就再跑 /onboard）`,
+        ? [
+            `Role(s) set.`,
+            ...created.map(
+              (entry) => `- ${roleLabel(entry.role)}: <#${entry.channelId}>`,
+            ),
+            "",
+            "(If you lose it, run /onboard again.)",
+          ].join("\n")
+        : [
+            "已选择身份。",
+            ...created.map(
+              (entry) => `- ${roleLabel(entry.role)}：<#${entry.channelId}>`,
+            ),
+            "",
+            "（丢了入口就再跑一次 /onboard。）",
+          ].join("\n"),
       { ephemeral: true },
     );
   }
@@ -1763,9 +1839,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const langRaw = interaction.options.getString("lang", true);
     const language = langRaw === "en" ? "en" : "zh";
     await this.userState.setLanguage(interaction.user.id, language);
-    await safeReply(interaction, `已设置语言：${language}`, {
-      ephemeral: true,
-    });
+    await safeReply(
+      interaction,
+      language === "en"
+        ? `Language set: ${language}`
+        : `已设置语言：${language}`,
+      { ephemeral: true },
+    );
   }
 
   private async handleWorldCommand(
@@ -5357,6 +5437,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     guild: Guild;
     userId: string;
     role: UserRole;
+    language: UserLanguage | null | undefined;
     reason: string;
   }): Promise<string> {
     const workshop = await this.createCreatorOnlyChannel({
@@ -5412,7 +5493,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const thread = await this.tryCreatePrivateThread({
       guild: input.guild,
       parentChannelId: workshop.id,
-      name: input.role === "creator" ? "创作者新手指导" : "玩家新手指导",
+      name: pickByLanguage(
+        input.language,
+        input.role === "admin"
+          ? "管理员指南"
+          : input.role === "world creater"
+            ? "世界创建者指南"
+            : "冒险者指南",
+        input.role === "admin"
+          ? "Admin Guide"
+          : input.role === "world creater"
+            ? "World Creater Guide"
+            : "Adventurer Guide",
+      ),
       reason: input.reason,
       memberUserId: input.userId,
     });
@@ -6641,8 +6734,10 @@ function buildSlashCommands() {
           .setName("role")
           .setDescription("身份")
           .addChoices(
-            { name: "player", value: "player" },
-            { name: "creator", value: "creator" },
+            { name: "admin", value: "admin" },
+            { name: "both", value: "both" },
+            { name: "adventurer", value: "adventurer" },
+            { name: "world creater", value: "world creater" },
           )
           .setRequired(true),
       )

@@ -58,7 +58,20 @@ export function handleHttpRequest(
   req: Request,
   context: HttpRequestHandlerContext,
 ): Response | Promise<Response> {
-  const url = new URL(req.url);
+  let url = new URL(req.url);
+  if (
+    url.pathname !== "/health" &&
+    !url.pathname.startsWith("/wiki") &&
+    !url.pathname.startsWith("/api/") &&
+    (req.method === "GET" || req.method === "HEAD")
+  ) {
+    url.pathname = "/wiki" + (url.pathname === "/" ? "" : url.pathname);
+    req = new Request(url.toString(), {
+      method: req.method,
+      headers: req.headers,
+    });
+    url = new URL(req.url);
+  }
   if (url.pathname === "/health") {
     return Response.json({
       status: "ok",

@@ -18,6 +18,10 @@ describe("/wiki", () => {
       dataRoot,
     };
 
+    const root = await handleHttpRequest(new Request("http://test/"), context);
+    expect(root.status).toBe(200);
+    expect(await root.text()).toContain("docsify");
+
     const index = await handleHttpRequest(
       new Request("http://test/wiki"),
       context,
@@ -145,6 +149,13 @@ describe("/wiki", () => {
     );
     expect(card.status).toBe(200);
     expect(await card.text()).toContain("测试世界");
+
+    const cardShort = await handleHttpRequest(
+      new Request("http://test/worlds/W1/world-card.md"),
+      context,
+    );
+    expect(cardShort.status).toBe(200);
+    expect(await cardShort.text()).toContain("测试世界");
 
     const canon = await handleHttpRequest(
       new Request("http://test/wiki/worlds/W1/canon/canon.md"),

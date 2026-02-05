@@ -12,18 +12,18 @@ describe("UserStateStore", () => {
       const store = new UserStateStore({ dataRoot: dir });
       const userId = "123";
       const created = await store.upsert(userId, {
-        role: "player",
+        roles: ["adventurer"],
         language: "zh",
         characterCreatedAt: "t",
       });
       expect(created.userId).toBe(userId);
-      expect(created.role).toBe("player");
+      expect(created.roles).toEqual(["adventurer"]);
       expect(created.language).toBe("zh");
-      expect(created.version).toBe(3);
+      expect(created.version).toBe(4);
 
       const loaded = await store.read(userId);
       expect(loaded).not.toBeNull();
-      expect(loaded?.role).toBe("player");
+      expect(loaded?.roles).toEqual(["adventurer"]);
       expect(loaded?.language).toBe("zh");
       expect(loaded?.characterCreatedAt).toBe("t");
     } finally {
@@ -37,17 +37,17 @@ describe("UserStateStore", () => {
       const store = new UserStateStore({ dataRoot: dir });
       await store.setOnboardingThreadId({
         userId: "456",
-        role: "player",
+        role: "adventurer",
         threadId: "t1",
       });
       await store.setOnboardingThreadId({
         userId: "456",
-        role: "creator",
+        role: "world creater",
         threadId: "t2",
       });
       const loaded = await store.read("456");
-      expect(loaded?.onboardingThreadIds?.player).toBe("t1");
-      expect(loaded?.onboardingThreadIds?.creator).toBe("t2");
+      expect(loaded?.onboardingThreadIds?.adventurer).toBe("t1");
+      expect(loaded?.onboardingThreadIds?.["world creater"]).toBe("t2");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -61,7 +61,7 @@ describe("UserStateStore", () => {
       const second = await store.markWorldCreated("789");
       expect(first.worldCreatedAt).toBeDefined();
       expect(second.worldCreatedAt).toBe(first.worldCreatedAt);
-      expect(second.role).toBe("creator");
+      expect(second.roles).toContain("world creater");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

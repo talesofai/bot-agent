@@ -24,13 +24,16 @@
 - Discord：Adapter 增加 `GuildMembers` intent 以监听成员角色更新（用于 onboarding 自动引导）
 - Deploy：opencode-server 镜像内置 `git/rg/fd`（fd-find），K8s 启动脚本不再在运行时 `apt-get install`（缺工具直接 fail-fast）
 - Discord：允许在任意 guild 创建世界/角色草稿；`DISCORD_HOME_GUILD_ID` 不再限制创建位置
+- Discord：`/onboard role` 关键词调整为 `admin|both|adventurer|world creater`，支持多身份并新增管理员引导；onboarding 自动引导不再依赖 homeGuild，且在显式映射不匹配时会回退到启发式匹配
 
 ### Fixed
 
 - Wiki：内置 Docsify 相关静态资源（不再依赖 jsdelivr CDN），避免部分网络环境下页面白屏/“打不开”
+- HTTP：Wiki 根路径与短链接（如 `/worlds/W1/...`）自动路由到 `/wiki/...`，避免直接访问域名时 404
 - Discord：世界/角色创建与编辑流程的回执与话题标题按用户语言输出（英文全英文 / 中文全中文）
 - Discord：/world open 与 /character open 会尝试把已有的编辑话题标题同步为当前语言（best-effort）
 - Discord：/world list|search|info|rules|join 与 /character act 的回执按用户语言输出（英文全英文 / 中文全中文）
+- Discord：修复 `/language` 回执在英文模式下仍输出中文的问题
 - Worker：当 opencode 同时返回 text 与 `question` tool 时，优先输出 question 并标记为等待用户输入（避免卡住或漏掉交互提问）
 - Worker：修复发送 typing indicator 失败时的日志字段（不再把 `messageId` 误记为 `sessionId`）
 - 文档：修正平台默认启用说明（与实现一致：默认 `LLBOT_PLATFORM=discord`，仅在 `LLBOT_PLATFORM=qq` 时启用 QQ）

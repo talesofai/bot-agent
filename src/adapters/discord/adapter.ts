@@ -2793,11 +2793,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async handleWorldList(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     await safeDefer(interaction, { ephemeral: false });
     const limit = interaction.options.getInteger("limit") ?? 20;
     const ids = await this.worldStore.listWorldIds(limit);
     if (ids.length === 0) {
-      await safeReply(interaction, "暂无世界。", { ephemeral: false });
+      await safeReply(
+        interaction,
+        pickByLanguage(language, "暂无世界。", "No worlds yet."),
+        { ephemeral: false },
+      );
       return;
     }
     const metas = await Promise.all(
@@ -2806,14 +2813,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const active = metas.filter((meta): meta is NonNullable<typeof meta> =>
       Boolean(meta && meta.status === "active"),
     );
+    if (active.length === 0) {
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "暂无已发布世界。",
+          "No published worlds yet.",
+        ),
+        { ephemeral: false },
+      );
+      return;
+    }
     const cards = await Promise.all(
       active.map((meta) => this.worldFiles.readWorldCard(meta.id)),
     );
     const lines = active.map((meta, idx) => {
       const summary = extractWorldOneLiner(cards[idx] ?? null);
-      return summary
-        ? `W${meta.id} ${meta.name} — ${summary}（入口 guild:${meta.homeGuildId}）`
-        : `W${meta.id} ${meta.name}（入口 guild:${meta.homeGuildId}）`;
+      return pickByLanguage(
+        language,
+        summary
+          ? `W${meta.id} ${meta.name} — ${summary}（入口 guild:${meta.homeGuildId}）`
+          : `W${meta.id} ${meta.name}（入口 guild:${meta.homeGuildId}）`,
+        summary
+          ? `W${meta.id} ${meta.name} — ${summary} (entry guild:${meta.homeGuildId})`
+          : `W${meta.id} ${meta.name} (entry guild:${meta.homeGuildId})`,
+      );
     });
     await safeReply(interaction, lines.join("\n"), { ephemeral: false });
   }
@@ -2822,18 +2847,31 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     worldId: number,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     await safeDefer(interaction, { ephemeral: false });
     const meta = await this.worldStore.getWorld(worldId);
     if (!meta) {
-      await safeReply(interaction, `世界不存在：W${worldId}`, {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `世界不存在：W${worldId}`,
+          `World not found: W${worldId}`,
+        ),
+        { ephemeral: false },
+      );
       return;
     }
     if (meta.status === "draft" && meta.creatorId !== interaction.user.id) {
       await safeReply(
         interaction,
-        `世界尚未发布：W${meta.id}（仅创作者可见）`,
+        pickByLanguage(
+          language,
+          `世界尚未发布：W${meta.id}（仅创作者可见）`,
+          `World not published yet: W${meta.id} (creator only)`,
+        ),
         {
           ephemeral: false,
         },
@@ -2847,16 +2885,29 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       guild:
         interaction.guildId === meta.homeGuildId ? interaction.guild : null,
     });
-    const statusLabel = meta.status === "draft" ? "draft(未发布)" : meta.status;
+    const statusLabel = pickByLanguage(
+      language,
+      meta.status === "draft" ? "draft(未发布)" : meta.status,
+      meta.status === "draft" ? "draft (unpublished)" : meta.status,
+    );
     const channels =
       meta.status === "draft"
         ? null
-        : [
-            `公告：<#${meta.infoChannelId}>`,
-            `讨论：<#${meta.roleplayChannelId}>`,
-            `提案：<#${meta.proposalsChannelId}>`,
-            `加入：\`/world join world_id:${meta.id}\``,
-          ].join("\n");
+        : pickByLanguage(
+            language,
+            [
+              `公告：<#${meta.infoChannelId}>`,
+              `讨论：<#${meta.roleplayChannelId}>`,
+              `提案：<#${meta.proposalsChannelId}>`,
+              `加入：\`/world join world_id:${meta.id}\``,
+            ].join("\n"),
+            [
+              `Announcements: <#${meta.infoChannelId}>`,
+              `Discussion: <#${meta.roleplayChannelId}>`,
+              `Proposals: <#${meta.proposalsChannelId}>`,
+              `Join: \`/world join world_id:${meta.id}\``,
+            ].join("\n"),
+          );
 
     const patchedCard =
       card?.trim() && meta.creatorId
@@ -2872,24 +2923,42 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         description: summary || undefined,
         fields: [
           {
-            name: "创作者",
+            name: pickByLanguage(language, "创作者", "Creator"),
             value: creatorLabel || `<@${meta.creatorId}>`,
             inline: true,
           },
-          { name: "状态", value: statusLabel, inline: true },
-          { name: "入口", value: `guild:${meta.homeGuildId}`, inline: true },
           {
-            name: "统计",
-            value: `访客数：${stats.visitorCount}\n角色数：${stats.characterCount}`,
+            name: pickByLanguage(language, "状态", "Status"),
+            value: statusLabel,
+            inline: true,
+          },
+          {
+            name: pickByLanguage(language, "入口", "Entry"),
+            value: `guild:${meta.homeGuildId}`,
+            inline: true,
+          },
+          {
+            name: pickByLanguage(language, "统计", "Stats"),
+            value: pickByLanguage(
+              language,
+              `访客数：${stats.visitorCount}\n角色数：${stats.characterCount}`,
+              `Visitors: ${stats.visitorCount}\nCharacters: ${stats.characterCount}`,
+            ),
             inline: true,
           },
           ...(channels
-            ? [{ name: "频道", value: channels, inline: false }]
+            ? [
+                {
+                  name: pickByLanguage(language, "频道", "Channels"),
+                  value: channels,
+                  inline: false,
+                },
+              ]
             : []),
         ],
       },
       ...buildMarkdownCardEmbeds(patchedCard, {
-        titlePrefix: "世界卡",
+        titlePrefix: pickByLanguage(language, "世界卡", "World Card"),
         maxEmbeds: 18,
         includeEmptyFields: true,
       }),
@@ -2904,18 +2973,31 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     worldId: number,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     await safeDefer(interaction, { ephemeral: false });
     const meta = await this.worldStore.getWorld(worldId);
     if (!meta) {
-      await safeReply(interaction, `世界不存在：W${worldId}`, {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `世界不存在：W${worldId}`,
+          `World not found: W${worldId}`,
+        ),
+        { ephemeral: false },
+      );
       return;
     }
     if (meta.status === "draft" && meta.creatorId !== interaction.user.id) {
       await safeReply(
         interaction,
-        `世界尚未发布：W${meta.id}（仅创作者可见）`,
+        pickByLanguage(
+          language,
+          `世界尚未发布：W${meta.id}（仅创作者可见）`,
+          `World not published yet: W${meta.id} (creator only)`,
+        ),
         {
           ephemeral: false,
         },
@@ -2926,9 +3008,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const patchedRules = rules?.trim() ? rules.trim() : "";
 
     const embeds: APIEmbed[] = [
-      { title: `W${meta.id} ${meta.name} — 世界规则` },
+      {
+        title: pickByLanguage(
+          language,
+          `W${meta.id} ${meta.name} — 世界规则`,
+          `W${meta.id} ${meta.name} — World Rules`,
+        ),
+      },
       ...buildMarkdownCardEmbeds(patchedRules, {
-        titlePrefix: "世界规则",
+        titlePrefix: pickByLanguage(language, "世界规则", "World Rules"),
         maxEmbeds: 18,
         includeEmptyFields: true,
       }),
@@ -3312,18 +3400,31 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     input: { worldId: number; characterId?: number },
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     await safeDefer(interaction, { ephemeral: true });
     const meta = await this.worldStore.getWorld(input.worldId);
     if (!meta) {
-      await safeReply(interaction, `世界不存在：W${input.worldId}`, {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `世界不存在：W${input.worldId}`,
+          `World not found: W${input.worldId}`,
+        ),
+        { ephemeral: true },
+      );
       return;
     }
     if (meta.status !== "active") {
       await safeReply(
         interaction,
-        `无法加入：世界尚未发布（W${meta.id} 当前状态=${meta.status}）`,
+        pickByLanguage(
+          language,
+          `无法加入：世界尚未发布（W${meta.id} 当前状态=${meta.status}）`,
+          `Cannot join: world is not published yet (W${meta.id} status=${meta.status})`,
+        ),
         { ephemeral: true },
       );
       return;
@@ -3331,15 +3432,25 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!interaction.guildId || interaction.guildId !== meta.homeGuildId) {
       await safeReply(
         interaction,
-        `无法加入：该世界入口在 guild:${meta.homeGuildId}（请先加入该服务器后再执行 /world join）。`,
+        pickByLanguage(
+          language,
+          `无法加入：该世界入口在 guild:${meta.homeGuildId}（请先加入该服务器后再执行 /world join）。`,
+          `Cannot join: this world's entry server is guild:${meta.homeGuildId} (join that server first, then run /world join).`,
+        ),
         { ephemeral: true },
       );
       return;
     }
     if (!interaction.guild) {
-      await safeReply(interaction, "无法获取服务器信息，请稍后重试。", {
-        ephemeral: true,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "无法获取服务器信息，请稍后重试。",
+          "Failed to fetch server info. Please try again later.",
+        ),
+        { ephemeral: true },
+      );
       return;
     }
 
@@ -3403,21 +3514,37 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
       await safeReply(
         interaction,
-        [
-          `已加入世界：W${meta.id} ${meta.name}`,
-          `讨论：<#${meta.roleplayChannelId}>`,
-          `当前角色：C${worldCharacter.characterId}${
-            worldCharacter.forked
-              ? `（本世界专用，fork自 C${worldCharacter.sourceCharacterId}）`
-              : ""
-          }`,
-        ].join("\n"),
+        pickByLanguage(
+          language,
+          [
+            `已加入世界：W${meta.id} ${meta.name}`,
+            `讨论：<#${meta.roleplayChannelId}>`,
+            `当前角色：C${worldCharacter.characterId}${
+              worldCharacter.forked
+                ? `（本世界专用，fork自 C${worldCharacter.sourceCharacterId}）`
+                : ""
+            }`,
+          ].join("\n"),
+          [
+            `Joined world: W${meta.id} ${meta.name}`,
+            `Discussion: <#${meta.roleplayChannelId}>`,
+            `Active character: C${worldCharacter.characterId}${
+              worldCharacter.forked
+                ? ` (world-specific; forked from C${worldCharacter.sourceCharacterId})`
+                : ""
+            }`,
+          ].join("\n"),
+        ),
         { ephemeral: true },
       );
     } catch (err) {
       await safeReply(
         interaction,
-        `加入失败：${err instanceof Error ? err.message : String(err)}`,
+        pickByLanguage(
+          language,
+          `加入失败：${err instanceof Error ? err.message : String(err)}`,
+          `Failed to join: ${err instanceof Error ? err.message : String(err)}`,
+        ),
         { ephemeral: true },
       );
     }
@@ -3459,17 +3586,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     input: { query: string; limit?: number },
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     await safeDefer(interaction, { ephemeral: false });
     const query = input.query.trim();
     if (!query) {
-      await safeReply(interaction, "query 不能为空。", { ephemeral: false });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "query 不能为空。",
+          "query must not be empty.",
+        ),
+        { ephemeral: false },
+      );
       return;
     }
     const limit = Math.max(1, Math.min(50, Math.floor(input.limit ?? 10)));
 
     const ids = await this.worldStore.listWorldIds(200);
     if (ids.length === 0) {
-      await safeReply(interaction, "暂无世界。", { ephemeral: false });
+      await safeReply(
+        interaction,
+        pickByLanguage(language, "暂无世界。", "No worlds yet."),
+        { ephemeral: false },
+      );
       return;
     }
 
@@ -3491,9 +3633,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         const card = await this.worldFiles.readWorldCard(meta.id);
         const summary = extractWorldOneLiner(card);
         results.push(
-          summary
-            ? `W${meta.id} ${meta.name} — ${summary}（命中：name）`
-            : `W${meta.id} ${meta.name}（命中：name）`,
+          pickByLanguage(
+            language,
+            summary
+              ? `W${meta.id} ${meta.name} — ${summary}（命中：name）`
+              : `W${meta.id} ${meta.name}（命中：name）`,
+            summary
+              ? `W${meta.id} ${meta.name} — ${summary} (hit: name)`
+              : `W${meta.id} ${meta.name} (hit: name)`,
+          ),
         );
         continue;
       }
@@ -3504,26 +3652,44 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       if (card?.toLowerCase().includes(lowered)) {
         const summary = extractWorldOneLiner(card);
         results.push(
-          summary
-            ? `W${meta.id} ${meta.name} — ${summary}（命中：world-card）`
-            : `W${meta.id} ${meta.name}（命中：world-card）`,
+          pickByLanguage(
+            language,
+            summary
+              ? `W${meta.id} ${meta.name} — ${summary}（命中：world-card）`
+              : `W${meta.id} ${meta.name}（命中：world-card）`,
+            summary
+              ? `W${meta.id} ${meta.name} — ${summary} (hit: world-card)`
+              : `W${meta.id} ${meta.name} (hit: world-card)`,
+          ),
         );
         continue;
       }
       if (rules?.toLowerCase().includes(lowered)) {
         const summary = extractWorldOneLiner(card);
         results.push(
-          summary
-            ? `W${meta.id} ${meta.name} — ${summary}（命中：rules）`
-            : `W${meta.id} ${meta.name}（命中：rules）`,
+          pickByLanguage(
+            language,
+            summary
+              ? `W${meta.id} ${meta.name} — ${summary}（命中：rules）`
+              : `W${meta.id} ${meta.name}（命中：rules）`,
+            summary
+              ? `W${meta.id} ${meta.name} — ${summary} (hit: rules)`
+              : `W${meta.id} ${meta.name} (hit: rules)`,
+          ),
         );
       }
     }
 
     if (results.length === 0) {
-      await safeReply(interaction, `未找到包含「${query}」的世界。`, {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `未找到包含「${query}」的世界。`,
+          `No worlds matched "${query}".`,
+        ),
+        { ephemeral: false },
+      );
       return;
     }
     await safeReply(interaction, results.join("\n"), { ephemeral: false });
@@ -4162,18 +4328,33 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     interaction: ChatInputCommandInteraction,
     characterId: number,
   ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
     await safeDefer(interaction, { ephemeral: false });
     const meta = await this.worldStore.getCharacter(characterId);
     if (!meta) {
-      await safeReply(interaction, `角色不存在：C${characterId}`, {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          `角色不存在：C${characterId}`,
+          `Character not found: C${characterId}`,
+        ),
+        { ephemeral: false },
+      );
       return;
     }
     if (meta.creatorId !== interaction.user.id) {
-      await safeReply(interaction, "无权限：只能使用你自己创建的角色。", {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "无权限：只能使用你自己创建的角色。",
+          "Permission denied: you can only use characters you created.",
+        ),
+        { ephemeral: false },
+      );
       return;
     }
 
@@ -4186,7 +4367,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!worldId) {
       await safeReply(
         interaction,
-        "请在目标世界频道内执行 /character act（或先 /world join 进入世界）。",
+        pickByLanguage(
+          language,
+          "请在目标世界频道内执行 /character act（或先 /world join 进入世界）。",
+          "Run /character act inside the target world channels (or /world join first).",
+        ),
         { ephemeral: false },
       );
       return;
@@ -4200,17 +4385,29 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         .hasMember(worldId, interaction.user.id)
         .catch(() => false));
     if (!isMember) {
-      await safeReply(interaction, "你尚未加入该世界，无法设置当前角色。", {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "你尚未加入该世界，无法设置当前角色。",
+          "You haven't joined this world yet, so you can't set an active character.",
+        ),
+        { ephemeral: false },
+      );
       return;
     }
 
     const worldMeta = await this.worldStore.getWorld(worldId);
     if (!worldMeta || worldMeta.status !== "active") {
-      await safeReply(interaction, "当前世界不可用（尚未发布或已被移除）。", {
-        ephemeral: false,
-      });
+      await safeReply(
+        interaction,
+        pickByLanguage(
+          language,
+          "当前世界不可用（尚未发布或已被移除）。",
+          "World unavailable (unpublished or removed).",
+        ),
+        { ephemeral: false },
+      );
       return;
     }
 
@@ -4243,14 +4440,25 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
     await safeReply(
       interaction,
-      [
-        `已设置你的当前角色：C${worldCharacter.characterId} ${
-          worldCharacter.forked
-            ? `（本世界专用，fork自 C${meta.id}）`
-            : meta.name
-        }`,
-        `接下来你在世界入口频道的发言将视为该角色的行动/台词；bot 会作为旁白/世界系统回应。`,
-      ].join("\n"),
+      pickByLanguage(
+        language,
+        [
+          `已设置你的当前角色：C${worldCharacter.characterId} ${
+            worldCharacter.forked
+              ? `（本世界专用，fork自 C${meta.id}）`
+              : meta.name
+          }`,
+          `接下来你在世界入口频道的发言将视为该角色的行动/台词；bot 会作为旁白/世界系统回应。`,
+        ].join("\n"),
+        [
+          `Active character set: C${worldCharacter.characterId} ${
+            worldCharacter.forked
+              ? `(world-specific; forked from C${meta.id})`
+              : meta.name
+          }`,
+          "From now on, your messages in the world channels will be treated as this character's actions/dialogue; the bot will respond as the narrator/world system.",
+        ].join("\n"),
+      ),
       { ephemeral: false },
     );
   }

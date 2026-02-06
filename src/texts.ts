@@ -592,7 +592,7 @@ export function buildDiscordWorldCreateGuide(input: {
       "",
       "3) 约定：已写入的内容视为正典；没写到的允许后续补全，但不要自相矛盾。",
       "",
-      "4) 发布：确认已经 OK 后，在本话题执行 /world publish。",
+      "4) 发布：确认已经 OK 后，在本话题执行 /world publish（或点击下方“发布”）。",
       "",
     ].join("\n"),
     [
@@ -608,7 +608,7 @@ export function buildDiscordWorldCreateGuide(input: {
       "",
       "3) Convention: written content is canon; missing parts can be filled later, but do not contradict established canon.",
       "",
-      "4) Publish: when everything is OK, run /world publish in this thread.",
+      "4) Publish: when everything is OK, run /world publish in this thread (or click “Publish” below).",
       "",
     ].join("\n"),
   );
@@ -749,6 +749,36 @@ export function buildDiscordWorldBuildKickoff(input: {
       "4) Do not use interactive question tools (e.g. question); list follow-up questions as plain text.",
       "",
       "After finishing, run /world publish in this thread to publish the world.",
+      "",
+      `World: W${input.worldId} ${input.worldName}`,
+    ].join("\n"),
+  );
+}
+
+export function buildDiscordWorldBuildAutopilot(input: {
+  worldId: number;
+  worldName: string;
+  language: UserLanguage | null | undefined;
+}): string {
+  return pick(
+    input.language,
+    [
+      "自动推进（Autopilot）：请基于当前 world/source.md，自动整理并完善：",
+      "- world/world-card.md（世界卡）",
+      "- world/rules.md（硬规则）",
+      "",
+      "能确定的先写；不确定的请标注并在末尾列出 3-5 个需要我确认的问题。",
+      "不要 roleplay，不要编造未给出的设定；禁止使用交互式 question 工具。",
+      "",
+      `世界：W${input.worldId} ${input.worldName}`,
+    ].join("\n"),
+    [
+      "Autopilot: based on current world/source.md, normalize and refine:",
+      "- world/world-card.md (world card)",
+      "- world/rules.md (hard rules)",
+      "",
+      "Write what you can first; clearly mark uncertainties, then list 3–5 questions for me to confirm.",
+      "Do not roleplay; do not invent details not provided; do not use interactive question tools (e.g. question).",
       "",
       `World: W${input.worldId} ${input.worldName}`,
     ].join("\n"),

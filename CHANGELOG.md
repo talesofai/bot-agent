@@ -17,6 +17,7 @@
 - Discord：支持 Discord Server Onboarding 身份组：当用户选择身份组并被分配到对应角色后，自动创建/打开私密引导话题并推送指南（无需先发言或手动 `/onboard`）
 - Config：新增 Discord onboarding 自动触发与身份组角色关键词映射配置（`DISCORD_ONBOARDING_AUTO_START`、`DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_*`）
 - Discord：新手引导支持按钮/下拉菜单交互（点击创建角色/世界、加入世界、查看卡片），减少新用户记忆指令负担（指令仍保留）
+- Discord：世界创建编辑话题的 Quick Actions 新增【自动推进】【发布】【语言切换】按钮（仍支持 `/world publish`）
 
 ### Changed
 
@@ -44,6 +45,7 @@
 - Discord：修复角色构建会话忽略上传设定文件的问题；现在上传 txt/md/json/docx 会自动写入 `character/source.md` 供模型读取
 - Worker：飞书日志补齐 opencode 超时发生点（区分 worker→opencode-server 与 opencode-server 内部超时）
 - Opencode：opencode-server 500 的 Bun fallback HTML 自动提取为简短可读的 TimeoutError 摘要（避免飞书截断看不到根因）
+- Discord：在世界创建编辑话题点击“菜单”会正确展示“世界创建者”菜单（不再误判为冒险者）
 
 ## [0.0.31] - 2026-01-30
 

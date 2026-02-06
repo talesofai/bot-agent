@@ -88,6 +88,7 @@ import {
   buildDiscordCharacterHelp,
   buildDiscordHelp,
   buildDiscordWorldBuildKickoff,
+  buildDiscordWorldBuildAutopilot,
   buildDiscordWorldCharacterBuildKickoff,
   buildDiscordWorldCreateGuide,
   buildDiscordWorldHelp,
@@ -1872,12 +1873,100 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
     );
 
+    if (parsed.action === "language_set") {
+      const next =
+        parsed.payload === "en" ? "en" : parsed.payload === "zh" ? "zh" : null;
+      if (!next) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(language, "无效的语言。", "Invalid language."),
+          { ephemeral: true },
+        );
+        return;
+      }
+      await this.userState.setLanguage(interaction.user.id, next);
+
+      const groupId = await this.worldStore
+        .getGroupIdByChannel(interaction.channelId)
+        .catch(() => null);
+      const parsedWorld = groupId ? parseWorldGroup(groupId) : null;
+      const parsedCharacter = groupId ? parseCharacterGroup(groupId) : null;
+      if (parsedWorld) {
+        const meta = await this.worldStore.getWorld(parsedWorld.worldId);
+        if (meta) {
+          if (parsedWorld.kind === "build") {
+            await this.ensureWorldBuildGroupAgent({
+              worldId: meta.id,
+              worldName: meta.name,
+              language: next,
+            });
+            await this.sendWorldCreateRules({
+              guildId: interaction.guildId,
+              channelId: interaction.channelId,
+              userId: interaction.user.id,
+              worldId: meta.id,
+              language: next,
+            });
+          } else {
+            await this.ensureWorldGroupAgent({
+              worldId: meta.id,
+              worldName: meta.name,
+              language: next,
+            });
+          }
+        }
+      } else if (parsedCharacter) {
+        const meta = await this.worldStore.getCharacter(
+          parsedCharacter.characterId,
+        );
+        if (meta) {
+          if (parsedCharacter.kind === "build") {
+            await this.ensureCharacterBuildGroupAgent({
+              characterId: meta.id,
+              characterName: meta.name,
+              language: next,
+            });
+          } else {
+            const worldMeta = await this.worldStore.getWorld(
+              parsedCharacter.worldId,
+            );
+            if (worldMeta) {
+              await this.ensureWorldCharacterBuildGroupAgent({
+                worldId: worldMeta.id,
+                worldName: worldMeta.name,
+                characterId: meta.id,
+                characterName: meta.name,
+                language: next,
+              });
+            }
+          }
+        }
+      }
+
+      await safeComponentFollowUp(
+        interaction,
+        next === "en" ? `Language set: ${next}` : `已设置语言：${next}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+
     if (parsed.action === "menu") {
+      let menuRole = role;
+      if (menuRole === "adventurer") {
+        const groupId = await this.worldStore
+          .getGroupIdByChannel(interaction.channelId)
+          .catch(() => null);
+        const parsedWorld = groupId ? parseWorldGroup(groupId) : null;
+        if (parsedWorld?.kind === "build") {
+          menuRole = "world creater";
+        }
+      }
       await this.sendOnboardingMenu({
         guildId: interaction.guildId,
         channelId: interaction.channelId,
         userId: interaction.user.id,
-        role,
+        role: menuRole,
         language,
       });
       return;
@@ -1983,6 +2072,63 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
 
+    if (parsed.action === "world_autopilot") {
+      const expectedWorldId = Number(parsed.payload);
+      if (
+        (!Number.isInteger(expectedWorldId) || expectedWorldId <= 0) &&
+        parsed.payload.trim()
+      ) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(language, "无效的 world_id。", "Invalid world_id."),
+          { ephemeral: true },
+        );
+        return;
+      }
+
+      const resolved = await this.resolveWorldBuildDraftFromChannel({
+        channelId: interaction.channelId,
+        expectedWorldId:
+          Number.isInteger(expectedWorldId) && expectedWorldId > 0
+            ? expectedWorldId
+            : null,
+        requesterUserId: interaction.user.id,
+        language,
+        requireCreator: true,
+      });
+      if (!resolved.ok) {
+        await safeComponentFollowUp(interaction, resolved.message, {
+          ephemeral: true,
+        });
+        return;
+      }
+      const { meta } = resolved;
+
+      const traceId = createTraceId();
+      await this.ensureWorldBuildGroupAgent({
+        worldId: meta.id,
+        worldName: meta.name,
+        language,
+      });
+      await this.emitSyntheticWorldBuildAutopilot({
+        channelId: interaction.channelId,
+        userId: interaction.user.id,
+        worldId: meta.id,
+        worldName: meta.name,
+        traceId,
+      });
+      await safeComponentFollowUp(
+        interaction,
+        pickByLanguage(
+          language,
+          "已开始自动推进整理，请稍等片刻…",
+          "Autopilot started. Please wait…",
+        ),
+        { ephemeral: true },
+      );
+      return;
+    }
+
     if (parsed.action === "world_show") {
       const worldId = Number(parsed.payload);
       if (!Number.isInteger(worldId) || worldId <= 0) {
@@ -2073,6 +2219,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         language,
         worldId,
       });
+      return;
+    }
+
+    if (parsed.action === "world_publish") {
+      await safeComponentFollowUp(
+        interaction,
+        pickByLanguage(language, "收到，正在发布世界…", "Got it. Publishing…"),
+        { ephemeral: true },
+      );
+      try {
+        const message = await this.publishWorldFromBuildChannel({
+          channelId: interaction.channelId,
+          requesterUserId: interaction.user.id,
+          language,
+        });
+        await safeComponentFollowUp(interaction, message, { ephemeral: true });
+      } catch (err) {
+        await safeComponentFollowUp(
+          interaction,
+          resolveUserMessageFromError(language, err, {
+            zh: `发布失败：${err instanceof Error ? err.message : String(err)}`,
+            en: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+          }),
+          { ephemeral: true },
+        );
+      }
       return;
     }
   }
@@ -4191,84 +4363,112 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     );
   }
 
-  private async handleWorldPublish(
-    interaction: ChatInputCommandInteraction,
-  ): Promise<void> {
-    const language = await this.userState
-      .getLanguage(interaction.user.id)
+  private async resolveWorldBuildDraftFromChannel(input: {
+    channelId: string;
+    expectedWorldId: number | null;
+    requesterUserId: string;
+    language: UserLanguage | null;
+    requireCreator: boolean;
+  }): Promise<
+    | {
+        ok: true;
+        worldId: number;
+        meta: NonNullable<Awaited<ReturnType<WorldStore["getWorld"]>>>;
+      }
+    | { ok: false; message: string }
+  > {
+    const groupId = await this.worldStore
+      .getGroupIdByChannel(input.channelId)
       .catch(() => null);
-    const groupId = await this.worldStore.getGroupIdByChannel(
-      interaction.channelId,
-    );
     const parsed = groupId ? parseWorldGroup(groupId) : null;
     if (!parsed || parsed.kind !== "build") {
-      await safeReply(
-        interaction,
-        pickByLanguage(
-          language,
-          "请先执行 /world create 或 /world open，然后在对应编辑话题执行 /world publish。",
-          "Run /world create or /world open first, then run /world publish inside the corresponding editing thread.",
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
+          "请先执行 /world create 或 /world open，然后在对应编辑话题执行该操作。",
+          "Run /world create or /world open first, then run this inside the corresponding editing thread.",
         ),
-        { ephemeral: true },
-      );
-      return;
+      };
     }
-
+    if (
+      input.expectedWorldId !== null &&
+      parsed.worldId !== input.expectedWorldId
+    ) {
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
+          "该按钮与当前编辑话题不匹配（world_id 不一致）。",
+          "This button does not match the current thread (world_id mismatch).",
+        ),
+      };
+    }
     const meta = await this.worldStore.getWorld(parsed.worldId);
     if (!meta) {
-      await safeReply(
-        interaction,
-        pickByLanguage(
-          language,
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
           `世界不存在：W${parsed.worldId}`,
           `World not found: W${parsed.worldId}`,
         ),
-        { ephemeral: true },
-      );
-      return;
+      };
     }
-    if (meta.creatorId !== interaction.user.id) {
-      await safeReply(
-        interaction,
-        pickByLanguage(
-          language,
-          "无权限：只有世界创作者可以发布世界。",
-          "Permission denied: only the world creator can publish this world.",
+    if (input.requireCreator && meta.creatorId !== input.requesterUserId) {
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
+          "无权限：只有世界创作者可以执行该操作。",
+          "Permission denied: only the world creator can do this.",
         ),
-        { ephemeral: true },
-      );
-      return;
+      };
     }
+    return { ok: true, worldId: parsed.worldId, meta };
+  }
 
-    await safeDefer(interaction, { ephemeral: true });
+  private async publishWorldFromBuildChannel(input: {
+    channelId: string;
+    requesterUserId: string;
+    language: UserLanguage | null;
+  }): Promise<string> {
+    const resolved = await this.resolveWorldBuildDraftFromChannel({
+      channelId: input.channelId,
+      expectedWorldId: null,
+      requesterUserId: input.requesterUserId,
+      language: input.language,
+      requireCreator: true,
+    });
+    if (!resolved.ok) {
+      throw new LocalizedError({ zh: resolved.message, en: resolved.message });
+    }
+    const meta = resolved.meta;
 
     if (meta.status !== "draft") {
-      await safeReply(
-        interaction,
-        pickByLanguage(
-          language,
-          `世界已发布：W${meta.id} ${meta.name}（status=${meta.status}）`,
-          `World already published: W${meta.id} ${meta.name} (status=${meta.status})`,
-        ),
-        { ephemeral: true },
+      return pickByLanguage(
+        input.language,
+        `世界已发布：W${meta.id} ${meta.name}（status=${meta.status}）`,
+        `World already published: W${meta.id} ${meta.name} (status=${meta.status})`,
       );
-      return;
     }
 
     const guild = await this.client.guilds
       .fetch(meta.homeGuildId)
       .catch(() => null);
     if (!guild) {
-      await safeReply(
-        interaction,
-        pickByLanguage(
-          language,
+      throw new LocalizedError({
+        zh: pickByLanguage(
+          input.language,
           `无法获取世界入口服务器：guild:${meta.homeGuildId}`,
           `Failed to fetch the world's entry server: guild:${meta.homeGuildId}`,
         ),
-        { ephemeral: true },
-      );
-      return;
+        en: pickByLanguage(
+          input.language,
+          `无法获取世界入口服务器：guild:${meta.homeGuildId}`,
+          `Failed to fetch the world's entry server: guild:${meta.homeGuildId}`,
+        ),
+      });
     }
 
     const card = await this.worldFiles.readWorldCard(meta.id);
@@ -4305,7 +4505,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     await this.ensureWorldGroupAgent({
       worldId: meta.id,
       worldName,
-      language,
+      language: input.language,
     });
 
     try {
@@ -4324,40 +4524,62 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       infoChannelId: created.infoChannelId,
     });
 
-    await safeReply(
-      interaction,
-      pickByLanguage(
-        language,
-        [
-          `世界已发布：W${meta.id} ${worldName}`,
-          `公告：<#${created.infoChannelId}>`,
-          `讨论：<#${created.discussionChannelId}>`,
-          `提案：<#${created.proposalsChannelId}>`,
-          `加入：/world join world_id:${meta.id}`,
-        ].join("\n"),
-        [
-          `World published: W${meta.id} ${worldName}`,
-          `Announcements: <#${created.infoChannelId}>`,
-          `Discussion: <#${created.discussionChannelId}>`,
-          `Proposals: <#${created.proposalsChannelId}>`,
-          `Join: /world join world_id:${meta.id}`,
-        ].join("\n"),
-      ),
-      { ephemeral: true },
-    );
-
     void this.publishWorldShowcasePost({
       guild,
       worldId: meta.id,
       worldName,
       creatorId: meta.creatorId,
-      language,
+      language: input.language,
     }).catch((err) => {
       this.logger.warn(
         { err, worldId: meta.id, guildId: meta.homeGuildId },
         "Failed to publish world showcase post",
       );
     });
+
+    return pickByLanguage(
+      input.language,
+      [
+        `世界已发布：W${meta.id} ${worldName}`,
+        `公告：<#${created.infoChannelId}>`,
+        `讨论：<#${created.discussionChannelId}>`,
+        `提案：<#${created.proposalsChannelId}>`,
+        `加入：/world join world_id:${meta.id}`,
+      ].join("\n"),
+      [
+        `World published: W${meta.id} ${worldName}`,
+        `Announcements: <#${created.infoChannelId}>`,
+        `Discussion: <#${created.discussionChannelId}>`,
+        `Proposals: <#${created.proposalsChannelId}>`,
+        `Join: /world join world_id:${meta.id}`,
+      ].join("\n"),
+    );
+  }
+
+  private async handleWorldPublish(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<void> {
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
+    await safeDefer(interaction, { ephemeral: true });
+    try {
+      const message = await this.publishWorldFromBuildChannel({
+        channelId: interaction.channelId,
+        requesterUserId: interaction.user.id,
+        language,
+      });
+      await safeReply(interaction, message, { ephemeral: true });
+    } catch (err) {
+      await safeReply(
+        interaction,
+        resolveUserMessageFromError(language, err, {
+          zh: `发布失败：${err instanceof Error ? err.message : String(err)}`,
+          en: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+        { ephemeral: true },
+      );
+    }
   }
 
   private async handleWorldList(
@@ -7942,13 +8164,34 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         title: pickByLanguage(input.language, "快捷操作", "Quick Actions"),
         description: pickByLanguage(
           input.language,
-          "整理完成后，在本话题用 /world publish 发布世界。",
-          "When you're ready, run /world publish in this thread.",
+          "可点【自动推进】让 LLM 先整理一版；确认 OK 后点【发布】（等价 /world publish）。",
+          "Click “Autopilot” to let the LLM draft a first pass; when ready, click “Publish” (same as /world publish).",
         ),
       },
     ];
+    const isEnglish = input.language === "en";
     const components: MessageCreateOptions["components"] = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "world_autopilot",
+              payload: String(input.worldId),
+            }),
+          )
+          .setLabel(isEnglish ? "Autopilot" : "自动推进")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "world_publish",
+              payload: String(input.worldId),
+            }),
+          )
+          .setLabel(isEnglish ? "Publish" : "发布")
+          .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId(
             buildOnboardingCustomId({
@@ -7977,6 +8220,30 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           )
           .setLabel(input.language === "en" ? "Help" : "帮助")
           .setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "language_set",
+              payload: "zh",
+            }),
+          )
+          .setLabel("中文")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!isEnglish),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "language_set",
+              payload: "en",
+            }),
+          )
+          .setLabel("English")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(isEnglish),
       ),
     ];
 
@@ -8277,6 +8544,55 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         synthetic: true,
         interactionId: messageId,
         commandName: "world.create.kickoff",
+        channelId: input.channelId,
+        guildId: undefined,
+        userId: input.userId,
+      },
+    } satisfies SessionEvent<DiscordInteractionExtras>);
+  }
+
+  private async emitSyntheticWorldBuildAutopilot(input: {
+    channelId: string;
+    userId: string;
+    worldId: number;
+    worldName: string;
+    traceId?: string;
+  }): Promise<void> {
+    if (this.listenerCount("event") === 0) {
+      return;
+    }
+    const botId = this.botUserId?.trim() ?? "";
+    if (!botId) {
+      return;
+    }
+    const language = await this.userState
+      .getLanguage(input.userId)
+      .catch(() => null);
+    const content = buildDiscordWorldBuildAutopilot({
+      worldId: input.worldId,
+      worldName: input.worldName,
+      language,
+    });
+
+    const messageId = `synthetic-world-autopilot-${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}`;
+    await this.emitEvent({
+      type: "message",
+      platform: "discord",
+      selfId: botId,
+      userId: input.userId,
+      guildId: undefined,
+      channelId: input.channelId,
+      messageId,
+      content,
+      elements: [{ type: "text", text: content }],
+      timestamp: Date.now(),
+      extras: {
+        traceId: input.traceId,
+        synthetic: true,
+        interactionId: messageId,
+        commandName: "world.autopilot",
         channelId: input.channelId,
         guildId: undefined,
         userId: input.userId,
@@ -9999,12 +10315,15 @@ async function safeComponentFollowUp(
 type OnboardingComponentAction =
   | "menu"
   | "help"
+  | "language_set"
   | "character_create"
   | "character_show"
   | "world_create"
+  | "world_autopilot"
   | "world_show"
   | "world_list"
   | "world_join"
+  | "world_publish"
   | "world_select";
 
 const ONBOARDING_CUSTOM_ID_PREFIX = "onb";
@@ -10044,12 +10363,15 @@ function parseOnboardingCustomId(customId: string): {
   const allowed: OnboardingComponentAction[] = [
     "menu",
     "help",
+    "language_set",
     "character_create",
     "character_show",
     "world_create",
+    "world_autopilot",
     "world_show",
     "world_list",
     "world_join",
+    "world_publish",
     "world_select",
   ];
   if (!allowed.includes(action)) {

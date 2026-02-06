@@ -13,7 +13,9 @@
 - 文档：新增 `docs/discord_commands/`（中/英双语）用于集中说明 Discord 指令用法
 - 文档：新增 Discord 玩家上手指南 `docs/how-to-play.zh.md`
 - 文档：新增 Discord 指令合集 `docs/discord_commands/ALL.md`（用于 Wiki 统一引用）
-- Discord：世界发布后自动在 homeGuild 创建/复用 `world-showcase`（优先 Forum，否则 Text+Thread）并发帖，内容从世界卡/规则提取摘要；创作者可在帖内用 `#cover`/“封面”+图片设置封面
+- Discord：世界发布后自动在 homeGuild 创建/复用 `world-index`（兼容旧的 `world-showcase`；优先 Forum，否则 Text+Thread）并发帖，内容从世界卡/规则提取摘要；创作者可在帖内用 `#cover`/“封面”+图片设置封面
+- Discord：世界发布后自动在 `world-discussion` 与 `world-proposals` 发布英文功能引导（用途说明，不含世界设定正文）
+- Discord：角色公开（`/character publish`）后自动在 `character-gallery`（优先 Forum，否则 Text+Thread）发帖，并记录帖子元数据避免重复发布
 - Discord：支持 Discord Server Onboarding 身份组：当用户选择身份组并被分配到对应角色后，自动创建/打开私密引导话题并推送指南（无需先发言或手动 `/onboard`）
 - Config：新增 Discord onboarding 自动触发与身份组角色关键词映射配置（`DISCORD_ONBOARDING_AUTO_START`、`DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_*`）
 - Discord：新手引导支持按钮/下拉菜单交互（点击创建角色/世界、加入世界、查看卡片），减少新用户记忆指令负担（指令仍保留）

@@ -4696,6 +4696,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       infoChannelId: created.infoChannelId,
     });
 
+    void this.publishWorldFunctionalGuides({
+      guildId: meta.homeGuildId,
+      worldId: meta.id,
+      worldName,
+      discussionChannelId: created.discussionChannelId,
+      proposalsChannelId: created.proposalsChannelId,
+    }).catch((err) => {
+      this.logger.warn(
+        { err, worldId: meta.id, guildId: meta.homeGuildId },
+        "Failed to publish world functional guides",
+      );
+    });
+
     void this.publishWorldShowcasePost({
       guild,
       worldId: meta.id,
@@ -4726,6 +4739,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         `Join: /world join world_id:${meta.id}`,
       ].join("\n"),
     );
+  }
+
+  private async publishWorldFunctionalGuides(input: {
+    guildId: string;
+    worldId: number;
+    worldName: string;
+    discussionChannelId: string;
+    proposalsChannelId: string;
+  }): Promise<void> {
+    await this.sendLongTextToChannel({
+      guildId: input.guildId,
+      channelId: input.discussionChannelId,
+      content: buildWorldDiscussionGuide({
+        worldId: input.worldId,
+        worldName: input.worldName,
+      }),
+    });
+
+    await this.sendLongTextToChannel({
+      guildId: input.guildId,
+      channelId: input.proposalsChannelId,
+      content: buildWorldProposalsGuide({
+        worldId: input.worldId,
+        worldName: input.worldName,
+      }),
+    });
   }
 
   private async handleWorldPublish(
@@ -6919,9 +6958,185 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       characterId: meta.id,
       visibility: "public",
     });
+
+    if (interaction.guildId && interaction.guild) {
+      void this.publishCharacterShowcasePost({
+        guild: interaction.guild,
+        guildId: interaction.guildId,
+        characterId: meta.id,
+        characterName: meta.name,
+        creatorId: meta.creatorId,
+      }).catch((err) => {
+        this.logger.warn(
+          { err, characterId: meta.id, guildId: interaction.guildId },
+          "Failed to publish character showcase post",
+        );
+      });
+    }
+
     await safeReply(interaction, `已公开角色：C${meta.id} ${meta.name}`, {
       ephemeral: true,
     });
+  }
+
+  private async publishCharacterShowcasePost(input: {
+    guild: Guild;
+    guildId: string;
+    characterId: number;
+    characterName: string;
+    creatorId: string;
+  }): Promise<void> {
+    const existing = await this.worldStore.getCharacterShowcasePost(
+      input.characterId,
+    );
+    if (existing) {
+      return;
+    }
+
+    const botUserId = this.botUserId ?? this.client.user?.id ?? "";
+    if (!botUserId) {
+      return;
+    }
+
+    const gallery = await this.ensureCharacterShowcaseChannel({
+      guild: input.guild,
+      botUserId,
+      reason: `character showcase ensure for C${input.characterId}`,
+    });
+    const channel = await input.guild.channels
+      .fetch(gallery.channelId)
+      .catch(() => null);
+    if (!channel) {
+      return;
+    }
+
+    const card = await this.worldFiles.readCharacterCard(input.characterId);
+    const threadName = `C${input.characterId} ${input.characterName}`.slice(
+      0,
+      100,
+    );
+    const reason = `character publish C${input.characterId}`;
+    const content = buildCharacterShowcaseThreadContent({
+      characterId: input.characterId,
+      characterName: input.characterName,
+      creatorId: input.creatorId,
+      card,
+    });
+
+    let threadId: string | null = null;
+    let messageId: string | null = null;
+    if (gallery.mode === "forum") {
+      const created = await (
+        channel as unknown as {
+          threads?: {
+            create?: (input: Record<string, unknown>) => Promise<{
+              id: string;
+              fetchStarterMessage?: () => Promise<{ id: string }>;
+            }>;
+          };
+        }
+      ).threads?.create?.({
+        name: threadName,
+        message: { content },
+        reason,
+      });
+      if (created) {
+        threadId = created.id;
+        if (typeof created.fetchStarterMessage === "function") {
+          const starter = await created.fetchStarterMessage().catch(() => null);
+          const starterId = starter?.id?.trim() ?? "";
+          if (starterId) {
+            messageId = starterId;
+          }
+        }
+      }
+    } else {
+      const created = await (
+        channel as unknown as {
+          threads?: {
+            create?: (
+              input: Record<string, unknown>,
+            ) => Promise<{ id: string }>;
+          };
+        }
+      ).threads?.create?.({
+        name: threadName,
+        type: ChannelType.PublicThread,
+        autoArchiveDuration: 10080,
+        reason,
+      });
+      if (created) {
+        threadId = created.id;
+      }
+    }
+    if (!threadId) {
+      return;
+    }
+
+    if (!messageId) {
+      messageId = await this.sendRichToChannelAndGetId({
+        channelId: threadId,
+        content,
+      });
+    }
+    if (!messageId) {
+      return;
+    }
+
+    await this.worldStore.setCharacterShowcasePost({
+      characterId: input.characterId,
+      channelId: gallery.channelId,
+      threadId,
+      messageId,
+    });
+  }
+
+  private async ensureCharacterShowcaseChannel(input: {
+    guild: Guild;
+    botUserId: string;
+    reason: string;
+  }): Promise<{ channelId: string; mode: "forum" | "text" }> {
+    const channelName = "character-gallery";
+    const overwrites = buildWorldShowcaseOverwrites({
+      everyoneRoleId: input.guild.roles.everyone.id,
+      botUserId: input.botUserId,
+    });
+
+    const existing = input.guild.channels.cache.find(
+      (candidate) =>
+        (candidate.type === ChannelType.GuildForum ||
+          candidate.type === ChannelType.GuildText) &&
+        candidate.name === channelName,
+    );
+    if (existing) {
+      return {
+        channelId: existing.id,
+        mode: existing.type === ChannelType.GuildForum ? "forum" : "text",
+      };
+    }
+
+    try {
+      const forum = await input.guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildForum,
+        permissionOverwrites: overwrites,
+        reason: input.reason,
+      });
+      return { channelId: forum.id, mode: "forum" };
+    } catch (err) {
+      this.logger.warn(
+        { err },
+        "Failed to create character forum channel; fallback to text",
+      );
+    }
+
+    const text = await input.guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      permissionOverwrites: overwrites,
+      reason: input.reason,
+    });
+    return { channelId: text.id, mode: "text" };
   }
 
   private async handleCharacterUnpublish(
@@ -8120,9 +8335,23 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       language: input.language,
       card,
     });
+    const payload = buildWorldShowcasePost({
+      worldId: input.worldId,
+      worldName: input.worldName,
+      creatorId: input.creatorId,
+      language: input.language,
+      card,
+      rules,
+    });
+    const starterContent = [opener, payload.content]
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join("\n\n");
 
     let threadId: string | null = null;
+    let messageId: string | null = null;
     if (showcase.mode === "forum") {
+      const appliedTags = resolveForumAppliedTagIds({ channel, card });
       const creator = (
         channel as unknown as {
           threads?: {
@@ -8134,19 +8363,29 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         const created = await (
           channel as unknown as {
             threads: {
-              create: (
-                input: Record<string, unknown>,
-              ) => Promise<{ id: string }>;
+              create: (input: Record<string, unknown>) => Promise<{
+                id: string;
+                fetchStarterMessage?: () => Promise<{ id: string }>;
+              }>;
             };
           }
         ).threads.create({
           name: threadName,
           message: {
-            content: opener,
+            content: starterContent,
+            embeds: payload.embeds,
           },
+          ...(appliedTags.length > 0 ? { appliedTags } : {}),
           reason,
         });
         threadId = created.id;
+        if (typeof created.fetchStarterMessage === "function") {
+          const starter = await created.fetchStarterMessage().catch(() => null);
+          const starterId = starter?.id?.trim() ?? "";
+          if (starterId) {
+            messageId = starterId;
+          }
+        }
       }
     } else {
       const creator = (
@@ -8178,19 +8417,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
 
-    const payload = buildWorldShowcasePost({
-      worldId: input.worldId,
-      worldName: input.worldName,
-      creatorId: input.creatorId,
-      language: input.language,
-      card,
-      rules,
-    });
-    const messageId = await this.sendRichToChannelAndGetId({
-      channelId: threadId,
-      content: payload.content,
-      embeds: payload.embeds,
-    });
+    if (!messageId) {
+      messageId = await this.sendRichToChannelAndGetId({
+        channelId: threadId,
+        content: showcase.mode === "forum" ? payload.content : starterContent,
+        embeds: payload.embeds,
+      });
+    }
     if (!messageId) {
       return;
     }
@@ -8208,26 +8441,20 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     botUserId: string;
     reason: string;
   }): Promise<{ channelId: string; mode: "forum" | "text" }> {
-    const channelName = "world-showcase";
+    const channelName = "world-index";
+    const legacyChannelName = "world-showcase";
     const overwrites = buildWorldShowcaseOverwrites({
       everyoneRoleId: input.guild.roles.everyone.id,
       botUserId: input.botUserId,
     });
 
-    const existing = input.guild.channels.cache.find(
-      (candidate) =>
-        (candidate.type === ChannelType.GuildForum ||
-          candidate.type === ChannelType.GuildText) &&
-        candidate.name === channelName,
-    );
-    if (existing) {
+    const syncChannelPermissions = async (channel: unknown): Promise<void> => {
       try {
-        const setter = (
-          existing as unknown as { permissionOverwrites?: { set?: unknown } }
-        ).permissionOverwrites?.set;
+        const setter = (channel as { permissionOverwrites?: { set?: unknown } })
+          .permissionOverwrites?.set;
         if (typeof setter === "function") {
           await (
-            existing as unknown as {
+            channel as {
               permissionOverwrites: {
                 set: (
                   overwrites: Array<{
@@ -8244,9 +8471,61 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       } catch {
         // ignore
       }
+    };
+
+    const resolveMode = (type: number): "forum" | "text" =>
+      type === ChannelType.GuildForum ? "forum" : "text";
+
+    const findChannelByName = (
+      name: string,
+    ): { id: string; type: number; edit?: unknown } | null => {
+      const found = input.guild.channels.cache.find(
+        (candidate) =>
+          (candidate.type === ChannelType.GuildForum ||
+            candidate.type === ChannelType.GuildText) &&
+          candidate.name === name,
+      );
+      if (!found) {
+        return null;
+      }
+      return found as unknown as { id: string; type: number; edit?: unknown };
+    };
+
+    const existingPreferred = findChannelByName(channelName);
+    if (existingPreferred) {
+      await syncChannelPermissions(existingPreferred);
+      await this.ensureWorldShowcaseForumTags({
+        channelId: existingPreferred.id,
+        reason: input.reason,
+      });
       return {
-        channelId: existing.id,
-        mode: existing.type === ChannelType.GuildForum ? "forum" : "text",
+        channelId: existingPreferred.id,
+        mode: resolveMode(existingPreferred.type),
+      };
+    }
+
+    const existingLegacy = findChannelByName(legacyChannelName);
+    if (existingLegacy) {
+      try {
+        const renamer = existingLegacy.edit;
+        if (typeof renamer === "function") {
+          await (
+            existingLegacy as {
+              edit: (input: Record<string, unknown>) => Promise<unknown>;
+            }
+          ).edit({ name: channelName, reason: input.reason });
+        }
+      } catch {
+        // ignore
+      }
+      await syncChannelPermissions(existingLegacy);
+      await this.ensureWorldShowcaseForumTags({
+        channelId: existingLegacy.id,
+        reason: input.reason,
+      });
+      return {
+        channelId: existingLegacy.id,
+        mode: resolveMode(existingLegacy.type),
       };
     }
 
@@ -8254,6 +8533,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const forum = await input.guild.channels.create({
         name: channelName,
         type: ChannelType.GuildForum,
+        availableTags: buildWorldShowcaseForumTags(),
         permissionOverwrites: overwrites,
         reason: input.reason,
       });
@@ -8272,6 +8552,36 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       reason: input.reason,
     });
     return { channelId: text.id, mode: "text" };
+  }
+
+  private async ensureWorldShowcaseForumTags(input: {
+    channelId: string;
+    reason: string;
+  }): Promise<void> {
+    const channel = await this.client.channels
+      .fetch(input.channelId)
+      .catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildForum) {
+      return;
+    }
+
+    const editor = (channel as unknown as { edit?: unknown }).edit;
+    if (typeof editor !== "function") {
+      return;
+    }
+
+    try {
+      await (
+        channel as unknown as {
+          edit: (input: Record<string, unknown>) => Promise<unknown>;
+        }
+      ).edit({
+        availableTags: buildWorldShowcaseForumTags(),
+        reason: input.reason,
+      });
+    } catch {
+      // ignore
+    }
   }
 
   private async sendRichToChannelAndGetId(input: {
@@ -10124,6 +10434,7 @@ function buildWorldShowcasePost(input: {
     en: "Core Elements",
   });
   const safeCore = core ? clampText(core, 800) : null;
+  const safeCard = input.card?.trim() ? clampText(input.card.trim(), 1400) : "";
   const safeRules = input.rules?.trim()
     ? clampText(input.rules.trim(), 1200)
     : "";
@@ -10171,7 +10482,7 @@ function buildWorldShowcasePost(input: {
     },
   };
 
-  const content =
+  const intro =
     input.language === "en"
       ? [
           `Creator: ${creator}`,
@@ -10185,6 +10496,20 @@ function buildWorldShowcasePost(input: {
           "你可以在本帖继续补充引导/图片/链接。",
           "设置封面：创作者回复图片并带 `#cover`（或“封面”）。",
         ].join("\n");
+  const content = clampText(
+    [
+      intro,
+      safeCard
+        ? input.language === "en"
+          ? "## World Lore (Excerpt)"
+          : "## 世界设定（节选）"
+        : null,
+      safeCard || null,
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n\n"),
+    1900,
+  );
 
   const embeds: APIEmbed[] = [embed];
   if (safeRules) {
@@ -10195,6 +10520,163 @@ function buildWorldShowcasePost(input: {
     });
   }
   return { content, embeds };
+}
+
+function buildWorldDiscussionGuide(input: {
+  worldId: number;
+  worldName: string;
+}): string {
+  return [
+    `# World Discussion Guide · W${input.worldId} ${input.worldName}`,
+    "",
+    "This channel is for in-character and out-of-character conversation inside this world.",
+    "",
+    "Use this channel to:",
+    "- Start or continue roleplay scenes",
+    "- Ask quick lore clarifications",
+    "- Coordinate cross-character interactions",
+    "- Share session notes and follow-up ideas",
+    "",
+    "Please avoid posting formal rule/progression proposals here.",
+    "For structured changes, use #world-proposals.",
+  ].join("\n");
+}
+
+function buildWorldProposalsGuide(input: {
+  worldId: number;
+  worldName: string;
+}): string {
+  return [
+    `# World Proposals Guide · W${input.worldId} ${input.worldName}`,
+    "",
+    "This channel is for structured, reviewable world updates.",
+    "",
+    "Use this channel to propose:",
+    "- Canon additions or revisions",
+    "- Timeline/chronicle entries",
+    "- Rule changes",
+    "- Event/task definitions",
+    "",
+    "Proposal template:",
+    "- Type: canon | chronicle | task | news",
+    "- Title:",
+    "- Content:",
+    "",
+    "Keep one proposal per thread when possible.",
+  ].join("\n");
+}
+
+function buildCharacterShowcaseThreadContent(input: {
+  characterId: number;
+  characterName: string;
+  creatorId: string;
+  card: string | null;
+}): string {
+  const creator = input.creatorId.trim()
+    ? `<@${input.creatorId}>`
+    : "(unknown)";
+  const notes = extractCharacterCardField(input.card, {
+    zh: "补充",
+    en: "Notes",
+  });
+  const appearance = extractCharacterCardSection(input.card, {
+    zh: "外貌",
+    en: "Appearance",
+  });
+  const personality = extractCharacterCardSection(input.card, {
+    zh: "性格",
+    en: "Personality",
+  });
+  const background = extractCharacterCardSection(input.card, {
+    zh: "背景",
+    en: "Background",
+  });
+
+  return clampText(
+    [
+      `Character published: C${input.characterId} ${input.characterName}`,
+      `Creator: ${creator}`,
+      notes ? `Notes: ${notes}` : null,
+      "",
+      appearance ? "## Appearance" : null,
+      appearance || null,
+      personality ? "## Personality" : null,
+      personality || null,
+      background ? "## Background" : null,
+      background || null,
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n"),
+    1800,
+  );
+}
+
+function extractCharacterCardField(
+  card: string | null,
+  key: { zh: string; en: string },
+): string | null {
+  const raw = (card ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const label = `${escapeRegExp(key.zh)}|${escapeRegExp(key.en)}`;
+  const bulletMatch = normalized.match(
+    new RegExp(`^\\s*-\\s*(?:${label})\\s*[:：]\\s*(.+)\\s*$`, "m"),
+  );
+  const value = (bulletMatch?.[1] ?? "").trim();
+  return value ? clampText(value, 240) : null;
+}
+
+function extractCharacterCardSection(
+  card: string | null,
+  heading: { zh: string; en: string },
+): string | null {
+  const raw = (card ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.split("\n");
+  const headingPattern = new RegExp(
+    `^\\s*##\\s*(?:${escapeRegExp(heading.zh)}|${escapeRegExp(heading.en)})\\s*$`,
+    "i",
+  );
+  const anyHeadingPattern = /^\s*##\s+.+$/;
+
+  let start = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (headingPattern.test(lines[index] ?? "")) {
+      start = index + 1;
+      break;
+    }
+  }
+  if (start < 0) {
+    return null;
+  }
+
+  const collected: string[] = [];
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (anyHeadingPattern.test(line)) {
+      break;
+    }
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (trimmed === "-" || trimmed === "-：" || trimmed === "-:") {
+      continue;
+    }
+    collected.push(trimmed);
+  }
+  if (collected.length === 0) {
+    return null;
+  }
+
+  const compact = collected
+    .map((line) => line.replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean)
+    .join("; ");
+  return compact ? clampText(compact, 320) : null;
 }
 
 function extractWorldOneLiner(card: string | null): string | null {
@@ -10210,6 +10692,99 @@ function extractWorldOneLiner(card: string | null): string | null {
   const summary = (bulletMatch?.[1] ?? tableMatch?.[1] ?? "").trim();
   if (!summary) return null;
   return summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
+}
+
+function buildWorldShowcaseForumTags(): Array<{ name: string }> {
+  return [
+    { name: "Fantasy" },
+    { name: "Sci-Fi" },
+    { name: "Modern" },
+    { name: "Horror" },
+    { name: "Historical" },
+    { name: "Anime" },
+    { name: "Active" },
+  ];
+}
+
+function resolveForumAppliedTagIds(input: {
+  channel: unknown;
+  card: string | null;
+}): string[] {
+  const rawAvailable = (input.channel as { availableTags?: unknown })
+    .availableTags;
+  if (!Array.isArray(rawAvailable) || rawAvailable.length === 0) {
+    return [];
+  }
+
+  const candidates = rawAvailable
+    .map((tag) => {
+      const id =
+        tag && typeof tag === "object" && "id" in tag
+          ? String((tag as { id?: unknown }).id ?? "").trim()
+          : "";
+      const name =
+        tag && typeof tag === "object" && "name" in tag
+          ? String((tag as { name?: unknown }).name ?? "").trim()
+          : "";
+      return {
+        id,
+        name,
+        normalizedName: normalizeForumTagName(name),
+      };
+    })
+    .filter((tag) => tag.id && tag.normalizedName);
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const rawTags = extractWorldCardField(input.card, {
+    zh: "类型标签",
+    en: "Tags",
+  });
+  const desired = parseWorldCardTagKeywords(rawTags);
+  if (desired.length === 0) {
+    return [];
+  }
+
+  const matched: string[] = [];
+  for (const keyword of desired) {
+    const hit = candidates.find(
+      (candidate) => candidate.normalizedName === keyword,
+    );
+    if (!hit) {
+      continue;
+    }
+    if (matched.includes(hit.id)) {
+      continue;
+    }
+    matched.push(hit.id);
+    if (matched.length >= 5) {
+      break;
+    }
+  }
+  return matched;
+}
+
+function parseWorldCardTagKeywords(raw: string | null): string[] {
+  const text = raw?.trim() ?? "";
+  if (!text) {
+    return [];
+  }
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const parts = normalized
+    .split(/[\n,，、;/｜|]+/g)
+    .map((part) => normalizeForumTagName(part))
+    .filter(Boolean);
+  return Array.from(new Set(parts));
+}
+
+function normalizeForumTagName(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/^#+/g, "")
+    .replace(/[\s_-]+/g, "")
+    .replace(/[()（）【】[\]{}]/g, "");
 }
 
 function extractWorldCardField(

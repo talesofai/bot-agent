@@ -588,6 +588,73 @@ export class WorldStore {
     return parsed && parsed.id === characterId ? parsed : null;
   }
 
+  async setCharacterShowcasePost(input: {
+    characterId: number;
+    channelId: string;
+    threadId: string;
+    messageId: string;
+  }): Promise<void> {
+    if (!Number.isInteger(input.characterId) || input.characterId <= 0) {
+      throw new Error("characterId must be a positive integer");
+    }
+    const channelId = input.channelId.trim();
+    const threadId = input.threadId.trim();
+    const messageId = input.messageId.trim();
+    if (!channelId) {
+      throw new Error("channelId is required");
+    }
+    if (!threadId) {
+      throw new Error("threadId is required");
+    }
+    if (!messageId) {
+      throw new Error("messageId is required");
+    }
+    assertSafePathSegment(channelId, "channelId");
+    assertSafePathSegment(threadId, "threadId");
+    assertSafePathSegment(messageId, "messageId");
+
+    await this.redis.hset(this.characterMetaKey(input.characterId), {
+      showcaseChannelId: channelId,
+      showcaseThreadId: threadId,
+      showcaseMessageId: messageId,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async getCharacterShowcasePost(characterId: number): Promise<{
+    channelId: string;
+    threadId: string;
+    messageId: string;
+  } | null> {
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      return null;
+    }
+    const [channelId, threadId, messageId] = await this.redis.hmget(
+      this.characterMetaKey(characterId),
+      "showcaseChannelId",
+      "showcaseThreadId",
+      "showcaseMessageId",
+    );
+    const safeChannelId = channelId?.trim() ?? "";
+    const safeThreadId = threadId?.trim() ?? "";
+    const safeMessageId = messageId?.trim() ?? "";
+    if (!safeChannelId || !safeThreadId || !safeMessageId) {
+      return null;
+    }
+    if (
+      !isSafePathSegment(safeChannelId) ||
+      !isSafePathSegment(safeThreadId) ||
+      !isSafePathSegment(safeMessageId)
+    ) {
+      return null;
+    }
+    return {
+      channelId: safeChannelId,
+      threadId: safeThreadId,
+      messageId: safeMessageId,
+    };
+  }
+
   async setActiveCharacter(input: {
     worldId: WorldId;
     userId: string;

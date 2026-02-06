@@ -2476,46 +2476,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       },
     ];
 
-    const components: MessageCreateOptions["components"] = [
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(
-            buildOnboardingCustomId({
-              userId: input.userId,
-              action: "character_show",
-              payload: String(input.characterId),
-            }),
-          )
-          .setLabel(input.language === "en" ? "View Card" : "查看角色卡")
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(
-            buildOnboardingCustomId({
-              userId: input.userId,
-              action: "world_list",
-            }),
-          )
-          .setLabel(
-            input.language === "en" ? "Next: Join World" : "下一步：加入世界",
-          )
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId(
-            buildOnboardingCustomId({
-              userId: input.userId,
-              action: "menu",
-            }),
-          )
-          .setLabel(input.language === "en" ? "Back" : "返回菜单")
-          .setStyle(ButtonStyle.Secondary),
-      ),
-    ];
-
     await this.sendRichToChannel({
       guildId: input.guildId,
       channelId: input.channelId,
       embeds,
-      components,
     });
   }
 

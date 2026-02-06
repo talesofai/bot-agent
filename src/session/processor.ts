@@ -563,6 +563,12 @@ export class SessionProcessor {
           const status = readHttpStatusCode(err);
           const shouldResetOpencodeSession = status === 404;
           lastError = { errName, errMessage, status, isAbort };
+          const timeoutPoint = classifyOpencodeTimeoutPoint({
+            errName,
+            errMessage,
+            status,
+          });
+          const timeoutHint = timeoutPoint ? ` timeout:${timeoutPoint}` : "";
 
           feishuLogJson({
             event: "log.warn",
@@ -579,7 +585,7 @@ export class SessionProcessor {
             characterId: parsedCharacter?.characterId,
             component: "session-processor",
             step: "opencode_run",
-            msg: `opencode失败 attempt:${runAttempt}/${maxRunAttempts} abort:${isAbort} status:${status ?? "n/a"}`,
+            msg: `opencode失败${timeoutHint} attempt:${runAttempt}/${maxRunAttempts} abort:${isAbort} status:${status ?? "n/a"}`,
             errName,
             errMessage,
           });
@@ -642,6 +648,12 @@ export class SessionProcessor {
       }
 
       if (!result) {
+        const timeoutPoint = classifyOpencodeTimeoutPoint({
+          errName: lastError?.errName,
+          errMessage: lastError?.errMessage ?? "",
+          status: lastError?.status ?? null,
+        });
+        const timeoutHint = timeoutPoint ? ` timeout:${timeoutPoint}` : "";
         feishuLogJson({
           event: "log.error",
           traceId: runtime.traceId,
@@ -657,7 +669,7 @@ export class SessionProcessor {
           characterId: parsedCharacter?.characterId,
           component: "session-processor",
           step: "opencode_run",
-          msg: `opencode最终失败 attempts:${maxRunAttempts}`,
+          msg: `opencode最终失败${timeoutHint} attempts:${maxRunAttempts}`,
           errName: lastError?.errName,
           errMessage: lastError?.errMessage ?? "unknown",
         });
@@ -1749,6 +1761,24 @@ function readHttpStatusCode(err: unknown): number | null {
   return typeof status === "number" && Number.isFinite(status) ? status : null;
 }
 
+function classifyOpencodeTimeoutPoint(input: {
+  errName?: string;
+  errMessage: string;
+  status: number | null;
+}): "opencode-server" | "worker->opencode-server" | null {
+  const errName = input.errName?.trim() ?? "";
+  const messageLower = (input.errMessage ?? "").toLowerCase();
+  const isTimeoutLike =
+    errName === "TimeoutError" || messageLower.includes("timed out");
+  if (!isTimeoutLike) {
+    return null;
+  }
+  if (typeof input.status === "number" && Number.isFinite(input.status)) {
+    return "opencode-server";
+  }
+  return "worker->opencode-server";
+}
+
 function parseWebfetchStatusCode(message: string | undefined): number | null {
   if (!message) {
     return null;
@@ -1831,6 +1861,9 @@ const YOLO_TOOLS: Record<string, boolean> = {
   task: true,
   todowrite: true,
   todoread: true,
+  // Opencode's question tool requires interactive answers from the host.
+  // In our bot runtime, it can stall a session until timeout. Use plain text questions instead.
+  question: false,
 };
 
 const READONLY_TOOLS: Record<string, boolean> = {
@@ -1842,6 +1875,7 @@ const READONLY_TOOLS: Record<string, boolean> = {
   task: true,
   todowrite: true,
   todoread: true,
+  question: false,
 };
 
 function resolveSessionTools(groupId: string): Record<string, boolean> {
@@ -1889,6 +1923,10 @@ function isLikelyOpencodeSessionId(value: string): boolean {
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== "object") {
+    return false;
+  }
+  const status = (err as { status?: unknown }).status;
+  if (typeof status === "number" && Number.isFinite(status)) {
     return false;
   }
   const name = (err as { name?: unknown }).name;

@@ -16,6 +16,7 @@
 - Discord：世界发布后自动在 homeGuild 创建/复用 `world-showcase`（优先 Forum，否则 Text+Thread）并发帖，内容从世界卡/规则提取摘要；创作者可在帖内用 `#cover`/“封面”+图片设置封面
 - Discord：支持 Discord Server Onboarding 身份组：当用户选择身份组并被分配到对应角色后，自动创建/打开私密引导话题并推送指南（无需先发言或手动 `/onboard`）
 - Config：新增 Discord onboarding 自动触发与身份组角色关键词映射配置（`DISCORD_ONBOARDING_AUTO_START`、`DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_*`）
+- Discord：新手引导支持按钮/下拉菜单交互（点击创建角色/世界、加入世界、查看卡片），减少新用户记忆指令负担（指令仍保留）
 
 ### Changed
 
@@ -25,6 +26,8 @@
 - Deploy：opencode-server 镜像内置 `git/rg/fd`（fd-find），K8s 启动脚本不再在运行时 `apt-get install`（缺工具直接 fail-fast）
 - Discord：允许在任意 guild 创建世界/角色草稿；`DISCORD_HOME_GUILD_ID` 不再限制创建位置
 - Discord：`/onboard role` 关键词调整为 `admin|both|adventurer|world creater`，支持多身份并新增管理员引导；onboarding 自动引导不再依赖 homeGuild，且在显式映射不匹配时会回退到启发式匹配
+- Discord：`/onboard` 与 onboarding 自动提示默认发送点击式菜单（不再直接抛命令清单）
+- Worker：默认禁用 opencode `question` 工具（避免在 bot 场景卡住等待宿主交互回答导致超时）
 
 ### Fixed
 
@@ -39,6 +42,8 @@
 - 文档：修正平台默认启用说明（与实现一致：默认 `LLBOT_PLATFORM=discord`，仅在 `LLBOT_PLATFORM=qq` 时启用 QQ）
 - Discord：修复 `/character create` 等在创建私密 thread 后拉成员时 `Missing Access` 导致交互卡住；失败时会回覆报错并降级到 creator-only 工作坊频道
 - Discord：修复角色构建会话忽略上传设定文件的问题；现在上传 txt/md/json/docx 会自动写入 `character/source.md` 供模型读取
+- Worker：飞书日志补齐 opencode 超时发生点（区分 worker→opencode-server 与 opencode-server 内部超时）
+- Opencode：opencode-server 500 的 Bun fallback HTML 自动提取为简短可读的 TimeoutError 摘要（避免飞书截断看不到根因）
 
 ## [0.0.31] - 2026-01-30
 

@@ -281,6 +281,10 @@ function formatHttpErrorMessage(raw: string): string {
   if (!trimmed) {
     return "empty response";
   }
+  const bunFallbackSummary = tryFormatBunFallbackError(trimmed);
+  if (bunFallbackSummary) {
+    return bunFallbackSummary;
+  }
   const maxBytes = 20_000;
   const buffer = Buffer.from(trimmed, "utf8");
   if (buffer.byteLength <= maxBytes) {
@@ -301,4 +305,113 @@ class HttpError extends Error {
 
 function isHttpError(value: unknown): value is HttpError {
   return value instanceof HttpError;
+}
+
+function tryFormatBunFallbackError(html: string): string | null {
+  // Bun's fallback error overlay encodes the underlying exception in a base64
+  // script tag. The raw HTML is huge and Feishu logs truncate it before the
+  // actual error becomes visible.
+  if (!html.includes("__bunfallback")) {
+    return null;
+  }
+  const match = html.match(
+    /<script[^>]*id=["']__bunfallback["'][^>]*>([\s\S]*?)<\/script>/i,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const base64 = match[1]?.trim().replace(/\s+/g, "") ?? "";
+  if (!base64) {
+    return null;
+  }
+
+  let decoded: Buffer;
+  try {
+    decoded = Buffer.from(base64, "base64");
+  } catch {
+    return null;
+  }
+  if (decoded.byteLength === 0) {
+    return null;
+  }
+
+  const runs = extractAsciiRuns(decoded)
+    .map((run) => run.trim())
+    .filter(Boolean);
+  if (runs.length === 0) {
+    return null;
+  }
+
+  const uniqueRuns: string[] = [];
+  for (const run of runs) {
+    if (!uniqueRuns.includes(run)) {
+      uniqueRuns.push(run);
+    }
+  }
+
+  const requestLine =
+    uniqueRuns.find((run) =>
+      /^(GET|POST|PUT|PATCH|DELETE)\s+-\s+/i.test(run),
+    ) ?? null;
+
+  const errorNameIndex = uniqueRuns.findIndex((run) => {
+    if (!run) {
+      return false;
+    }
+    if (run === "ExceptionOcurred") {
+      return false;
+    }
+    return run.endsWith("Error");
+  });
+  const errorName =
+    errorNameIndex >= 0 ? uniqueRuns[errorNameIndex] : (null as string | null);
+
+  const errorMessage =
+    errorNameIndex >= 0
+      ? (uniqueRuns
+          .slice(errorNameIndex + 1)
+          .find(
+            (run) =>
+              run &&
+              run !== requestLine &&
+              run !== "/data" &&
+              run !== "ExceptionOcurred" &&
+              !/^(GET|POST|PUT|PATCH|DELETE)\s+-\s+/i.test(run),
+          ) ?? null)
+      : null;
+
+  const parts: string[] = [];
+  if (errorName) {
+    parts.push(errorMessage ? `${errorName}: ${errorMessage}` : errorName);
+  }
+  if (requestLine) {
+    parts.push(requestLine);
+  }
+
+  const formatted = parts.join(" | ").trim();
+  return formatted ? formatted : null;
+}
+
+function extractAsciiRuns(buffer: Buffer): string[] {
+  const runs: string[] = [];
+  let start = -1;
+  for (let i = 0; i < buffer.length; i += 1) {
+    const byte = buffer[i]!;
+    const printable = byte >= 32 && byte < 127;
+    if (printable) {
+      if (start === -1) {
+        start = i;
+      }
+      continue;
+    }
+    if (start !== -1 && i - start >= 4) {
+      runs.push(buffer.toString("ascii", start, i));
+    }
+    start = -1;
+  }
+  if (start !== -1 && buffer.length - start >= 4) {
+    runs.push(buffer.toString("ascii", start));
+  }
+  return runs;
 }

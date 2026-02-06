@@ -1,6 +1,9 @@
 import { EventEmitter } from "node:events";
 import type { Logger } from "pino";
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   Client,
   ChannelType,
   GatewayIntentBits,
@@ -9,6 +12,7 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  type ButtonInteraction,
   type APIEmbed,
   type Attachment,
   type ChatInputCommandInteraction,
@@ -16,7 +20,11 @@ import {
   type GuildMember,
   type PartialGuildMember,
   type Interaction,
+  type MessageComponentInteraction,
   type Message,
+  type MessageCreateOptions,
+  type StringSelectMenuInteraction,
+  StringSelectMenuBuilder,
 } from "discord.js";
 import type {
   Bot,
@@ -34,7 +42,11 @@ import {
   resolveDiscordIdentityRoles,
 } from "./onboarding-identity";
 import type { BotMessageStore } from "../../store/bot-message-store";
-import { WorldStore, type CharacterVisibility } from "../../world/store";
+import {
+  WorldStore,
+  type CharacterVisibility,
+  type WorldActiveMeta,
+} from "../../world/store";
 import { WorldFileStore } from "../../world/file-store";
 import {
   buildWorldBuildGroupId,
@@ -75,8 +87,6 @@ import {
   buildDiscordCharacterCreateGuide,
   buildDiscordCharacterHelp,
   buildDiscordHelp,
-  buildDiscordOnboardingAutoPrompt,
-  buildDiscordOnboardingGuide,
   buildDiscordWorldBuildKickoff,
   buildDiscordWorldCharacterBuildKickoff,
   buildDiscordWorldCreateGuide,
@@ -250,20 +260,23 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     this.client.on("interactionCreate", (interaction) => {
       void this.handleInteraction(interaction).catch(async (err) => {
         this.logger.error({ err }, "Failed to handle Discord interaction");
-        if (!interaction.isChatInputCommand()) {
-          return;
-        }
         const language = await this.userState
           .getLanguage(interaction.user.id)
           .catch(() => null);
-        await safeReply(
-          interaction,
-          resolveUserMessageFromError(language, err, {
-            zh: "处理失败，请稍后重试。",
-            en: "Failed. Please try again.",
-          }),
-          { ephemeral: true },
-        );
+        const message = resolveUserMessageFromError(language, err, {
+          zh: "处理失败，请稍后重试。",
+          en: "Failed. Please try again.",
+        });
+        if (interaction.isChatInputCommand()) {
+          await safeReply(interaction, message, { ephemeral: true });
+          return;
+        }
+        if (interaction.isMessageComponent()) {
+          await safeDeferUpdate(interaction);
+          await safeComponentFollowUp(interaction, message, {
+            ephemeral: true,
+          });
+        }
       });
     });
 
@@ -517,10 +530,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         language,
         reason: "onboarding auto start (identity role)",
       });
-      await this.sendLongTextToChannel({
+      await this.sendOnboardingMenu({
         guildId: member.guild.id,
         channelId: threadId,
-        content: buildDiscordOnboardingGuide({ role, language }),
+        userId: member.id,
+        role,
+        language,
       });
       created.push({ role, channelId: threadId });
     }
@@ -959,10 +974,17 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       language: existing?.language ?? null,
       reason: "onboarding auto prompt",
     });
-    await this.sendLongTextToChannel({
+    await this.userState
+      .addRoles(message.author.id, ["adventurer"])
+      .catch(() => {
+        // ignore
+      });
+    await this.sendOnboardingMenu({
       guildId: message.guildId,
       channelId: threadId,
-      content: buildDiscordOnboardingAutoPrompt(existing?.language),
+      userId: message.author.id,
+      role: "adventurer",
+      language: existing?.language ?? null,
     });
   }
 
@@ -1456,6 +1478,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   }
 
   private async handleInteraction(interaction: Interaction): Promise<void> {
+    if (interaction.isButton()) {
+      await this.handleButtonInteraction(interaction);
+      return;
+    }
+    if (interaction.isStringSelectMenu()) {
+      await this.handleStringSelectMenuInteraction(interaction);
+      return;
+    }
     if (!interaction.isChatInputCommand()) {
       return;
     }
@@ -1690,6 +1720,30 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     });
   }
 
+  private async handleButtonInteraction(
+    interaction: ButtonInteraction,
+  ): Promise<void> {
+    const parsed = parseOnboardingCustomId(interaction.customId);
+    if (!parsed) {
+      await safeDeferUpdate(interaction);
+      return;
+    }
+    await safeDeferUpdate(interaction);
+    await this.handleOnboardingComponentAction(interaction, parsed);
+  }
+
+  private async handleStringSelectMenuInteraction(
+    interaction: StringSelectMenuInteraction,
+  ): Promise<void> {
+    const parsed = parseOnboardingCustomId(interaction.customId);
+    if (!parsed) {
+      await safeDeferUpdate(interaction);
+      return;
+    }
+    await safeDeferUpdate(interaction);
+    await this.handleOnboardingComponentAction(interaction, parsed);
+  }
+
   private async handleOnboard(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
@@ -1733,10 +1787,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         language,
         reason: `onboard role=${roleRaw}`,
       });
-      await this.sendLongTextToChannel({
+      await this.sendOnboardingMenu({
         guildId: interaction.guildId,
         channelId: threadId,
-        content: buildDiscordOnboardingGuide({ role, language }),
+        userId: interaction.user.id,
+        role,
+        language,
       });
       created.push({ role, channelId: threadId });
     }
@@ -1771,6 +1827,1299 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           ].join("\n"),
       { ephemeral: true },
     );
+  }
+
+  private async handleOnboardingComponentAction(
+    interaction: MessageComponentInteraction,
+    parsed: {
+      userId: string;
+      action: OnboardingComponentAction;
+      payload: string;
+    },
+  ): Promise<void> {
+    if (interaction.user.id !== parsed.userId) {
+      await safeComponentFollowUp(interaction, "这不是给你的按钮。", {
+        ephemeral: true,
+      });
+      return;
+    }
+    const language = await this.userState
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
+
+    if (!interaction.guildId || !interaction.guild) {
+      await safeComponentFollowUp(
+        interaction,
+        pickByLanguage(
+          language,
+          "该操作仅支持在服务器内使用。",
+          "This action can only be used in a server.",
+        ),
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const role =
+      (await this.inferOnboardingRoleForChannel({
+        userId: interaction.user.id,
+        channelId: interaction.channelId,
+      })) ?? "adventurer";
+
+    const isGuildOwner = interaction.guild.ownerId === interaction.user.id;
+    const isGuildAdmin = Boolean(
+      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+      interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
+    );
+
+    if (parsed.action === "menu") {
+      await this.sendOnboardingMenu({
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        userId: interaction.user.id,
+        role,
+        language,
+      });
+      return;
+    }
+
+    if (parsed.action === "help") {
+      await this.sendLongTextToChannel({
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        content: buildDiscordHelp(language),
+      });
+      return;
+    }
+
+    if (parsed.action === "character_create") {
+      try {
+        const traceId = createTraceId();
+        const created = await this.createCharacterDraftAndThread({
+          guild: interaction.guild,
+          guildId: interaction.guildId,
+          userId: interaction.user.id,
+          language,
+          traceId,
+          visibility: "private",
+        });
+        await this.sendOnboardingAfterCharacterCreate({
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          language,
+          characterId: created.characterId,
+          characterName: created.characterName,
+          buildChannelId: created.buildConversationChannelId,
+        });
+      } catch (err) {
+        await safeComponentFollowUp(
+          interaction,
+          resolveUserMessageFromError(language, err, {
+            zh: `创建失败：${err instanceof Error ? err.message : String(err)}`,
+            en: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+          }),
+          { ephemeral: true },
+        );
+      }
+      return;
+    }
+
+    if (parsed.action === "character_show") {
+      const characterId = Number(parsed.payload);
+      if (!Number.isInteger(characterId) || characterId <= 0) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            "无效的 character_id。",
+            "Invalid character_id.",
+          ),
+          { ephemeral: true },
+        );
+        return;
+      }
+      await this.sendCharacterCardToChannel({
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        requesterUserId: interaction.user.id,
+        language,
+        characterId,
+        guild: interaction.guild,
+      });
+      return;
+    }
+
+    if (parsed.action === "world_create") {
+      try {
+        const traceId = createTraceId();
+        const created = await this.createWorldDraftAndThread({
+          guild: interaction.guild,
+          guildId: interaction.guildId,
+          userId: interaction.user.id,
+          language,
+          traceId,
+          flags: { isGuildOwner, isGuildAdmin },
+        });
+        await this.sendOnboardingAfterWorldCreate({
+          guildId: interaction.guildId,
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          language,
+          worldId: created.worldId,
+          worldName: created.worldName,
+          buildChannelId: created.buildConversationChannelId,
+        });
+      } catch (err) {
+        await safeComponentFollowUp(
+          interaction,
+          resolveUserMessageFromError(language, err, {
+            zh: `创建失败：${err instanceof Error ? err.message : String(err)}`,
+            en: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+          }),
+          { ephemeral: true },
+        );
+      }
+      return;
+    }
+
+    if (parsed.action === "world_show") {
+      const worldId = Number(parsed.payload);
+      if (!Number.isInteger(worldId) || worldId <= 0) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(language, "无效的 world_id。", "Invalid world_id."),
+          { ephemeral: true },
+        );
+        return;
+      }
+      await this.sendWorldCardToChannel({
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        requesterUserId: interaction.user.id,
+        language,
+        worldId,
+        guild: interaction.guild,
+      });
+      return;
+    }
+
+    if (parsed.action === "world_list") {
+      await this.sendOnboardingWorldList({
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        userId: interaction.user.id,
+        language,
+      });
+      return;
+    }
+
+    if (parsed.action === "world_select") {
+      if (!interaction.isStringSelectMenu()) {
+        return;
+      }
+      const selected = interaction.values?.[0]?.trim() ?? "";
+      if (!selected) {
+        return;
+      }
+      const worldId = Number(selected);
+      if (!Number.isInteger(worldId) || worldId <= 0) {
+        return;
+      }
+      await this.handleOnboardingWorldJoin({
+        guildId: interaction.guildId,
+        guild: interaction.guild,
+        channelId: interaction.channelId,
+        userId: interaction.user.id,
+        language,
+        worldId,
+      });
+      return;
+    }
+
+    if (parsed.action === "world_join") {
+      const worldId = Number(parsed.payload);
+      if (!Number.isInteger(worldId) || worldId <= 0) {
+        await safeComponentFollowUp(interaction, "无效的 world_id。", {
+          ephemeral: true,
+        });
+        return;
+      }
+      if (interaction.isStringSelectMenu()) {
+        const selected = interaction.values?.[0]?.trim() ?? "";
+        const characterId = Number(selected);
+        if (!Number.isInteger(characterId) || characterId <= 0) {
+          await safeComponentFollowUp(interaction, "无效的 character_id。", {
+            ephemeral: true,
+          });
+          return;
+        }
+        await this.handleOnboardingWorldJoin({
+          guildId: interaction.guildId,
+          guild: interaction.guild,
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          language,
+          worldId,
+          explicitCharacterId: characterId,
+        });
+        return;
+      }
+      await this.handleOnboardingWorldJoin({
+        guildId: interaction.guildId,
+        guild: interaction.guild,
+        channelId: interaction.channelId,
+        userId: interaction.user.id,
+        language,
+        worldId,
+      });
+      return;
+    }
+  }
+
+  private async inferOnboardingRoleForChannel(input: {
+    userId: string;
+    channelId: string;
+  }): Promise<UserRole | null> {
+    const state = await this.userState.read(input.userId).catch(() => null);
+    const threads = state?.onboardingThreadIds ?? null;
+    if (!threads) {
+      return null;
+    }
+    const roles: UserRole[] = ["admin", "world creater", "adventurer"];
+    for (const role of roles) {
+      const threadId = threads[role];
+      if (typeof threadId === "string" && threadId === input.channelId) {
+        return role;
+      }
+    }
+    return null;
+  }
+
+  private async sendOnboardingMenu(input: {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    role: UserRole;
+    language: UserLanguage | null;
+  }): Promise<void> {
+    const title =
+      input.language === "en"
+        ? `[Onboarding] ${input.role}`
+        : input.role === "world creater"
+          ? "【新手引导】世界创建者"
+          : input.role === "admin"
+            ? "【新手引导】管理员"
+            : "【新手引导】冒险者";
+
+    const descriptionLines: string[] = [];
+    if (input.language === "en") {
+      descriptionLines.push(
+        "This is your private guide thread (only you and the bot can see it).",
+        "You can talk to the bot directly here (no @).",
+        "",
+      );
+      if (input.role === "world creater") {
+        descriptionLines.push(
+          "Workflow:",
+          "1) Click Create World",
+          "2) Paste/upload lore in the editing thread",
+          "3) Publish when ready (/world publish)",
+          "",
+          "Click the button below to start. (Commands still work: /world create)",
+        );
+      } else if (input.role === "admin") {
+        descriptionLines.push(
+          "Admin tips:",
+          "- /language to set default language",
+          "- /model to set guild model override",
+          "- /resetall to reset sessions",
+          "",
+          "Click Help if you need the full command list.",
+        );
+      } else {
+        descriptionLines.push(
+          "Workflow:",
+          "1) Click Create Character",
+          "2) After finishing your character, click Join World",
+          "",
+          "Click the button below to start. (Commands still work: /character create, /world join)",
+        );
+      }
+    } else {
+      descriptionLines.push(
+        "这是你专属的私密引导话题（只有你和 bot 能看到）。",
+        "在这里无需 @，直接说话即可。",
+        "",
+      );
+      if (input.role === "world creater") {
+        descriptionLines.push(
+          "流程：",
+          "1) 点击【创建新世界】",
+          "2) 在编辑话题粘贴/上传设定原文",
+          "3) 确认 OK 后发布（/world publish）",
+          "",
+          "现在点下面按钮开始。（指令仍可用：/world create）",
+        );
+      } else if (input.role === "admin") {
+        descriptionLines.push(
+          "管理员常用：",
+          "- /language 设置默认语言",
+          "- /model 设置群模型覆盖",
+          "- /resetall 重置全群会话",
+          "",
+          "需要完整指令清单就点“帮助”。",
+        );
+      } else {
+        descriptionLines.push(
+          "流程：",
+          "1) 点击【创建角色卡】",
+          "2) 完善角色卡后，点击【加入现有世界】",
+          "",
+          "现在点下面按钮开始。（指令仍可用：/character create、/world join）",
+        );
+      }
+    }
+    const description = descriptionLines.join("\n");
+
+    const embeds: APIEmbed[] = [{ title, description }];
+    const components = this.buildOnboardingMenuComponents({
+      userId: input.userId,
+      role: input.role,
+      language: input.language,
+    });
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+    });
+  }
+
+  private buildOnboardingMenuComponents(input: {
+    userId: string;
+    role: UserRole;
+    language: UserLanguage | null;
+  }): MessageCreateOptions["components"] {
+    const menuId = buildOnboardingCustomId({
+      userId: input.userId,
+      action: "menu",
+    });
+    const helpId = buildOnboardingCustomId({
+      userId: input.userId,
+      action: "help",
+    });
+    const worldCreateId = buildOnboardingCustomId({
+      userId: input.userId,
+      action: "world_create",
+    });
+    const characterCreateId = buildOnboardingCustomId({
+      userId: input.userId,
+      action: "character_create",
+    });
+    const worldListId = buildOnboardingCustomId({
+      userId: input.userId,
+      action: "world_list",
+    });
+
+    const row1 = new ActionRowBuilder<ButtonBuilder>();
+
+    if (input.role === "world creater") {
+      row1.addComponents(
+        new ButtonBuilder()
+          .setCustomId(worldCreateId)
+          .setLabel(input.language === "en" ? "Create World" : "创建新世界")
+          .setStyle(ButtonStyle.Primary),
+      );
+      row1.addComponents(
+        new ButtonBuilder()
+          .setCustomId(helpId)
+          .setLabel(input.language === "en" ? "Help" : "帮助")
+          .setStyle(ButtonStyle.Secondary),
+      );
+      return [row1];
+    }
+
+    if (input.role === "admin") {
+      row1.addComponents(
+        new ButtonBuilder()
+          .setCustomId(helpId)
+          .setLabel(input.language === "en" ? "Help" : "帮助")
+          .setStyle(ButtonStyle.Primary),
+      );
+      return [row1];
+    }
+
+    row1.addComponents(
+      new ButtonBuilder()
+        .setCustomId(characterCreateId)
+        .setLabel(input.language === "en" ? "Create Character" : "创建角色卡")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(worldListId)
+        .setLabel(input.language === "en" ? "Join World" : "加入现有世界")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(helpId)
+        .setLabel(input.language === "en" ? "Help" : "帮助")
+        .setStyle(ButtonStyle.Secondary),
+    );
+
+    const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(menuId)
+        .setLabel(input.language === "en" ? "Refresh" : "刷新菜单")
+        .setStyle(ButtonStyle.Secondary),
+    );
+    return [row1, row2];
+  }
+
+  private async sendOnboardingAfterCharacterCreate(input: {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    language: UserLanguage | null;
+    characterId: number;
+    characterName: string;
+    buildChannelId: string;
+  }): Promise<void> {
+    const embeds: APIEmbed[] = [
+      {
+        title:
+          input.language === "en"
+            ? "Step 1: Character Created"
+            : "第 1 步：角色已创建",
+        description:
+          input.language === "en"
+            ? [
+                `C${input.characterId} ${input.characterName}`,
+                `Continue editing here: <#${input.buildChannelId}>`,
+                "",
+                "When you're ready, come back and join a world.",
+              ].join("\n")
+            : [
+                `C${input.characterId} ${input.characterName}`,
+                `去这里完善角色卡：<#${input.buildChannelId}>`,
+                "",
+                "完善后回来点按钮加入世界。",
+              ].join("\n"),
+      },
+    ];
+
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_show",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(input.language === "en" ? "View Card" : "查看角色卡")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "world_list",
+            }),
+          )
+          .setLabel(
+            input.language === "en" ? "Next: Join World" : "下一步：加入世界",
+          )
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Back" : "返回菜单")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+    });
+  }
+
+  private async sendCharacterCardToChannel(input: {
+    guildId: string;
+    channelId: string;
+    requesterUserId: string;
+    language: UserLanguage | null;
+    characterId: number;
+    guild: Guild;
+  }): Promise<void> {
+    const meta = await this.worldStore.getCharacter(input.characterId);
+    if (!meta) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        content: pickByLanguage(
+          input.language,
+          `角色不存在：C${input.characterId}`,
+          `Character not found: C${input.characterId}`,
+        ),
+      });
+      return;
+    }
+
+    const allowed =
+      meta.visibility === "public" ||
+      (meta.visibility === "private" &&
+        meta.creatorId === input.requesterUserId);
+    if (!allowed) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        content: pickByLanguage(
+          input.language,
+          "无权限查看该角色卡。",
+          "Permission denied: you cannot view this character card.",
+        ),
+      });
+      return;
+    }
+
+    const card = await this.worldFiles.readCharacterCard(meta.id);
+    if (!card?.trim()) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        content: pickByLanguage(
+          input.language,
+          "角色卡为空（可能仍在生成中）。请稍后重试。",
+          "Character card is empty (it may still be generating). Please retry later.",
+        ),
+      });
+      return;
+    }
+
+    const creatorLabel = await this.resolveDiscordUserLabel({
+      userId: meta.creatorId,
+      guild: input.guild,
+    });
+
+    const patched = card.trim();
+    const embeds: APIEmbed[] = [
+      {
+        title: `C${meta.id} ${meta.name}`,
+        fields: [
+          {
+            name: pickByLanguage(input.language, "创建者", "Creator"),
+            value: creatorLabel || `<@${meta.creatorId}>`,
+            inline: true,
+          },
+          {
+            name: pickByLanguage(input.language, "可见性", "Visibility"),
+            value: meta.visibility,
+            inline: true,
+          },
+          {
+            name: pickByLanguage(input.language, "状态", "Status"),
+            value: meta.status,
+            inline: true,
+          },
+        ],
+      },
+      ...buildMarkdownCardEmbeds(patched, {
+        titlePrefix: pickByLanguage(input.language, "角色卡", "Character Card"),
+        maxEmbeds: 18,
+        includeEmptyFields: true,
+      }),
+    ];
+
+    for (const chunk of chunkEmbedsForDiscord(embeds, 10)) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        embeds: chunk,
+      });
+    }
+
+    const nextEmbeds: APIEmbed[] = [
+      {
+        title: pickByLanguage(input.language, "下一步", "Next"),
+        description: pickByLanguage(
+          input.language,
+          "准备好了就加入一个世界吧。",
+          "Join a world when you're ready.",
+        ),
+      },
+    ];
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.requesterUserId,
+              action: "world_list",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Join World" : "加入世界")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.requesterUserId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Back" : "返回菜单")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds: nextEmbeds,
+      components,
+    });
+  }
+
+  private async sendWorldCardToChannel(input: {
+    guildId: string;
+    channelId: string;
+    requesterUserId: string;
+    language: UserLanguage | null;
+    worldId: number;
+    guild: Guild;
+  }): Promise<void> {
+    const meta = await this.worldStore.getWorld(input.worldId);
+    if (!meta) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        content: pickByLanguage(
+          input.language,
+          `世界不存在：W${input.worldId}`,
+          `World not found: W${input.worldId}`,
+        ),
+      });
+      return;
+    }
+    const allowed =
+      meta.status !== "draft" || meta.creatorId === input.requesterUserId;
+    if (!allowed) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        content: pickByLanguage(
+          input.language,
+          "无权限：只有世界创作者可以查看草稿。",
+          "Permission denied: only the world creator can view this draft.",
+        ),
+      });
+      return;
+    }
+
+    const card = await this.worldFiles.readWorldCard(meta.id);
+    const creatorLabel = await this.resolveDiscordUserLabel({
+      userId: meta.creatorId,
+      guild: input.guildId === meta.homeGuildId ? input.guild : null,
+    });
+    const patchedCard =
+      card?.trim() && meta.creatorId
+        ? patchCreatorLineInMarkdown(card.trim(), meta.creatorId, creatorLabel)
+        : card?.trim()
+          ? card.trim()
+          : "";
+
+    if (!patchedCard) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        content: pickByLanguage(
+          input.language,
+          "世界卡为空（可能仍在生成中）。请稍后重试。",
+          "World card is empty (it may still be generating). Please retry later.",
+        ),
+      });
+      return;
+    }
+
+    const embeds: APIEmbed[] = [
+      {
+        title: `W${meta.id} ${meta.name}`,
+        fields: [
+          {
+            name: pickByLanguage(input.language, "创作者", "Creator"),
+            value: creatorLabel || `<@${meta.creatorId}>`,
+            inline: true,
+          },
+          {
+            name: pickByLanguage(input.language, "状态", "Status"),
+            value: meta.status,
+            inline: true,
+          },
+          {
+            name: pickByLanguage(input.language, "入口", "Entry"),
+            value: `guild:${meta.homeGuildId}`,
+            inline: true,
+          },
+        ],
+      },
+      ...buildMarkdownCardEmbeds(patchedCard, {
+        titlePrefix: pickByLanguage(input.language, "世界卡", "World Card"),
+        maxEmbeds: 18,
+        includeEmptyFields: true,
+      }),
+    ];
+
+    for (const chunk of chunkEmbedsForDiscord(embeds, 10)) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        embeds: chunk,
+      });
+    }
+
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.requesterUserId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Back to Menu" : "回到菜单")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds: [
+        {
+          title: pickByLanguage(input.language, "下一步", "Next"),
+          description: pickByLanguage(
+            input.language,
+            "继续完善设定后，在编辑话题里用 /world publish 发布。",
+            "After finishing lore, run /world publish in the editing thread.",
+          ),
+        },
+      ],
+      components,
+    });
+  }
+
+  private async sendOnboardingWorldJoinCharacterPicker(input: {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    language: UserLanguage | null;
+    worldId: number;
+    worldName: string;
+    characterIds: number[];
+  }): Promise<void> {
+    const metas = await Promise.all(
+      input.characterIds.map((id) => this.worldStore.getCharacter(id)),
+    );
+    const candidates: Array<{
+      id: number;
+      name: string;
+      visibility: string;
+      status: string;
+    }> = [];
+    for (const meta of metas) {
+      if (!meta) {
+        continue;
+      }
+      if (meta.creatorId !== input.userId) {
+        continue;
+      }
+      candidates.push({
+        id: meta.id,
+        name: meta.name,
+        visibility: meta.visibility,
+        status: meta.status,
+      });
+    }
+
+    const options = candidates.slice(0, 25).map((meta) => ({
+      label: truncateDiscordLabel(`C${meta.id} ${meta.name}`, 100),
+      description: truncateDiscordLabel(
+        input.language === "en"
+          ? `visibility ${meta.visibility}, status ${meta.status}`
+          : `可见性${meta.visibility} 状态${meta.status}`,
+        100,
+      ),
+      value: String(meta.id),
+    }));
+
+    if (options.length === 0) {
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        content: pickByLanguage(
+          input.language,
+          "你还没有可用的角色卡：请先创建角色。",
+          "No available character. Please create one first.",
+        ),
+      });
+      return;
+    }
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(
+        buildOnboardingCustomId({
+          userId: input.userId,
+          action: "world_join",
+          payload: String(input.worldId),
+        }),
+      )
+      .setPlaceholder(
+        input.language === "en" ? "Pick a character…" : "选择要使用的角色…",
+      )
+      .addOptions(options);
+
+    const embeds: APIEmbed[] = [
+      {
+        title:
+          input.language === "en" ? "Pick a Character" : "选择要使用的角色",
+        description:
+          input.language === "en"
+            ? [
+                `World: W${input.worldId} ${input.worldName}`,
+                "",
+                "You have multiple characters. Pick one to join this world.",
+              ].join("\n")
+            : [
+                `目标世界：W${input.worldId} ${input.worldName}`,
+                "",
+                "你有多个角色，请先选一个用于加入世界。",
+              ].join("\n"),
+      },
+    ];
+
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_create",
+            }),
+          )
+          .setLabel(input.language === "en" ? "New Character" : "创建新角色")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Back" : "返回菜单")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+    });
+  }
+
+  private async sendOnboardingWorldList(input: {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    language: UserLanguage | null;
+  }): Promise<void> {
+    const ids = await this.worldStore.listWorldIds(50);
+    const metas = await Promise.all(
+      ids.map((id) => this.worldStore.getWorld(id)),
+    );
+    const active = metas.filter((meta): meta is WorldActiveMeta =>
+      Boolean(meta && meta.status === "active"),
+    );
+
+    const withStats = await Promise.all(
+      active.map(async (meta) => ({
+        meta,
+        stats: await this.worldFiles.readStats(meta.id),
+      })),
+    );
+    withStats.sort((a, b) => {
+      const diff = b.stats.visitorCount - a.stats.visitorCount;
+      if (diff !== 0) return diff;
+      return b.meta.id - a.meta.id;
+    });
+
+    const top = withStats.slice(0, 3);
+    const lines =
+      top.length > 0
+        ? top.map(
+            ({ meta, stats }) =>
+              `- W${meta.id} ${meta.name}（访客${stats.visitorCount} 角色${stats.characterCount}）`,
+          )
+        : [];
+    const embeds: APIEmbed[] = [
+      {
+        title: input.language === "en" ? "Pick a World" : "选择一个世界",
+        description:
+          top.length > 0
+            ? input.language === "en"
+              ? [
+                  "Top worlds:",
+                  ...top.map(
+                    ({ meta, stats }) =>
+                      `- W${meta.id} ${meta.name} (visitors ${stats.visitorCount}, chars ${stats.characterCount})`,
+                  ),
+                ].join("\n")
+              : ["热门世界：", ...lines].join("\n")
+            : input.language === "en"
+              ? "No active worlds yet."
+              : "暂无已发布世界。",
+      },
+    ];
+
+    const joinButtonsRow =
+      top.length > 0
+        ? (() => {
+            const buttons = new ActionRowBuilder<ButtonBuilder>();
+            for (const entry of top) {
+              buttons.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(
+                    buildOnboardingCustomId({
+                      userId: input.userId,
+                      action: "world_join",
+                      payload: String(entry.meta.id),
+                    }),
+                  )
+                  .setLabel(
+                    truncateDiscordLabel(
+                      `W${entry.meta.id} ${entry.meta.name}`,
+                      80,
+                    ),
+                  )
+                  .setStyle(ButtonStyle.Primary),
+              );
+            }
+            return buttons;
+          })()
+        : null;
+
+    const selectRow =
+      withStats.length > 3
+        ? (() => {
+            const options = withStats.slice(0, 25).map(({ meta, stats }) => ({
+              label: truncateDiscordLabel(`W${meta.id} ${meta.name}`, 100),
+              description: truncateDiscordLabel(
+                input.language === "en"
+                  ? `visitors ${stats.visitorCount}, chars ${stats.characterCount}`
+                  : `访客${stats.visitorCount} 角色${stats.characterCount}`,
+                100,
+              ),
+              value: String(meta.id),
+            }));
+            const menu = new StringSelectMenuBuilder()
+              .setCustomId(
+                buildOnboardingCustomId({
+                  userId: input.userId,
+                  action: "world_select",
+                }),
+              )
+              .setPlaceholder(
+                input.language === "en" ? "More worlds…" : "更多世界…",
+              )
+              .addOptions(options);
+            return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+              menu,
+            );
+          })()
+        : null;
+
+    const backRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          buildOnboardingCustomId({
+            userId: input.userId,
+            action: "menu",
+          }),
+        )
+        .setLabel(input.language === "en" ? "Back" : "返回菜单")
+        .setStyle(ButtonStyle.Secondary),
+    );
+
+    const components: MessageCreateOptions["components"] = [
+      ...(joinButtonsRow ? [joinButtonsRow] : []),
+      ...(selectRow ? [selectRow] : []),
+      backRow,
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+    });
+  }
+
+  private async handleOnboardingWorldJoin(input: {
+    guildId: string;
+    guild: Guild;
+    channelId: string;
+    userId: string;
+    language: UserLanguage | null;
+    worldId: number;
+    explicitCharacterId?: number;
+  }): Promise<void> {
+    try {
+      const worldMeta = await this.worldStore.getWorld(input.worldId);
+      if (!worldMeta) {
+        throw new LocalizedError({
+          zh: `世界不存在：W${input.worldId}`,
+          en: `World not found: W${input.worldId}`,
+        });
+      }
+      if (worldMeta.status !== "active") {
+        throw new LocalizedError({
+          zh: `无法加入：世界尚未发布（W${worldMeta.id} 当前状态=${worldMeta.status}）`,
+          en: `Cannot join: world is not published yet (W${worldMeta.id} status=${worldMeta.status})`,
+        });
+      }
+      if (input.guildId !== worldMeta.homeGuildId) {
+        throw new LocalizedError({
+          zh: `无法加入：该世界入口在 guild:${worldMeta.homeGuildId}（请先加入该服务器后再加入世界）。`,
+          en: `Cannot join: this world's entry server is guild:${worldMeta.homeGuildId} (join that server first).`,
+        });
+      }
+
+      let explicitCharacterId = input.explicitCharacterId;
+      if (
+        !(
+          explicitCharacterId &&
+          Number.isInteger(explicitCharacterId) &&
+          explicitCharacterId > 0
+        )
+      ) {
+        explicitCharacterId = undefined;
+      }
+
+      if (!explicitCharacterId) {
+        try {
+          explicitCharacterId = await this.resolveJoinCharacterId({
+            userId: input.userId,
+          });
+        } catch (err) {
+          const candidateIds = await this.worldStore.listUserCharacterIds(
+            input.userId,
+            25,
+          );
+          if (candidateIds.length > 1) {
+            await this.sendOnboardingWorldJoinCharacterPicker({
+              guildId: input.guildId,
+              channelId: input.channelId,
+              userId: input.userId,
+              language: input.language,
+              worldId: worldMeta.id,
+              worldName: worldMeta.name,
+              characterIds: candidateIds,
+            });
+            return;
+          }
+          throw err;
+        }
+      }
+
+      const joined = await this.joinWorldForUser({
+        guildId: input.guildId,
+        guild: input.guild,
+        userId: input.userId,
+        worldId: input.worldId,
+        language: input.language,
+        explicitCharacterId,
+      });
+      await this.sendOnboardingAfterWorldJoin({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        userId: input.userId,
+        language: input.language,
+        worldId: joined.worldId,
+        worldName: joined.worldName,
+        roleplayChannelId: joined.roleplayChannelId,
+        characterId: joined.characterId,
+        forked: joined.forked,
+      });
+    } catch (err) {
+      const msg = resolveUserMessageFromError(input.language, err, {
+        zh: `加入失败：${err instanceof Error ? err.message : String(err)}`,
+        en: `Failed to join: ${err instanceof Error ? err.message : String(err)}`,
+      }).trim();
+
+      const embeds: APIEmbed[] = [
+        {
+          title: input.language === "en" ? "Join Failed" : "加入失败",
+          description: msg,
+        },
+      ];
+      const components: MessageCreateOptions["components"] = [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(
+              buildOnboardingCustomId({
+                userId: input.userId,
+                action: "character_create",
+              }),
+            )
+            .setLabel(
+              input.language === "en" ? "Create Character" : "创建角色卡",
+            )
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId(
+              buildOnboardingCustomId({
+                userId: input.userId,
+                action: "menu",
+              }),
+            )
+            .setLabel(input.language === "en" ? "Back" : "返回菜单")
+            .setStyle(ButtonStyle.Secondary),
+        ),
+      ];
+
+      await this.sendRichToChannel({
+        guildId: input.guildId,
+        channelId: input.channelId,
+        embeds,
+        components,
+      });
+    }
+  }
+
+  private async sendOnboardingAfterWorldJoin(input: {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    language: UserLanguage | null;
+    worldId: number;
+    worldName: string;
+    roleplayChannelId: string;
+    characterId: number;
+    forked: boolean;
+  }): Promise<void> {
+    const embeds: APIEmbed[] = [
+      {
+        title:
+          input.language === "en"
+            ? "Step 2: Joined World"
+            : "第 2 步：已加入世界",
+        description:
+          input.language === "en"
+            ? [
+                `W${input.worldId} ${input.worldName}`,
+                `Go to: <#${input.roleplayChannelId}>`,
+                `Active character: C${input.characterId}${
+                  input.forked ? " (world-specific fork)" : ""
+                }`,
+              ].join("\n")
+            : [
+                `W${input.worldId} ${input.worldName}`,
+                `去这里开始：<#${input.roleplayChannelId}>`,
+                `当前角色：C${input.characterId}${
+                  input.forked ? "（本世界专用）" : ""
+                }`,
+              ].join("\n"),
+      },
+    ];
+
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "world_show",
+              payload: String(input.worldId),
+            }),
+          )
+          .setLabel(input.language === "en" ? "View World Card" : "查看世界卡")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Back to Menu" : "回到菜单")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+    });
+  }
+
+  private async sendOnboardingAfterWorldCreate(input: {
+    guildId: string;
+    channelId: string;
+    userId: string;
+    language: UserLanguage | null;
+    worldId: number;
+    worldName: string;
+    buildChannelId: string;
+  }): Promise<void> {
+    const embeds: APIEmbed[] = [
+      {
+        title:
+          input.language === "en" ? "World Draft Created" : "世界草稿已创建",
+        description:
+          input.language === "en"
+            ? [
+                `W${input.worldId} ${input.worldName}`,
+                `Continue editing here: <#${input.buildChannelId}>`,
+                "",
+                "Paste/upload your lore, then publish when ready.",
+              ].join("\n")
+            : [
+                `W${input.worldId} ${input.worldName}`,
+                `去这里继续：<#${input.buildChannelId}>`,
+                "",
+                "在编辑话题粘贴/上传设定，整理完确认无误后发布。",
+              ].join("\n"),
+      },
+    ];
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Back to Menu" : "回到菜单")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+    });
   }
 
   private rememberPendingInteractionReply(
@@ -2244,6 +3593,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.sendWorldCreateRules({
         guildId: interaction.guildId,
         channelId: buildConversationChannelId,
+        userId: interaction.user.id,
         worldId,
         language,
         traceId,
@@ -2291,6 +3641,145 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         { ephemeral: true },
       );
     }
+  }
+
+  private async createWorldDraftAndThread(input: {
+    guild: Guild;
+    guildId: string;
+    userId: string;
+    language: UserLanguage | null;
+    traceId?: string;
+    flags: { isGuildOwner: boolean; isGuildAdmin: boolean };
+  }): Promise<{
+    worldId: number;
+    worldName: string;
+    buildConversationChannelId: string;
+  }> {
+    const groupPath = await this.groupRepository.ensureGroupDir(input.guildId);
+    const groupConfig = await this.groupRepository.loadConfig(groupPath);
+    const policy = groupConfig.world.createPolicy;
+    const isConfiguredAdmin = groupConfig.adminUsers.includes(input.userId);
+    const isGuildAdmin = input.flags.isGuildOwner || input.flags.isGuildAdmin;
+    const isWhitelisted = groupConfig.world.createWhitelist.includes(
+      input.userId,
+    );
+    const allowed =
+      policy === "open" ||
+      isConfiguredAdmin ||
+      isGuildAdmin ||
+      (policy === "whitelist" && isWhitelisted);
+    if (!allowed) {
+      throw new LocalizedError({
+        zh: `无权限：当前 createPolicy=${policy}（默认 admin）。`,
+        en: `Permission denied: createPolicy=${policy} (default: admin).`,
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const worldId = await this.worldStore.nextWorldId();
+    const worldName = `World-${worldId}`;
+
+    const source = {
+      filename: "source.md",
+      content: buildWorldSourceSeedContent(input.language),
+    };
+
+    await this.worldStore.createWorldDraft({
+      id: worldId,
+      homeGuildId: input.guildId,
+      creatorId: input.userId,
+      name: worldName,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    await this.userState.markWorldCreated(input.userId);
+
+    await this.worldFiles.ensureDefaultFiles({
+      worldId,
+      worldName,
+      creatorId: input.userId,
+      language: input.language,
+    });
+    await this.worldFiles.writeSourceDocument(worldId, source);
+    await this.worldFiles.appendEvent(worldId, {
+      type: "world_draft_created",
+      worldId,
+      guildId: input.guildId,
+      userId: input.userId,
+    });
+    await this.worldFiles.appendEvent(worldId, {
+      type: "world_source_uploaded",
+      worldId,
+      guildId: input.guildId,
+      userId: input.userId,
+      filename: source.filename,
+    });
+
+    await this.ensureWorldBuildGroupAgent({
+      worldId,
+      worldName,
+      language: input.language,
+    });
+
+    const workshop = await this.createCreatorOnlyChannel({
+      guild: input.guild,
+      name: `world-workshop-${input.userId}`,
+      creatorUserId: input.userId,
+      reason: `world workshop ensure for ${input.userId}`,
+    });
+
+    const thread = await this.tryCreatePrivateThread({
+      guild: input.guild,
+      parentChannelId: workshop.id,
+      name: pickByLanguage(
+        input.language,
+        `世界创建 W${worldId}`,
+        `World Create W${worldId}`,
+      ),
+      reason: `world create W${worldId} by ${input.userId}`,
+      memberUserId: input.userId,
+    });
+    if (!thread) {
+      throw new LocalizedError({
+        zh: "无法创建世界编辑话题：请检查 bot 是否具备创建话题权限（CreatePrivateThreads）",
+        en: "Failed to create the world editing thread: please check the bot permission (CreatePrivateThreads).",
+      });
+    }
+
+    const buildConversationChannelId = thread.threadId;
+
+    await this.worldStore.setWorldBuildChannelId({
+      worldId,
+      channelId: buildConversationChannelId,
+    });
+    await this.worldStore.setChannelWorldId(
+      buildConversationChannelId,
+      worldId,
+    );
+    await this.worldStore.setChannelGroupId(
+      buildConversationChannelId,
+      buildWorldBuildGroupId(worldId),
+    );
+
+    await this.worldFiles.appendEvent(worldId, {
+      type: "world_draft_build_thread_created",
+      worldId,
+      guildId: input.guildId,
+      userId: input.userId,
+      threadId: buildConversationChannelId,
+      parentChannelId: thread.parentChannelId,
+    });
+
+    await this.sendWorldCreateRules({
+      guildId: input.guildId,
+      channelId: buildConversationChannelId,
+      userId: input.userId,
+      worldId,
+      language: input.language,
+      traceId: input.traceId,
+    });
+
+    return { worldId, worldName, buildConversationChannelId };
   }
 
   private async handleWorldHelp(
@@ -2680,6 +4169,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.sendWorldCreateRules({
         guildId: interaction.guildId,
         channelId: buildConversationChannelId,
+        userId: interaction.user.id,
         worldId: meta.id,
         language,
       });
@@ -3630,6 +5120,113 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
   }
 
+  private async joinWorldForUser(input: {
+    guildId: string;
+    guild: Guild;
+    userId: string;
+    worldId: number;
+    language: UserLanguage | null;
+    explicitCharacterId?: number;
+  }): Promise<{
+    worldId: number;
+    worldName: string;
+    roleplayChannelId: string;
+    characterId: number;
+    forked: boolean;
+    sourceCharacterId: number;
+  }> {
+    const meta = await this.worldStore.getWorld(input.worldId);
+    if (!meta) {
+      throw new LocalizedError({
+        zh: `世界不存在：W${input.worldId}`,
+        en: `World not found: W${input.worldId}`,
+      });
+    }
+    if (meta.status !== "active") {
+      throw new LocalizedError({
+        zh: `无法加入：世界尚未发布（W${meta.id} 当前状态=${meta.status}）`,
+        en: `Cannot join: world is not published yet (W${meta.id} status=${meta.status})`,
+      });
+    }
+    if (input.guildId !== meta.homeGuildId) {
+      throw new LocalizedError({
+        zh: `无法加入：该世界入口在 guild:${meta.homeGuildId}（请先加入该服务器后再加入世界）。`,
+        en: `Cannot join: this world's entry server is guild:${meta.homeGuildId} (join that server first).`,
+      });
+    }
+
+    try {
+      const member = await input.guild.members.fetch(input.userId);
+      await member.roles.add(meta.roleId, "world join");
+      await this.worldStore.addMember(meta.id, input.userId).catch(() => false);
+      const persisted = await this.worldFiles
+        .ensureMember(meta.id, input.userId)
+        .catch(async () => ({
+          added: false,
+          stats: await this.worldFiles.readStats(meta.id),
+        }));
+      if (persisted.added) {
+        await this.worldFiles.appendEvent(meta.id, {
+          type: "world_joined",
+          worldId: meta.id,
+          userId: input.userId,
+        });
+      }
+
+      const selectedCharacterId = await this.resolveJoinCharacterId({
+        userId: input.userId,
+        explicitCharacterId: input.explicitCharacterId,
+      });
+      const worldCharacter = await this.ensureWorldSpecificCharacter({
+        worldId: meta.id,
+        worldName: meta.name,
+        userId: input.userId,
+        sourceCharacterId: selectedCharacterId,
+      });
+
+      await this.worldStore.setActiveCharacter({
+        worldId: meta.id,
+        userId: input.userId,
+        characterId: worldCharacter.characterId,
+      });
+      await this.worldStore
+        .addCharacterToWorld(meta.id, worldCharacter.characterId)
+        .catch(() => false);
+      await this.worldFiles
+        .ensureWorldCharacter(meta.id, worldCharacter.characterId)
+        .catch(() => {});
+
+      await this.userState
+        .addJoinedWorld(input.userId, meta.id)
+        .catch(() => {});
+
+      if (worldCharacter.forked) {
+        await this.maybeStartWorldCharacterAutoFix({
+          worldId: meta.id,
+          worldName: meta.name,
+          userId: input.userId,
+          characterId: worldCharacter.characterId,
+        }).catch((err) => {
+          this.logger.warn({ err }, "Failed to start world character auto-fix");
+        });
+      }
+
+      return {
+        worldId: meta.id,
+        worldName: meta.name,
+        roleplayChannelId: meta.roleplayChannelId,
+        characterId: worldCharacter.characterId,
+        forked: worldCharacter.forked,
+        sourceCharacterId: worldCharacter.sourceCharacterId,
+      };
+    } catch (err) {
+      throw new LocalizedError({
+        zh: `加入失败：${err instanceof Error ? err.message : String(err)}`,
+        en: `Failed to join: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
   private async handleWorldStats(
     interaction: ChatInputCommandInteraction,
     worldId: number,
@@ -4126,6 +5723,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       await this.sendCharacterCreateRules({
         guildId: interaction.guildId,
         channelId: buildConversationChannelId,
+        userId: interaction.user.id,
         characterId,
         language,
         traceId,
@@ -4197,6 +5795,125 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         { ephemeral: true },
       );
     }
+  }
+
+  private async createCharacterDraftAndThread(input: {
+    guild: Guild;
+    guildId: string;
+    userId: string;
+    language: UserLanguage | null;
+    traceId?: string;
+    visibility: CharacterVisibility;
+    name?: string;
+    description?: string;
+  }): Promise<{
+    characterId: number;
+    characterName: string;
+    visibility: CharacterVisibility;
+    buildConversationChannelId: string;
+    threadCreated: boolean;
+  }> {
+    const visibility =
+      input.visibility === "public"
+        ? ("public" as const)
+        : ("private" as const);
+    const description = input.description?.trim() ?? "";
+    const nameRaw = input.name?.trim() ?? "";
+
+    const characterId = await this.worldStore.nextCharacterId();
+    const nowIso = new Date().toISOString();
+    const name = nameRaw || `Character-${characterId}`;
+
+    await this.worldStore.createCharacter({
+      id: characterId,
+      creatorId: input.userId,
+      name,
+      visibility,
+      status: "active",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    await this.worldFiles.writeCharacterCard(
+      characterId,
+      buildDefaultCharacterCard({
+        characterId,
+        name,
+        creatorId: input.userId,
+        description,
+        language: input.language,
+      }),
+    );
+
+    const source = {
+      filename: "source.md",
+      content: buildCharacterSourceSeedContent(input.language),
+    };
+    await this.worldFiles.writeCharacterSourceDocument(characterId, source);
+    await this.worldFiles.appendCharacterEvent(characterId, {
+      type: "character_created",
+      characterId,
+      userId: input.userId,
+    });
+    await this.worldFiles.appendCharacterEvent(characterId, {
+      type: "character_source_uploaded",
+      characterId,
+      userId: input.userId,
+      filename: source.filename,
+    });
+    await this.userState.markCharacterCreated(input.userId);
+
+    await this.ensureCharacterBuildGroupAgent({
+      characterId,
+      characterName: name,
+      language: input.language,
+    });
+
+    const workshop = await this.createCreatorOnlyChannel({
+      guild: input.guild,
+      name: `character-workshop-${input.userId}`,
+      creatorUserId: input.userId,
+      reason: `character workshop ensure for ${input.userId}`,
+    });
+    const thread = await this.tryCreatePrivateThread({
+      guild: input.guild,
+      parentChannelId: workshop.id,
+      name: pickByLanguage(
+        input.language,
+        `角色创建 C${characterId}`,
+        `Character Create C${characterId}`,
+      ),
+      reason: `character create C${characterId} by ${input.userId}`,
+      memberUserId: input.userId,
+    });
+
+    const buildConversationChannelId = thread?.threadId ?? workshop.id;
+
+    await this.worldStore.setCharacterBuildChannelId({
+      characterId,
+      channelId: buildConversationChannelId,
+    });
+    await this.worldStore.setChannelGroupId(
+      buildConversationChannelId,
+      buildCharacterBuildGroupId(characterId),
+    );
+
+    await this.sendCharacterCreateRules({
+      guildId: input.guildId,
+      channelId: buildConversationChannelId,
+      userId: input.userId,
+      characterId,
+      language: input.language,
+      traceId: input.traceId,
+    });
+
+    return {
+      characterId,
+      characterName: name,
+      visibility,
+      buildConversationChannelId,
+      threadCreated: Boolean(thread),
+    };
   }
 
   private async handleCharacterHelp(
@@ -4673,6 +6390,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         await this.sendCharacterCreateRules({
           guildId: interaction.guildId,
           channelId: conversationChannelId,
+          userId: interaction.user.id,
           characterId: meta.id,
           language,
         });
@@ -5728,6 +7446,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     content?: string;
     embeds?: APIEmbed[];
     files?: Array<{ name: string; content: string }>;
+    components?: MessageCreateOptions["components"];
     traceId?: string;
   }): Promise<void> {
     const botId = this.botUserId?.trim() ?? this.client.user?.id ?? "";
@@ -5760,16 +7479,15 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
 
-    const payload: {
-      content?: string;
-      embeds?: APIEmbed[];
-      files?: Array<{ attachment: Buffer; name: string }>;
-    } = {};
+    const payload: MessageCreateOptions = {};
     if (content) {
       payload.content = content;
     }
     if (embeds.length > 0) {
       payload.embeds = embeds;
+    }
+    if (input.components && input.components.length > 0) {
+      payload.components = input.components;
     }
     if (files.length > 0) {
       payload.files = files
@@ -6204,6 +7922,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
   private async sendWorldCreateRules(input: {
     guildId?: string;
     channelId: string;
+    userId: string;
     worldId: number;
     language: UserLanguage | null;
     traceId?: string;
@@ -6217,11 +7936,63 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         language: input.language,
       }),
     });
+
+    const embeds: APIEmbed[] = [
+      {
+        title: pickByLanguage(input.language, "快捷操作", "Quick Actions"),
+        description: pickByLanguage(
+          input.language,
+          "整理完成后，在本话题用 /world publish 发布世界。",
+          "When you're ready, run /world publish in this thread.",
+        ),
+      },
+    ];
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "world_show",
+              payload: String(input.worldId),
+            }),
+          )
+          .setLabel(input.language === "en" ? "View World Card" : "查看世界卡")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Menu" : "新手菜单")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "help",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Help" : "帮助")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+      traceId: input.traceId,
+    });
   }
 
   private async sendCharacterCreateRules(input: {
     guildId?: string;
     channelId: string;
+    userId: string;
     characterId: number;
     language: UserLanguage | null;
     traceId?: string;
@@ -6234,6 +8005,57 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         characterId: input.characterId,
         language: input.language,
       }),
+    });
+
+    const embeds: APIEmbed[] = [
+      {
+        title: pickByLanguage(input.language, "快捷操作", "Quick Actions"),
+        description: pickByLanguage(
+          input.language,
+          "完善过程中随时可以查看当前角色卡；完成后继续加入世界。",
+          "You can view your current character card any time. When done, join a world.",
+        ),
+      },
+    ];
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_show",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(input.language === "en" ? "View Card" : "查看角色卡")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "world_list",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Join World" : "加入世界")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "menu",
+            }),
+          )
+          .setLabel(input.language === "en" ? "Menu" : "新手菜单")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
+    await this.sendRichToChannel({
+      guildId: input.guildId,
+      channelId: input.channelId,
+      embeds,
+      components,
+      traceId: input.traceId,
     });
   }
 
@@ -7915,6 +9737,22 @@ function splitDiscordMessage(input: string, maxLen: number): string[] {
   return chunks;
 }
 
+function truncateDiscordLabel(text: string, maxLen: number): string {
+  const normalized = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= maxLen) {
+    return normalized;
+  }
+  if (maxLen <= 1) {
+    return "…";
+  }
+  return `${normalized.slice(0, maxLen - 1)}…`;
+}
+
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   const tmpPath = path.join(
@@ -8113,6 +9951,111 @@ function buildInteractionCommand(
   } catch {
     return base;
   }
+}
+
+async function safeDeferUpdate(
+  interaction: MessageComponentInteraction,
+): Promise<void> {
+  try {
+    if (interaction.replied || interaction.deferred) {
+      return;
+    }
+    await interaction.deferUpdate();
+  } catch (err) {
+    feishuLogJson({
+      event: "log.warn",
+      msg: "Failed to defer discord component interaction update",
+      errName: err instanceof Error ? err.name : "Error",
+      errMessage: err instanceof Error ? err.message : String(err),
+      interactionId: interaction.id,
+      userId: interaction.user.id,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+    });
+  }
+}
+
+async function safeComponentFollowUp(
+  interaction: MessageComponentInteraction,
+  content: string,
+  options: { ephemeral: boolean },
+): Promise<void> {
+  try {
+    await interaction.followUp({ content, ephemeral: options.ephemeral });
+  } catch (err) {
+    feishuLogJson({
+      event: "log.warn",
+      msg: "Failed to follow up discord component interaction",
+      errName: err instanceof Error ? err.name : "Error",
+      errMessage: err instanceof Error ? err.message : String(err),
+      interactionId: interaction.id,
+      userId: interaction.user.id,
+      guildId: interaction.guildId ?? undefined,
+      channelId: interaction.channelId,
+    });
+  }
+}
+
+type OnboardingComponentAction =
+  | "menu"
+  | "help"
+  | "character_create"
+  | "character_show"
+  | "world_create"
+  | "world_show"
+  | "world_list"
+  | "world_join"
+  | "world_select";
+
+const ONBOARDING_CUSTOM_ID_PREFIX = "onb";
+
+function buildOnboardingCustomId(input: {
+  userId: string;
+  action: OnboardingComponentAction;
+  payload?: string;
+}): string {
+  const userId = input.userId.trim();
+  const payload = input.payload?.trim() ?? "";
+  const id = payload
+    ? `${ONBOARDING_CUSTOM_ID_PREFIX}:${userId}:${input.action}:${payload}`
+    : `${ONBOARDING_CUSTOM_ID_PREFIX}:${userId}:${input.action}`;
+  // Discord custom_id max length is 100.
+  return id.length > 100 ? id.slice(0, 100) : id;
+}
+
+function parseOnboardingCustomId(customId: string): {
+  userId: string;
+  action: OnboardingComponentAction;
+  payload: string;
+} | null {
+  const parts = customId.split(":");
+  if (parts.length < 3) {
+    return null;
+  }
+  const [prefix, userIdRaw, actionRaw, ...rest] = parts;
+  if (prefix !== ONBOARDING_CUSTOM_ID_PREFIX) {
+    return null;
+  }
+  const userId = (userIdRaw ?? "").trim();
+  if (!userId || !/^\d{16,20}$/.test(userId)) {
+    return null;
+  }
+  const action = (actionRaw ?? "").trim() as OnboardingComponentAction;
+  const allowed: OnboardingComponentAction[] = [
+    "menu",
+    "help",
+    "character_create",
+    "character_show",
+    "world_create",
+    "world_show",
+    "world_list",
+    "world_join",
+    "world_select",
+  ];
+  if (!allowed.includes(action)) {
+    return null;
+  }
+  return { userId, action, payload: rest.join(":") };
 }
 
 function previewTextForLog(text: string, maxBytes: number): string {

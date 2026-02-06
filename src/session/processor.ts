@@ -586,6 +586,7 @@ export class SessionProcessor {
             component: "session-processor",
             step: "opencode_run",
             msg: `opencode失败${timeoutHint} attempt:${runAttempt}/${maxRunAttempts} abort:${isAbort} status:${status ?? "n/a"}`,
+            timeoutPoint: timeoutPoint ?? undefined,
             errName,
             errMessage,
           });
@@ -670,6 +671,7 @@ export class SessionProcessor {
           component: "session-processor",
           step: "opencode_run",
           msg: `opencode最终失败${timeoutHint} attempts:${maxRunAttempts}`,
+          timeoutPoint: timeoutPoint ?? undefined,
           errName: lastError?.errName,
           errMessage: lastError?.errMessage ?? "unknown",
         });

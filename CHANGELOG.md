@@ -44,10 +44,13 @@
 - Discord：修复 `/character create` 等在创建私密 thread 后拉成员时 `Missing Access` 导致交互卡住；失败时会回覆报错并降级到 creator-only 工作坊频道
 - Discord：修复角色构建会话忽略上传设定文件的问题；现在上传 txt/md/json/docx 会自动写入 `character/source.md` 供模型读取
 - Worker：飞书日志补齐 opencode 超时发生点（区分 worker→opencode-server 与 opencode-server 内部超时）
+- Worker：`opencode_run` 的 warn/error 飞书日志新增结构化字段 `timeoutPoint`，并在飞书格式化输出中单独展示 `timeout:*`，方便检索与告警路由
 - Opencode：opencode-server 500 的 Bun fallback HTML 自动提取为简短可读的 TimeoutError 摘要（避免飞书截断看不到根因）
 - Discord：在世界创建编辑话题点击“菜单”会正确展示“世界创建者”菜单（不再误判为冒险者）
 - Discord：`/onboard` 回执中的身份名改为中英双语（避免语言与频道名不一致导致看不懂）
 - Discord：创建角色后 “Step 1: Character Created” 回执不再附带按钮（避免在世界/引导话题里造成干扰）
+- Discord：角色创建编辑话题 Quick Actions 新增【自动推进】【公开角色】【语言切换】按钮（仍支持 `/character publish`）
+- Discord：世界/角色新手文案统一为“世界书/角色图书馆/角色卡”表述，避免向用户暴露文件系统路径
 
 ## [0.0.31] - 2026-01-30
 

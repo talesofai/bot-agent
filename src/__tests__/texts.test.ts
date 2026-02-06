@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildCharacterBuildAgentPrompt,
+  buildDiscordCharacterBuildAutopilot,
   buildDiscordCharacterCreateGuide,
   buildDiscordHelp,
   buildDiscordOnboardingAutoPrompt,
@@ -64,14 +65,26 @@ describe("Discord help/onboarding texts", () => {
     expect(guide).toContain("no @ needed");
   });
 
-  test("buildDiscordCharacterCreateGuide (zh) mentions uploads and character/source.md", () => {
+  test("buildDiscordCharacterCreateGuide (zh) mentions uploads and library wording", () => {
     const guide = buildDiscordCharacterCreateGuide({
       characterId: 1,
       language: null,
     });
     expect(guide).toContain("上传");
-    expect(guide).toContain("character/source.md");
+    expect(guide).toContain("角色图书馆");
     expect(guide).toContain("/character publish");
+  });
+
+  test("buildDiscordCharacterBuildAutopilot (zh) uses library/product wording", () => {
+    const prompt = buildDiscordCharacterBuildAutopilot({
+      characterId: 1,
+      characterName: "Test",
+      language: null,
+    });
+    expect(prompt).toContain("角色图书馆");
+    expect(prompt).toContain("角色卡");
+    expect(prompt).not.toContain("character/source.md");
+    expect(prompt).not.toContain("character/character-card.md");
   });
 
   test("buildCharacterBuildAgentPrompt mentions character/source.md", () => {

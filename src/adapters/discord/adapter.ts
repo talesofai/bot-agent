@@ -82,6 +82,7 @@ import {
 } from "../../user/state-store";
 import {
   buildCharacterBuildAgentPrompt,
+  buildDiscordCharacterBuildAutopilot,
   buildDefaultCharacterCard,
   buildDiscordCharacterBuildKickoff,
   buildDiscordCharacterCreateGuide,
@@ -1144,7 +1145,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (ignoredLines.length > 0) {
       await this.sendMessage(
         session,
-        `已读取并写入 world/source.md（${uploaded.length} 个文档）。以下文件被忽略：\n${ignoredLines.map((line) => `- ${line}`).join("\n")}`,
+        `已读取并收录到「世界书：原始资料」（${uploaded.length} 个文档）。以下文件被忽略：\n${ignoredLines.map((line) => `- ${line}`).join("\n")}`,
       );
     }
 
@@ -1360,12 +1361,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (ignoredLines.length > 0) {
       await this.sendMessage(
         session,
-        `已读取并写入 character/source.md（${uploaded.length} 个文档）。以下文件被忽略：\n${ignoredLines.map((line) => `- ${line}`).join("\n")}`,
+        `已读取并收录到「角色图书馆：原始资料」（${uploaded.length} 个文档）。以下文件被忽略：\n${ignoredLines.map((line) => `- ${line}`).join("\n")}`,
       );
     } else if (!session.content?.trim()) {
       await this.sendMessage(
         session,
-        `已读取并写入 character/source.md（${uploaded.length} 个文档）。`,
+        `已读取并收录到「角色图书馆：原始资料」（${uploaded.length} 个文档）。`,
       );
     }
 
@@ -1797,7 +1798,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
     const roleLabel =
       language === "en"
-        ? (role: UserRole) => role
+        ? (role: UserRole) =>
+            role === "admin"
+              ? "admin / 管理员"
+              : role === "world creater"
+                ? "world creater / 世界创建者"
+                : "adventurer / 冒险者"
         : (role: UserRole) =>
             role === "admin"
               ? "管理员"
@@ -1923,6 +1929,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
               characterName: meta.name,
               language: next,
             });
+            await this.sendCharacterCreateRules({
+              guildId: interaction.guildId,
+              channelId: interaction.channelId,
+              userId: interaction.user.id,
+              characterId: meta.id,
+              language: next,
+            });
           } else {
             const worldMeta = await this.worldStore.getWorld(
               parsedCharacter.worldId,
@@ -2003,6 +2016,139 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           interaction,
           resolveUserMessageFromError(language, err, {
             zh: `创建失败：${err instanceof Error ? err.message : String(err)}`,
+            en: `Failed: ${err instanceof Error ? err.message : String(err)}`,
+          }),
+          { ephemeral: true },
+        );
+      }
+      return;
+    }
+
+    if (parsed.action === "character_autopilot") {
+      const expectedCharacterId = Number(parsed.payload);
+      if (
+        (!Number.isInteger(expectedCharacterId) || expectedCharacterId <= 0) &&
+        parsed.payload.trim()
+      ) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            "无效的 character_id。",
+            "Invalid character_id.",
+          ),
+          { ephemeral: true },
+        );
+        return;
+      }
+
+      const resolved = await this.resolveCharacterBuildDraftFromChannel({
+        channelId: interaction.channelId,
+        expectedCharacterId:
+          Number.isInteger(expectedCharacterId) && expectedCharacterId > 0
+            ? expectedCharacterId
+            : null,
+        requesterUserId: interaction.user.id,
+        language,
+        requireCreator: true,
+      });
+      if (!resolved.ok) {
+        await safeComponentFollowUp(interaction, resolved.message, {
+          ephemeral: true,
+        });
+        return;
+      }
+      const { meta } = resolved;
+
+      const traceId = createTraceId();
+      await this.ensureCharacterBuildGroupAgent({
+        characterId: meta.id,
+        characterName: meta.name,
+        language,
+      });
+      await this.emitSyntheticCharacterBuildAutopilot({
+        channelId: interaction.channelId,
+        userId: interaction.user.id,
+        characterId: meta.id,
+        characterName: meta.name,
+        traceId,
+      });
+      await safeComponentFollowUp(
+        interaction,
+        pickByLanguage(
+          language,
+          "已开始自动推进整理，请稍等片刻…",
+          "Autopilot started. Please wait…",
+        ),
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    if (parsed.action === "character_publish") {
+      const expectedCharacterId = Number(parsed.payload);
+      if (
+        (!Number.isInteger(expectedCharacterId) || expectedCharacterId <= 0) &&
+        parsed.payload.trim()
+      ) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            "无效的 character_id。",
+            "Invalid character_id.",
+          ),
+          { ephemeral: true },
+        );
+        return;
+      }
+
+      const resolved = await this.resolveCharacterBuildDraftFromChannel({
+        channelId: interaction.channelId,
+        expectedCharacterId:
+          Number.isInteger(expectedCharacterId) && expectedCharacterId > 0
+            ? expectedCharacterId
+            : null,
+        requesterUserId: interaction.user.id,
+        language,
+        requireCreator: true,
+      });
+      if (!resolved.ok) {
+        await safeComponentFollowUp(interaction, resolved.message, {
+          ephemeral: true,
+        });
+        return;
+      }
+      const { meta } = resolved;
+
+      await safeComponentFollowUp(
+        interaction,
+        pickByLanguage(
+          language,
+          "收到，正在公开角色…",
+          "Got it. Publishing character…",
+        ),
+        { ephemeral: true },
+      );
+      try {
+        await this.worldStore.setCharacterVisibility({
+          characterId: meta.id,
+          visibility: "public",
+        });
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            `已公开角色：C${meta.id} ${meta.name}`,
+            `Character published: C${meta.id} ${meta.name}`,
+          ),
+          { ephemeral: true },
+        );
+      } catch (err) {
+        await safeComponentFollowUp(
+          interaction,
+          resolveUserMessageFromError(language, err, {
+            zh: `公开失败：${err instanceof Error ? err.message : String(err)}`,
             en: `Failed: ${err instanceof Error ? err.message : String(err)}`,
           }),
           { ephemeral: true },
@@ -4387,6 +4533,71 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       };
     }
     return { ok: true, worldId: parsed.worldId, meta };
+  }
+
+  private async resolveCharacterBuildDraftFromChannel(input: {
+    channelId: string;
+    expectedCharacterId: number | null;
+    requesterUserId: string;
+    language: UserLanguage | null;
+    requireCreator: boolean;
+  }): Promise<
+    | {
+        ok: true;
+        characterId: number;
+        meta: NonNullable<Awaited<ReturnType<WorldStore["getCharacter"]>>>;
+      }
+    | { ok: false; message: string }
+  > {
+    const groupId = await this.worldStore
+      .getGroupIdByChannel(input.channelId)
+      .catch(() => null);
+    const parsed = groupId ? parseCharacterGroup(groupId) : null;
+    if (!parsed || parsed.kind !== "build") {
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
+          "请先执行 /character create 或 /character open，然后在对应编辑话题执行该操作。",
+          "Run /character create or /character open first, then run this inside the corresponding editing thread.",
+        ),
+      };
+    }
+    if (
+      input.expectedCharacterId !== null &&
+      parsed.characterId !== input.expectedCharacterId
+    ) {
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
+          "该按钮与当前编辑话题不匹配（character_id 不一致）。",
+          "This button does not match the current thread (character_id mismatch).",
+        ),
+      };
+    }
+    const meta = await this.worldStore.getCharacter(parsed.characterId);
+    if (!meta) {
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
+          `角色不存在：C${parsed.characterId}`,
+          `Character not found: C${parsed.characterId}`,
+        ),
+      };
+    }
+    if (input.requireCreator && meta.creatorId !== input.requesterUserId) {
+      return {
+        ok: false,
+        message: pickByLanguage(
+          input.language,
+          "无权限：只有角色创作者可以执行该操作。",
+          "Permission denied: only the character creator can do this.",
+        ),
+      };
+    }
+    return { ok: true, characterId: parsed.characterId, meta };
   }
 
   private async publishWorldFromBuildChannel(input: {
@@ -7089,7 +7300,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       channelId: thread.threadId,
       content: [
         `【世界专用角色卡修正】C${input.characterId}（W${input.worldId}）`,
-        `我会尝试根据该世界的 world/rules.md 自动校正角色卡（只改角色卡，不改世界正典）。`,
+        `我会尝试根据该世界的「世界书：规则」自动校正角色卡（只改角色卡，不改世界正典）。`,
         `你可以在本话题继续补充信息（不需要 @）。`,
       ].join("\n"),
     });
@@ -8125,8 +8336,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         title: pickByLanguage(input.language, "快捷操作", "Quick Actions"),
         description: pickByLanguage(
           input.language,
-          "可点【自动推进】让 LLM 先整理一版；确认 OK 后点【发布】（等价 /world publish）。",
-          "Click “Autopilot” to let the LLM draft a first pass; when ready, click “Publish” (same as /world publish).",
+          "可点【自动推进】让 LLM 先整理一版；确认 OK 后点【发布】；也可用下方【中文/English】切换语言。",
+          "Click “Autopilot” to let the LLM draft a first pass, then click “Publish” when ready; you can also switch language below.",
         ),
       },
     ];
@@ -8240,13 +8451,34 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         title: pickByLanguage(input.language, "快捷操作", "Quick Actions"),
         description: pickByLanguage(
           input.language,
-          "完善过程中随时可以查看当前角色卡；完成后继续加入世界。",
-          "You can view your current character card any time. When done, join a world.",
+          "可点【自动推进】让 LLM 先整理一版；满意后点【公开角色】；也可随时查看角色卡并加入世界。",
+          "Click “Autopilot” for a first draft, then “Publish Character” when ready; you can also view the card and join a world.",
         ),
       },
     ];
+    const isEnglish = input.language === "en";
     const components: MessageCreateOptions["components"] = [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_autopilot",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(isEnglish ? "Autopilot" : "自动推进")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_publish",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(isEnglish ? "Publish Character" : "公开角色")
+          .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId(
             buildOnboardingCustomId({
@@ -8264,8 +8496,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
               action: "world_list",
             }),
           )
-          .setLabel(input.language === "en" ? "Join World" : "加入世界")
-          .setStyle(ButtonStyle.Primary),
+          .setLabel(isEnglish ? "Join World" : "加入世界")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "language_set",
+              payload: "zh",
+            }),
+          )
+          .setLabel("中文")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!isEnglish),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "language_set",
+              payload: "en",
+            }),
+          )
+          .setLabel("English")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(isEnglish),
         new ButtonBuilder()
           .setCustomId(
             buildOnboardingCustomId({
@@ -8273,7 +8529,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
               action: "menu",
             }),
           )
-          .setLabel(input.language === "en" ? "Menu" : "新手菜单")
+          .setLabel(isEnglish ? "Menu" : "新手菜单")
           .setStyle(ButtonStyle.Secondary),
       ),
     ];
@@ -8604,6 +8860,56 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         synthetic: true,
         interactionId: messageId,
         commandName: "character.create.kickoff",
+        channelId: input.channelId,
+        guildId: undefined,
+        userId: input.userId,
+      },
+    } satisfies SessionEvent<DiscordInteractionExtras>);
+  }
+
+  private async emitSyntheticCharacterBuildAutopilot(input: {
+    channelId: string;
+    userId: string;
+    characterId: number;
+    characterName: string;
+    traceId?: string;
+  }): Promise<void> {
+    if (this.listenerCount("event") === 0) {
+      return;
+    }
+    const botId = this.botUserId?.trim() ?? "";
+    if (!botId) {
+      return;
+    }
+
+    const language = await this.userState
+      .getLanguage(input.userId)
+      .catch(() => null);
+    const content = buildDiscordCharacterBuildAutopilot({
+      characterId: input.characterId,
+      characterName: input.characterName,
+      language,
+    });
+
+    const messageId = `synthetic-character-autopilot-${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}`;
+    await this.emitEvent({
+      type: "message",
+      platform: "discord",
+      selfId: botId,
+      userId: input.userId,
+      guildId: undefined,
+      channelId: input.channelId,
+      messageId,
+      content,
+      elements: [{ type: "text", text: content }],
+      timestamp: Date.now(),
+      extras: {
+        traceId: input.traceId,
+        synthetic: true,
+        interactionId: messageId,
+        commandName: "character.autopilot",
         channelId: input.channelId,
         guildId: undefined,
         userId: input.userId,
@@ -10278,6 +10584,8 @@ type OnboardingComponentAction =
   | "help"
   | "language_set"
   | "character_create"
+  | "character_autopilot"
+  | "character_publish"
   | "character_show"
   | "world_create"
   | "world_autopilot"
@@ -10326,6 +10634,8 @@ function parseOnboardingCustomId(customId: string): {
     "help",
     "language_set",
     "character_create",
+    "character_autopilot",
+    "character_publish",
     "character_show",
     "world_create",
     "world_autopilot",

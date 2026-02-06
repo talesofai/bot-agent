@@ -266,6 +266,7 @@ function formatFeishuEvent(record: Record<string, unknown>): string | null {
     const msg = readString(record.msg);
     const component = readString(record.component);
     const step = readString(record.step);
+    const timeoutPoint = readString(record.timeoutPoint);
     const errName = readString(record.errName);
     const errMessage = readString(record.errMessage);
     const parts = [
@@ -274,6 +275,7 @@ function formatFeishuEvent(record: Record<string, unknown>): string | null {
       component ? ` component:${component}` : null,
       step ? ` step:${step}` : null,
       msg ? ` msg:${msg}` : null,
+      timeoutPoint ? ` timeout:${timeoutPoint}` : null,
       errName || errMessage
         ? ` err:${[errName, errMessage].filter(Boolean).join(":")}`
         : null,

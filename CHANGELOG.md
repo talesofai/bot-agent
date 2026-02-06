@@ -46,6 +46,7 @@
 - Worker：飞书日志补齐 opencode 超时发生点（区分 worker→opencode-server 与 opencode-server 内部超时）
 - Opencode：opencode-server 500 的 Bun fallback HTML 自动提取为简短可读的 TimeoutError 摘要（避免飞书截断看不到根因）
 - Discord：在世界创建编辑话题点击“菜单”会正确展示“世界创建者”菜单（不再误判为冒险者）
+- Discord：`/onboard` 回执中的身份名改为中英双语（避免语言与频道名不一致导致看不懂）
 
 ## [0.0.31] - 2026-01-30
 

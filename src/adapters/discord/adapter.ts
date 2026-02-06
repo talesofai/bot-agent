@@ -545,15 +545,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
 
-    const roleLabel =
-      language === "en"
-        ? (role: UserRole) => role
-        : (role: UserRole) =>
-            role === "admin"
-              ? "管理员"
-              : role === "world creater"
-                ? "世界创建者"
-                : "冒险者";
+    const roleLabel = (role: UserRole) =>
+      role === "admin"
+        ? "admin / 管理员"
+        : role === "world creater"
+          ? "world creater / 世界创建者"
+          : "adventurer / 冒险者";
     const dm =
       language === "en"
         ? [

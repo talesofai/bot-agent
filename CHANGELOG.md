@@ -39,6 +39,7 @@
 - Discord：`/world publish` 支持可选 `cover` 附件，并在 `world-index` 发帖失败时返回可见提示（不再静默吞错）
 - Discord：世界发布/迁移会自动补建 `world-forum`（优先 Forum，失败回退 Text）并同步创作者权限
 - Discord：世界列表/加入等展示优先读取世界卡与角色卡中的实际名称（不存在时再回退默认名）
+- Texts：统一用户可见文案为产品术语，不再暴露工作区/文件路径语义；内部 LLM 提示保留路径指令并显式要求不得对用户外露
 - Discord：世界公告在配置 `WIKI_PUBLIC_BASE_URL` 后会附带 Wiki 中/英文直达链接
 
 ### Fixed

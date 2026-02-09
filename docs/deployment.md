@@ -374,7 +374,7 @@ curl http://localhost:8080/health
 
 ### 指标
 
-Prometheus 指标端点仍在规划中（暂无 `/metrics` 路由）。
+当前未提供 Prometheus 指标端点（暂无 `/metrics` 路由）；建议用 `/health` + 日志系统（如 Loki/ELK）做基础监控。
 
 ## 安全建议
 

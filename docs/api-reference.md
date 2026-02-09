@@ -1,8 +1,8 @@
 # API 参考
 
-本文档为接口草案。默认仅实现健康检查接口，其余接口仍在规划中；如设置 `API_TOKEN`（建议放入 `configs/.env` 或运行环境变量），会额外启用受保护的管理接口（当前仅实现群重载）。
+本文档记录当前 HTTP 能力与历史草案。当前已实现：`GET /health`、`/wiki/*`（含根路径重写）和受保护的 `POST /api/v1/groups/{group_id}/reload`；其余接口仍为草案，尚未实现。
 
-> 状态：除健康检查与群重载外均为规划，接口与字段可能调整。
+> 状态：已实现接口以“已实现”标注；其余章节仅供规划参考，实际请求可能返回 404。
 
 ## HTTP API
 
@@ -24,17 +24,26 @@ GET /health
 }
 ```
 
-### 指标
+### Wiki（已实现）
+
+```http
+GET /wiki
+GET /wiki/*
+```
+
+说明：访问根路径 `/` 以及非 `/api/*` 的普通 `GET/HEAD` 路径时，会自动重写到 `/wiki`。
+
+### 指标（未实现）
 
 ```http
 GET /metrics
 ```
 
-返回 Prometheus 格式的指标数据（规划中）。
+当前未提供 Prometheus 指标端点；请使用 `/health` 与日志系统完成可用性观测。
 
-### 群管理（部分实现）
+### 群管理
 
-#### 列出所有群
+#### 列出所有群（未实现）
 
 ```http
 GET /api/v1/groups
@@ -55,7 +64,7 @@ GET /api/v1/groups
 }
 ```
 
-#### 获取群配置
+#### 获取群配置（未实现）
 
 ```http
 GET /api/v1/groups/{group_id}
@@ -98,7 +107,7 @@ GET /api/v1/groups/{group_id}
 
 说明：`maxSessions` 为每用户最大会话数；`keywordRouting` 控制是否启用全局/群/机器人关键词；`echoRate` 为空时继承上一级复读概率；`model` 仅外部模式生效（litellm 模型 ID，允许包含 `/`，且必须在 `OPENCODE_MODELS` 白名单内）。
 
-#### 更新群配置
+#### 更新群配置（未实现）
 
 ```http
 PUT /api/v1/groups/{group_id}
@@ -124,7 +133,7 @@ Content-Type: application/json
 }
 ```
 
-#### 重载群配置
+#### 重载群配置（已实现）
 
 ```http
 POST /api/v1/groups/{group_id}/reload
@@ -137,7 +146,7 @@ POST /api/v1/groups/{group_id}/reload
 - `Authorization: Bearer ${API_TOKEN}`
 - `X-API-Token: ${API_TOKEN}`
 
-### Agent 配置（规划）
+### Agent 配置（未实现）
 
 #### 获取 Agent 配置
 
@@ -164,7 +173,7 @@ Content-Type: application/json
 }
 ```
 
-### 技能管理（规划）
+### 技能管理（未实现）
 
 #### 列出技能
 
@@ -212,9 +221,9 @@ Content-Type: application/json
 DELETE /api/v1/groups/{group_id}/skills/{skill_name}
 ```
 
-## WebSocket API
+## WebSocket API（未实现）
 
-规划支持 WebSocket 连接，用于实时事件推送。
+当前未提供 `/ws` 端点，以下为历史草案。
 
 ### 连接
 
@@ -292,7 +301,7 @@ AI 回复时推送。
 | `forbidden`       | 403         | 权限不足       |
 | `internal_error`  | 500         | 服务器内部错误 |
 
-## 认证（规划）
+## 认证（已用于受保护接口）
 
 API 使用 Bearer Token 认证：
 

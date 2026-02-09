@@ -86,6 +86,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   BOT_ID_ALIASES: z.string().optional(),
   HTTP_PORT: z.coerce.number().int().min(1).default(8080),
+  /** Optional public base URL for wiki links in announcements (e.g. https://llbot-0.talesofai.cn). */
+  WIKI_PUBLIC_BASE_URL: z.string().url().optional(),
   WORKER_HTTP_PORT: z.coerce.number().int().min(0).default(8081),
   /** BullMQ worker concurrency (number of sessions processed in parallel per worker instance). */
   SESSION_WORKER_CONCURRENCY: z.coerce

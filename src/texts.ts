@@ -489,9 +489,10 @@ export function buildDiscordWorldHelp(
       "- /world create（默认仅管理员；可配置 world.createPolicy）",
       "  - 执行后会创建一个编辑话题：粘贴/上传设定原文，多轮补全；用 /world publish 发布世界并创建子空间",
       "- /world open world_id:<世界ID>（仅创作者；打开该世界的编辑话题）",
-      "- /world publish（仅创作者；在编辑话题中发布草稿世界）",
+      "- /world publish [cover:<图片>]（仅创作者；在编辑话题中发布草稿世界，可附带 world-index 封面图）",
       "- /world export [world_id:<世界ID>]（仅创作者；导出 world-card/rules + canon 文件）",
       "- /world import kind:world_card|rules|canon file:<文件> [world_id:<世界ID>]（仅创作者；上传并覆盖；kind=canon 写入 canon/<文件名>，如带 W<id>- 前缀会自动剥离）",
+      "- /world image name:<名称> file:<图片> [world_id:<世界ID>]（仅创作者；上传图片并写入世界书 source）",
       "- /world list [limit:<1-100>]",
       "- /world search query:<关键词> [limit:<1-50>]",
       "- /world info [world_id:<世界ID>]（在世界子空间频道内可省略 world_id）",
@@ -513,9 +514,10 @@ export function buildDiscordWorldHelp(
       "- /world create (admin-only by default; configurable via world.createPolicy)",
       "  - Creates an editing thread for pasting/uploading source lore; use /world publish to publish and create the world subspace",
       "- /world open world_id:<WORLD_ID> (creator only; open the editing thread)",
-      "- /world publish (creator only; publish the draft world from the editing thread)",
+      "- /world publish [cover:<IMAGE>] (creator only; publish the draft world from the editing thread, optionally with a world-index cover image)",
       "- /world export [world_id:<WORLD_ID>] (creator only; export world-card/rules + canon docs)",
       "- /world import kind:world_card|rules|canon file:<FILE> [world_id:<WORLD_ID>] (creator only; overwrite; kind=canon writes into canon/<filename> and strips leading W<id>- if present)",
+      "- /world image name:<NAME> file:<IMAGE> [world_id:<WORLD_ID>] (creator only; upload an image and append it into worldbook source)",
       "- /world list [limit:<1-100>]",
       "- /world search query:<KEYWORD> [limit:<1-50>]",
       "- /world info [world_id:<WORLD_ID>] (world_id can be omitted inside world channels)",
@@ -809,6 +811,68 @@ export function buildDiscordCharacterBuildAutopilot(input: {
       "",
       "Write what you can first; clearly mark uncertainties, then list 3–5 questions for me to confirm.",
       "Do not roleplay; do not invent details not provided; do not use interactive question tools (e.g. question).",
+      "",
+      `Character: C${input.characterId} ${input.characterName}`,
+    ].join("\n"),
+  );
+}
+
+export function buildDiscordCharacterPortraitGenerate(input: {
+  characterId: number;
+  characterName: string;
+  language: UserLanguage | null | undefined;
+}): string {
+  return pick(
+    input.language,
+    [
+      "请为当前角色生成 1 张角色立绘。",
+      "",
+      "必须要求：",
+      "1) 必须调用 banana 生图相关技能，优先 TalesOfAI MCP 的 make image / edit image；禁止编造图片链接。",
+      "2) 若当前会话已存在角色卡，请优先读取并严格按角色卡绘制。",
+      "3) 只输出最终图片（Markdown 图片语法），不要长篇解释。",
+      "",
+      `角色：C${input.characterId} ${input.characterName}`,
+    ].join("\n"),
+    [
+      "Generate one portrait image for the current character.",
+      "",
+      "Requirements:",
+      "1) Must use banana image-generation skills, preferring TalesOfAI MCP make-image / edit-image tools; never fabricate image URLs.",
+      "2) If a character card exists in this session, read it first and follow it closely.",
+      "3) Output only the final image (Markdown image syntax), no long explanation.",
+      "",
+      `Character: C${input.characterId} ${input.characterName}`,
+    ].join("\n"),
+  );
+}
+
+export function buildDiscordCharacterPortraitGenerateWithReference(input: {
+  characterId: number;
+  characterName: string;
+  language: UserLanguage | null | undefined;
+}): string {
+  return pick(
+    input.language,
+    [
+      "请为当前角色生成 1 张角色立绘（参考图模式）。",
+      "",
+      "必须要求：",
+      "1) 必须调用 banana 改图/生图技能，优先 TalesOfAI MCP 的 edit image；禁止编造图片链接。",
+      "2) 若当前消息或近期消息没有参考图，请先明确向用户要参考图后再生成。",
+      "3) 若会话内存在角色卡，需同时遵循角色卡设定与参考图关键信息。",
+      "4) 只输出最终图片（Markdown 图片语法），不要长篇解释。",
+      "",
+      `角色：C${input.characterId} ${input.characterName}`,
+    ].join("\n"),
+    [
+      "Generate one portrait image for the current character (reference-image mode).",
+      "",
+      "Requirements:",
+      "1) Must use banana image edit/generation skills, preferring TalesOfAI MCP edit-image; never fabricate image URLs.",
+      "2) If there is no reference image in current/recent messages, explicitly ask the user for one before generating.",
+      "3) If a character card exists, follow both the card and the key visual cues from the reference image.",
+      "4) Output only the final image (Markdown image syntax), no long explanation.",
       "",
       `Character: C${input.characterId} ${input.characterName}`,
     ].join("\n"),

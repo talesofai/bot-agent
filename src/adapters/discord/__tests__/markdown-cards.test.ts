@@ -55,6 +55,32 @@ describe("markdown-cards", () => {
     );
   });
 
+  test("drops markdown separator lines from embed descriptions", () => {
+    const markdown = [
+      `# 世界观设计卡（W2）`,
+      `## 字段-2. 社会设定`,
+      `------------------------------|`,
+      `| 字段 | 内容 |`,
+      `| ---- | ---- |`,
+      `| 政治体制 | 乌甸巨人议会 |`,
+    ].join("\n");
+
+    const embeds = buildMarkdownCardEmbeds(markdown, {
+      titlePrefix: "世界卡",
+      maxEmbeds: 18,
+      includeEmptyFields: true,
+    });
+
+    const descriptions = embeds
+      .map((embed) => embed.description ?? "")
+      .join("\n");
+    expect(descriptions).not.toContain("------------------------------|");
+    expect(descriptions).not.toContain("| ---- | ---- |");
+
+    const fields = embeds.flatMap((embed) => embed.fields ?? []);
+    expect(fields.some((field) => field.name.includes("政治体制"))).toBe(true);
+  });
+
   test("chunks embeds into groups of up to 10", () => {
     const embeds = Array.from({ length: 21 }, (_v, i) => ({
       title: `E${i + 1}`,

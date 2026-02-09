@@ -202,9 +202,12 @@ function extractPairsAndNotes(body: string): {
       notes.push(line);
       continue;
     }
-
     if (inCodeBlock) {
       notes.push(line);
+      continue;
+    }
+
+    if (isMarkdownSeparatorLine(trimmed)) {
       continue;
     }
 
@@ -222,7 +225,7 @@ function extractPairsAndNotes(body: string): {
     if (tableMatch) {
       const key = (tableMatch[1] ?? "").trim();
       const value = (tableMatch[2] ?? "").trim();
-      if (key && !/^-+$/.test(key)) {
+      if (key && !isMarkdownTableSeparatorCell(key)) {
         pairs.push({ key, value });
         continue;
       }
@@ -331,6 +334,24 @@ function truncateDiscordEmbedDescription(
   const cutAt = lastNewline > 400 ? lastNewline : slice.length;
   const text = normalized.slice(0, cutAt).trimEnd();
   return { text: `${text}${ellipsis}`, truncated: true };
+}
+
+function isMarkdownSeparatorLine(trimmedLine: string): boolean {
+  if (!trimmedLine) {
+    return false;
+  }
+  if (/^[-*_]{3,}$/.test(trimmedLine)) {
+    return true;
+  }
+  return /^\|?[\s:|-]{3,}\|?$/.test(trimmedLine);
+}
+
+function isMarkdownTableSeparatorCell(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  return /^:?-{2,}:?$/.test(normalized);
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {

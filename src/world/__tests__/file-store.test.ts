@@ -150,6 +150,61 @@ describe("WorldFileStore character source documents", () => {
   });
 });
 
+describe("WorldFileStore image assets", () => {
+  test("writeWorldImageAsset stores file and updates index", async () => {
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const store = new WorldFileStore({ logger, dataRoot: tempDir });
+
+    try {
+      const first = await store.writeWorldImageAsset(1, {
+        name: " 天空 城 ",
+        sourceFilename: "sky.webp",
+        uploaderId: "u1",
+        contentType: "image/webp",
+        bytes: Buffer.from([1, 2, 3, 4]),
+      });
+      const second = await store.writeWorldImageAsset(1, {
+        name: "World Cover",
+        sourceFilename: "cover.jpeg",
+        uploaderId: "u2",
+        bytes: Buffer.from([9, 8, 7]),
+      });
+
+      expect(first.relativePath.startsWith("assets/images/")).toBe(true);
+      expect(first.filename.endsWith(".webp")).toBe(true);
+      expect(first.name).toBe("天空 城");
+      expect(second.filename.endsWith(".jpeg")).toBe(true);
+
+      const firstPath = join(tempDir, "worlds", "1", first.relativePath);
+      const secondPath = join(tempDir, "worlds", "1", second.relativePath);
+      expect(readFileSync(firstPath).byteLength).toBe(4);
+      expect(readFileSync(secondPath).byteLength).toBe(3);
+
+      const indexPath = join(
+        tempDir,
+        "worlds",
+        "1",
+        "assets",
+        "images",
+        "index.json",
+      );
+      const index = JSON.parse(readFileSync(indexPath, "utf8")) as Array<{
+        name: string;
+        filename: string;
+        sourceFilename: string;
+      }>;
+      expect(index.length).toBe(2);
+      expect(index[0]?.name).toBe("天空 城");
+      expect(index[0]?.sourceFilename).toBe("sky.webp");
+      expect(index[1]?.name).toBe("World Cover");
+      expect(index[1]?.filename).toBe(second.filename);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("WorldFileStore stats", () => {
   test("ensureMember maintains visitorCount under parallel joins", async () => {
     const tempDir = makeTempDir();

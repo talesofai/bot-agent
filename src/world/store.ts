@@ -32,6 +32,7 @@ export type WorldActiveMeta = {
   infoChannelId: string;
   joinChannelId?: string;
   roleplayChannelId: string;
+  forumChannelId?: string;
   proposalsChannelId: string;
   voiceChannelId: string;
   buildChannelId?: string;
@@ -158,6 +159,25 @@ export class WorldStore {
     await multi.exec();
   }
 
+  async setWorldForumChannelId(input: {
+    worldId: WorldId;
+    channelId: string;
+  }): Promise<void> {
+    const worldId = normalizeWorldId(input.worldId);
+    const trimmed = input.channelId.trim();
+    if (!trimmed) {
+      throw new Error("channelId is required");
+    }
+    assertSafePathSegment(trimmed, "channelId");
+    const multi = this.redis.multi();
+    multi.hset(this.worldMetaKey(worldId), {
+      forumChannelId: trimmed,
+      updatedAt: new Date().toISOString(),
+    });
+    multi.set(this.channelWorldKey(trimmed), String(worldId));
+    await multi.exec();
+  }
+
   async setWorldName(input: { worldId: WorldId; name: string }): Promise<void> {
     const worldId = normalizeWorldId(input.worldId);
     const name = input.name.trim();
@@ -201,6 +221,10 @@ export class WorldStore {
     if (joinChannelId) {
       payload.joinChannelId = joinChannelId;
     }
+    const forumChannelId = meta.forumChannelId?.trim();
+    if (forumChannelId) {
+      payload.forumChannelId = forumChannelId;
+    }
     const buildChannelId = meta.buildChannelId?.trim();
     if (buildChannelId) {
       payload.buildChannelId = buildChannelId;
@@ -216,6 +240,9 @@ export class WorldStore {
     multi.set(this.channelWorldKey(meta.infoChannelId), String(meta.id));
     multi.set(this.channelWorldKey(meta.roleplayChannelId), String(meta.id));
     multi.set(this.channelWorldKey(meta.proposalsChannelId), String(meta.id));
+    if (payload.forumChannelId) {
+      multi.set(this.channelWorldKey(payload.forumChannelId), String(meta.id));
+    }
     if (payload.joinChannelId) {
       multi.set(this.channelWorldKey(payload.joinChannelId), String(meta.id));
     }
@@ -510,6 +537,9 @@ export class WorldStore {
       multi.del(this.channelWorldKey(meta.infoChannelId));
       multi.del(this.channelWorldKey(meta.roleplayChannelId));
       multi.del(this.channelWorldKey(meta.proposalsChannelId));
+      if (meta.forumChannelId?.trim()) {
+        multi.del(this.channelWorldKey(meta.forumChannelId));
+      }
       if (meta.joinChannelId?.trim()) {
         multi.del(this.channelWorldKey(meta.joinChannelId));
       }
@@ -979,6 +1009,7 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
 
   const buildChannelId = raw.buildChannelId?.trim() || undefined;
   const joinChannelId = raw.joinChannelId?.trim() || undefined;
+  const forumChannelId = raw.forumChannelId?.trim() || undefined;
 
   return {
     id,
@@ -993,6 +1024,7 @@ function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
     infoChannelId: raw.infoChannelId,
     joinChannelId,
     roleplayChannelId: raw.roleplayChannelId,
+    forumChannelId,
     proposalsChannelId: raw.proposalsChannelId,
     voiceChannelId: raw.voiceChannelId,
     buildChannelId,

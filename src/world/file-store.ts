@@ -36,6 +36,17 @@ export type WorldStatsV1 = {
   updatedAt: string;
 };
 
+export type WorldImageAssetRecord = {
+  name: string;
+  filename: string;
+  relativePath: string;
+  sourceFilename: string;
+  uploaderId: string;
+  uploadedAt: string;
+  contentType: string;
+  sizeBytes: number;
+};
+
 export class WorldFileStore {
   private logger: Logger;
   private dataRoot: string;
@@ -58,6 +69,7 @@ export class WorldFileStore {
     const dir = this.worldDir(worldId);
     await mkdir(dir, { recursive: true });
     await mkdir(path.join(dir, "map"), { recursive: true });
+    await mkdir(path.join(dir, "assets", "images"), { recursive: true });
     await mkdir(path.join(dir, "canon"), { recursive: true });
     await mkdir(path.join(dir, "members"), { recursive: true });
     await mkdir(path.join(dir, "world-characters"), { recursive: true });
@@ -195,6 +207,48 @@ export class WorldFileStore {
 
   async readSourceDocument(worldId: WorldId): Promise<string | null> {
     return this.readTextFile(this.worldFilePath(worldId, "source_latest"));
+  }
+
+  async writeWorldImageAsset(
+    worldId: WorldId,
+    input: {
+      name: string;
+      sourceFilename: string;
+      uploaderId: string;
+      contentType?: string;
+      bytes: Buffer;
+    },
+  ): Promise<WorldImageAssetRecord> {
+    await this.ensureWorldDir(worldId);
+    const safeBaseName = sanitizeWorldImageBaseName(input.name);
+    const extension = resolveWorldImageExtension({
+      sourceFilename: input.sourceFilename,
+      contentType: input.contentType,
+    });
+    const filename = `${safeBaseName}-${Date.now()}${extension}`;
+    assertSafePathSegment(filename, "filename");
+
+    const relativePath = path.join("assets", "images", filename);
+    const filePath = path.join(this.worldDir(worldId), relativePath);
+    await this.atomicWriteBuffer(filePath, input.bytes);
+
+    const record: WorldImageAssetRecord = {
+      name: input.name.trim(),
+      filename,
+      relativePath: relativePath.split(path.sep).join("/"),
+      sourceFilename: input.sourceFilename.trim() || "image",
+      uploaderId: input.uploaderId.trim(),
+      uploadedAt: new Date().toISOString(),
+      contentType: (input.contentType ?? "").trim(),
+      sizeBytes: input.bytes.byteLength,
+    };
+
+    const indexPath = this.worldImageIndexPath(worldId);
+    const currentRaw = await this.readTextFile(indexPath);
+    const current = parseWorldImageIndex(currentRaw);
+    current.push(record);
+    await this.atomicWrite(indexPath, JSON.stringify(current, null, 2));
+    return record;
   }
 
   async writeCharacterSourceDocument(
@@ -538,6 +592,10 @@ export class WorldFileStore {
     return path.join(this.worldDir(worldId), "canon", safeFilename);
   }
 
+  private worldImageIndexPath(worldId: WorldId): string {
+    return path.join(this.worldDir(worldId), "assets", "images", "index.json");
+  }
+
   async readCanon(worldId: WorldId, filename: string): Promise<string | null> {
     await this.ensureWorldDir(worldId);
     return this.readTextFile(this.canonPath(worldId, filename));
@@ -678,7 +736,116 @@ export class WorldFileStore {
     );
     await rename(tmpPath, filePath);
   }
+
+  private async atomicWriteBuffer(
+    filePath: string,
+    content: Uint8Array,
+  ): Promise<void> {
+    await mkdir(path.dirname(filePath), { recursive: true });
+    const nonce = randomBytes(6).toString("hex");
+    const tmpPath = path.join(
+      path.dirname(filePath),
+      `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${nonce}.tmp`,
+    );
+    await writeFile(tmpPath, content);
+    await rename(tmpPath, filePath);
+  }
 }
+
+function parseWorldImageIndex(raw: string | null): WorldImageAssetRecord[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((item): item is WorldImageAssetRecord => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+      const record = item as Partial<WorldImageAssetRecord>;
+      return (
+        typeof record.name === "string" &&
+        typeof record.filename === "string" &&
+        typeof record.relativePath === "string" &&
+        typeof record.sourceFilename === "string" &&
+        typeof record.uploaderId === "string" &&
+        typeof record.uploadedAt === "string" &&
+        typeof record.contentType === "string" &&
+        typeof record.sizeBytes === "number"
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeWorldImageBaseName(name: string): string {
+  const raw = name.trim().toLowerCase();
+  const normalized = raw
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
+  const safe = normalized || "image";
+  return safe.length > 48 ? safe.slice(0, 48) : safe;
+}
+
+function resolveWorldImageExtension(input: {
+  sourceFilename: string;
+  contentType?: string;
+}): string {
+  const fromContentType = extensionFromImageContentType(
+    input.contentType ?? "",
+  );
+  if (fromContentType) {
+    return fromContentType;
+  }
+  const fromFilename = extensionFromFilename(input.sourceFilename);
+  if (fromFilename && ALLOWED_WORLD_IMAGE_EXTENSIONS.has(fromFilename)) {
+    return fromFilename;
+  }
+  return ".png";
+}
+
+function extensionFromFilename(filename: string): string | null {
+  const basename = filename.split("/").pop()?.trim() ?? "";
+  const idx = basename.lastIndexOf(".");
+  if (idx <= 0 || idx === basename.length - 1) {
+    return null;
+  }
+  return basename.slice(idx).toLowerCase();
+}
+
+function extensionFromImageContentType(contentType: string): string | null {
+  const lowered = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (lowered === "image/png") {
+    return ".png";
+  }
+  if (lowered === "image/jpeg") {
+    return ".jpg";
+  }
+  if (lowered === "image/webp") {
+    return ".webp";
+  }
+  if (lowered === "image/gif") {
+    return ".gif";
+  }
+  if (lowered === "image/bmp") {
+    return ".bmp";
+  }
+  return null;
+}
+
+const ALLOWED_WORLD_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".bmp",
+]);
 
 function sanitizeSourceFilename(filename: string): string {
   const raw = filename.trim() || "document.txt";

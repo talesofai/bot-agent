@@ -69,12 +69,19 @@ import {
   buildMarkdownCardEmbeds,
   chunkEmbedsForDiscord,
 } from "./markdown-cards";
+import {
+  applyWorldShowcaseCover,
+  buildWorldShowcaseStarterContent,
+  type DiscordBufferAttachment,
+  type WorldShowcaseCoverImage,
+} from "./world-showcase-message";
 import path from "node:path";
 import { writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { createTraceId } from "../../telemetry";
 import { redactSensitiveText } from "../../utils/redact";
 import { extractTextFromJsonDocument } from "../../utils/json-text";
 import { isSafePathSegment } from "../../utils/path";
+import { createSsrfPolicy, fetchWithSsrfProtection } from "../../utils/ssrf";
 import {
   UserStateStore,
   type UserLanguage,
@@ -83,6 +90,8 @@ import {
 import {
   buildCharacterBuildAgentPrompt,
   buildDiscordCharacterBuildAutopilot,
+  buildDiscordCharacterPortraitGenerate,
+  buildDiscordCharacterPortraitGenerateWithReference,
   buildDefaultCharacterCard,
   buildDiscordCharacterBuildKickoff,
   buildDiscordCharacterCreateGuide,
@@ -108,6 +117,9 @@ function pickByLanguage(
 ): string {
   return language === "en" ? en : zh;
 }
+
+const DEFAULT_DISCORD_IMAGE_ATTACHMENT_MAX_BYTES = 12 * 1024 * 1024;
+const DEFAULT_DISCORD_IMAGE_ATTACHMENT_TIMEOUT_MS = 10_000;
 
 class LocalizedError extends Error {
   readonly zh: string;
@@ -908,8 +920,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (!parentId) {
       return;
     }
+    const worldIdFromParent =
+      await this.worldStore.getWorldIdByChannel(parentId);
     const worldIdFromCategory =
-      await this.worldStore.getWorldIdByCategory(parentId);
+      worldIdFromParent ??
+      (await this.worldStore.getWorldIdByCategory(parentId));
     if (!worldIdFromCategory) {
       return;
     }
@@ -2085,6 +2100,166 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
 
+    if (parsed.action === "character_generate_portrait") {
+      const characterId = Number(parsed.payload);
+      if (!Number.isInteger(characterId) || characterId <= 0) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            "无效的 character_id。",
+            "Invalid character_id.",
+          ),
+          { ephemeral: true },
+        );
+        return;
+      }
+
+      const meta = await this.worldStore.getCharacter(characterId);
+      if (!meta) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            `角色不存在：C${characterId}`,
+            `Character not found: C${characterId}`,
+          ),
+          {
+            ephemeral: true,
+          },
+        );
+        return;
+      }
+      if (meta.creatorId !== interaction.user.id) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            "无权限：只有角色创作者可以执行该操作。",
+            "Permission denied: only the character creator can do this.",
+          ),
+          {
+            ephemeral: true,
+          },
+        );
+        return;
+      }
+
+      const targetChannelId =
+        meta.buildChannelId?.trim() || interaction.channelId;
+
+      const traceId = createTraceId();
+      await this.ensureCharacterBuildGroupAgent({
+        characterId: meta.id,
+        characterName: meta.name,
+        language,
+      });
+      await this.emitSyntheticCharacterPortraitGenerate({
+        channelId: targetChannelId,
+        userId: interaction.user.id,
+        characterId: meta.id,
+        characterName: meta.name,
+        withReference: false,
+        traceId,
+      });
+      await safeComponentFollowUp(
+        interaction,
+        pickByLanguage(
+          language,
+          targetChannelId === interaction.channelId
+            ? "已发送立绘生成请求，请稍等…"
+            : `已发送立绘生成请求到 <#${targetChannelId}>，请稍等…`,
+          targetChannelId === interaction.channelId
+            ? "Portrait generation request sent. Please wait…"
+            : `Portrait generation request sent to <#${targetChannelId}>. Please wait…`,
+        ),
+        {
+          ephemeral: true,
+        },
+      );
+      return;
+    }
+
+    if (parsed.action === "character_generate_portrait_ref") {
+      const characterId = Number(parsed.payload);
+      if (!Number.isInteger(characterId) || characterId <= 0) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            "无效的 character_id。",
+            "Invalid character_id.",
+          ),
+          { ephemeral: true },
+        );
+        return;
+      }
+
+      const meta = await this.worldStore.getCharacter(characterId);
+      if (!meta) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            `角色不存在：C${characterId}`,
+            `Character not found: C${characterId}`,
+          ),
+          {
+            ephemeral: true,
+          },
+        );
+        return;
+      }
+      if (meta.creatorId !== interaction.user.id) {
+        await safeComponentFollowUp(
+          interaction,
+          pickByLanguage(
+            language,
+            "无权限：只有角色创作者可以执行该操作。",
+            "Permission denied: only the character creator can do this.",
+          ),
+          {
+            ephemeral: true,
+          },
+        );
+        return;
+      }
+
+      const targetChannelId =
+        meta.buildChannelId?.trim() || interaction.channelId;
+
+      const traceId = createTraceId();
+      await this.ensureCharacterBuildGroupAgent({
+        characterId: meta.id,
+        characterName: meta.name,
+        language,
+      });
+      await this.emitSyntheticCharacterPortraitGenerate({
+        channelId: targetChannelId,
+        userId: interaction.user.id,
+        characterId: meta.id,
+        characterName: meta.name,
+        withReference: true,
+        traceId,
+      });
+      await safeComponentFollowUp(
+        interaction,
+        pickByLanguage(
+          language,
+          targetChannelId === interaction.channelId
+            ? "已发送参考图立绘生成请求，请稍等…"
+            : `已发送参考图立绘生成请求到 <#${targetChannelId}>，请稍等…`,
+          targetChannelId === interaction.channelId
+            ? "Portrait-with-reference request sent. Please wait…"
+            : `Portrait-with-reference request sent to <#${targetChannelId}>. Please wait…`,
+        ),
+        {
+          ephemeral: true,
+        },
+      );
+      return;
+    }
+
     if (parsed.action === "character_publish") {
       const expectedCharacterId = Number(parsed.payload);
       if (
@@ -2622,10 +2797,42 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       },
     ];
 
+    const components: MessageCreateOptions["components"] = [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_generate_portrait",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(
+            input.language === "en" ? "Generate Portrait" : "生成角色立绘",
+          )
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_generate_portrait_ref",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(
+            input.language === "en"
+              ? "Generate Portrait (Ref)"
+              : "生成角色立绘（参考图）",
+          )
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+
     await this.sendRichToChannel({
       guildId: input.guildId,
       channelId: input.channelId,
       embeds,
+      components,
     });
   }
 
@@ -2901,6 +3108,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     worldName: string;
     characterIds: number[];
   }): Promise<void> {
+    const worldCard = await this.worldFiles
+      .readWorldCard(input.worldId)
+      .catch(() => null);
+    const worldDisplayName =
+      extractWorldNameFromCard(worldCard)?.trim() ||
+      input.worldName?.trim() ||
+      `World-${input.worldId}`;
+
     const metas = await Promise.all(
       input.characterIds.map((id) => this.worldStore.getCharacter(id)),
     );
@@ -2925,8 +3140,21 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
     }
 
-    const options = candidates.slice(0, 25).map((meta) => ({
-      label: truncateDiscordLabel(`C${meta.id} ${meta.name}`, 100),
+    const withDisplayName = await Promise.all(
+      candidates.map(async (meta) => {
+        const card = await this.worldFiles
+          .readCharacterCard(meta.id)
+          .catch(() => null);
+        const displayName =
+          extractCharacterNameFromCard(card)?.trim() ||
+          meta.name?.trim() ||
+          `Character-${meta.id}`;
+        return { ...meta, displayName };
+      }),
+    );
+
+    const options = withDisplayName.slice(0, 25).map((meta) => ({
+      label: truncateDiscordLabel(`C${meta.id} ${meta.displayName}`, 100),
       description: truncateDiscordLabel(
         input.language === "en"
           ? `visibility ${meta.visibility}, status ${meta.status}`
@@ -2969,12 +3197,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         description:
           input.language === "en"
             ? [
-                `World: W${input.worldId} ${input.worldName}`,
+                `World: W${input.worldId} ${worldDisplayName}`,
                 "",
                 "You have multiple characters. Pick one to join this world.",
               ].join("\n")
             : [
-                `目标世界：W${input.worldId} ${input.worldName}`,
+                `目标世界：W${input.worldId} ${worldDisplayName}`,
                 "",
                 "你有多个角色，请先选一个用于加入世界。",
               ].join("\n"),
@@ -3030,6 +3258,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const withStats = await Promise.all(
       active.map(async (meta) => ({
         meta,
+        displayName:
+          extractWorldNameFromCard(
+            await this.worldFiles.readWorldCard(meta.id).catch(() => null),
+          )?.trim() ||
+          meta.name?.trim() ||
+          `World-${meta.id}`,
         stats: await this.worldFiles.readStats(meta.id),
       })),
     );
@@ -3043,8 +3277,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const lines =
       top.length > 0
         ? top.map(
-            ({ meta, stats }) =>
-              `- W${meta.id} ${meta.name}（访客${stats.visitorCount} 角色${stats.characterCount}）`,
+            ({ meta, displayName, stats }) =>
+              `- W${meta.id} ${displayName}（访客${stats.visitorCount} 角色${stats.characterCount}）`,
           )
         : [];
     const embeds: APIEmbed[] = [
@@ -3056,8 +3290,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
               ? [
                   "Top worlds:",
                   ...top.map(
-                    ({ meta, stats }) =>
-                      `- W${meta.id} ${meta.name} (visitors ${stats.visitorCount}, chars ${stats.characterCount})`,
+                    ({ meta, displayName, stats }) =>
+                      `- W${meta.id} ${displayName} (visitors ${stats.visitorCount}, chars ${stats.characterCount})`,
                   ),
                 ].join("\n")
               : ["热门世界：", ...lines].join("\n")
@@ -3083,7 +3317,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
                   )
                   .setLabel(
                     truncateDiscordLabel(
-                      `W${entry.meta.id} ${entry.meta.name}`,
+                      `W${entry.meta.id} ${entry.displayName}`,
                       80,
                     ),
                   )
@@ -3097,16 +3331,18 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     const selectRow =
       withStats.length > 3
         ? (() => {
-            const options = withStats.slice(0, 25).map(({ meta, stats }) => ({
-              label: truncateDiscordLabel(`W${meta.id} ${meta.name}`, 100),
-              description: truncateDiscordLabel(
-                input.language === "en"
-                  ? `visitors ${stats.visitorCount}, chars ${stats.characterCount}`
-                  : `访客${stats.visitorCount} 角色${stats.characterCount}`,
-                100,
-              ),
-              value: String(meta.id),
-            }));
+            const options = withStats
+              .slice(0, 25)
+              .map(({ meta, displayName, stats }) => ({
+                label: truncateDiscordLabel(`W${meta.id} ${displayName}`, 100),
+                description: truncateDiscordLabel(
+                  input.language === "en"
+                    ? `visitors ${stats.visitorCount}, chars ${stats.characterCount}`
+                    : `访客${stats.visitorCount} 角色${stats.characterCount}`,
+                  100,
+                ),
+                value: String(meta.id),
+              }));
             const menu = new StringSelectMenuBuilder()
               .setCustomId(
                 buildOnboardingCustomId({
@@ -3234,6 +3470,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         worldName: joined.worldName,
         roleplayChannelId: joined.roleplayChannelId,
         characterId: joined.characterId,
+        characterName: joined.characterName,
         forked: joined.forked,
       });
     } catch (err) {
@@ -3291,6 +3528,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     worldName: string;
     roleplayChannelId: string;
     characterId: number;
+    characterName: string;
     forked: boolean;
   }): Promise<void> {
     const embeds: APIEmbed[] = [
@@ -3304,14 +3542,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             ? [
                 `W${input.worldId} ${input.worldName}`,
                 `Go to: <#${input.roleplayChannelId}>`,
-                `Active character: C${input.characterId}${
+                `Active character: C${input.characterId} ${input.characterName}${
                   input.forked ? " (world-specific fork)" : ""
                 }`,
               ].join("\n")
             : [
                 `W${input.worldId} ${input.worldName}`,
                 `去这里开始：<#${input.roleplayChannelId}>`,
-                `当前角色：C${input.characterId}${
+                `当前角色：C${input.characterId} ${input.characterName}${
                   input.forked ? "（本世界专用）" : ""
                 }`,
               ].join("\n"),
@@ -3495,7 +3733,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       return;
     }
     if (subcommand === "publish") {
-      await this.handleWorldPublish(interaction);
+      const cover = interaction.options.getAttachment("cover") ?? undefined;
+      await this.handleWorldPublish(interaction, { cover });
       return;
     }
     if (subcommand === "export") {
@@ -3508,6 +3747,13 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       const file = interaction.options.getAttachment("file", true);
       const worldId = interaction.options.getInteger("world_id") ?? undefined;
       await this.handleWorldImport(interaction, { kind, file, worldId });
+      return;
+    }
+    if (subcommand === "image") {
+      const name = interaction.options.getString("name", true);
+      const file = interaction.options.getAttachment("file", true);
+      const worldId = interaction.options.getInteger("world_id") ?? undefined;
+      await this.handleWorldImageUpload(interaction, { name, file, worldId });
       return;
     }
     if (subcommand === "list") {
@@ -4285,6 +4531,119 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     );
   }
 
+  private async handleWorldImageUpload(
+    interaction: ChatInputCommandInteraction,
+    input: { name: string; file: Attachment; worldId?: number },
+  ): Promise<void> {
+    await safeDefer(interaction, { ephemeral: true });
+
+    const worldId =
+      input.worldId ??
+      (await this.inferWorldIdFromWorldSubspace(interaction).catch(() => null));
+    if (!worldId) {
+      await safeReply(
+        interaction,
+        "缺少 world_id：请在世界子空间/编辑话题内执行，或显式提供 world_id。",
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const meta = await this.worldStore.getWorld(worldId);
+    if (!meta) {
+      await safeReply(interaction, `世界不存在：W${worldId}`, {
+        ephemeral: true,
+      });
+      return;
+    }
+    if (!interaction.guildId || interaction.guildId !== meta.homeGuildId) {
+      await safeReply(
+        interaction,
+        `请在世界入口服务器执行：guild:${meta.homeGuildId}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+    if (meta.creatorId !== interaction.user.id) {
+      await safeReply(
+        interaction,
+        "无权限：只有世界创作者可以上传世界素材图。",
+        {
+          ephemeral: true,
+        },
+      );
+      return;
+    }
+
+    const assetName = input.name.trim();
+    if (!assetName) {
+      await safeReply(interaction, "name 不能为空。", { ephemeral: true });
+      return;
+    }
+
+    let image: { filename: string; contentType: string; buffer: Buffer };
+    try {
+      image = await fetchDiscordImageAttachment(input.file, {
+        logger: this.logger,
+        maxBytes: DEFAULT_DISCORD_IMAGE_ATTACHMENT_MAX_BYTES,
+        timeoutMs: DEFAULT_DISCORD_IMAGE_ATTACHMENT_TIMEOUT_MS,
+      });
+    } catch (err) {
+      await safeReply(
+        interaction,
+        `读取图片失败：${err instanceof Error ? err.message : String(err)}`,
+        { ephemeral: true },
+      );
+      return;
+    }
+
+    const saved = await this.worldFiles.writeWorldImageAsset(meta.id, {
+      name: assetName,
+      sourceFilename: image.filename,
+      uploaderId: interaction.user.id,
+      contentType: image.contentType,
+      bytes: image.buffer,
+    });
+
+    const sourceBlock = [
+      `## 世界素材图：${saved.name}`,
+      `- 时间：${saved.uploadedAt}`,
+      `- 上传者：<@${interaction.user.id}>`,
+      `- 文件：${saved.relativePath}`,
+      `- 原文件名：${saved.sourceFilename}`,
+      "",
+      `- 引用路径：${saved.relativePath}`,
+      "",
+    ].join("\n");
+
+    await this.worldFiles.appendSourceDocument(meta.id, {
+      filename: "world-image-assets.md",
+      content: sourceBlock,
+    });
+
+    await this.worldFiles.appendEvent(meta.id, {
+      type: "world_image_uploaded",
+      worldId: meta.id,
+      userId: interaction.user.id,
+      name: saved.name,
+      filename: saved.filename,
+      relativePath: saved.relativePath,
+      sourceFilename: saved.sourceFilename,
+      contentType: saved.contentType,
+      sizeBytes: saved.sizeBytes,
+    });
+
+    await safeReply(
+      interaction,
+      [
+        `已写入世界素材图：W${meta.id} ${meta.name}`,
+        `- 名称：${saved.name}`,
+        `- 文件：${saved.relativePath}`,
+      ].join("\n"),
+      { ephemeral: true },
+    );
+  }
+
   private async handleWorldOpen(
     interaction: ChatInputCommandInteraction,
     worldId: number,
@@ -4604,6 +4963,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     channelId: string;
     requesterUserId: string;
     language: UserLanguage | null;
+    showcaseCover?: Attachment;
   }): Promise<string> {
     const resolved = await this.resolveWorldBuildDraftFromChannel({
       channelId: input.channelId,
@@ -4617,12 +4977,98 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
     const meta = resolved.meta;
 
+    const resolveShowcaseCoverImage = async (): Promise<{
+      image: WorldShowcaseCoverImage | null;
+      warning: string | null;
+    }> => {
+      if (!input.showcaseCover) {
+        return { image: null, warning: null };
+      }
+      try {
+        const cover = await fetchDiscordImageAttachment(input.showcaseCover, {
+          logger: this.logger,
+          maxBytes: DEFAULT_DISCORD_IMAGE_ATTACHMENT_MAX_BYTES,
+          timeoutMs: DEFAULT_DISCORD_IMAGE_ATTACHMENT_TIMEOUT_MS,
+        });
+        return {
+          image: {
+            filename: cover.filename,
+            buffer: cover.buffer,
+          },
+          warning: null,
+        };
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        return {
+          image: null,
+          warning: pickByLanguage(
+            input.language,
+            `world-index 封面图读取失败，已忽略该图片：${detail}`,
+            `world-index cover image failed to load and was skipped: ${detail}`,
+          ),
+        };
+      }
+    };
+
     if (meta.status !== "draft") {
-      return pickByLanguage(
+      const notes: string[] = [];
+      if (meta.status === "active") {
+        const guild = await this.client.guilds
+          .fetch(meta.homeGuildId)
+          .catch(() => null);
+        if (!guild) {
+          notes.push(
+            pickByLanguage(
+              input.language,
+              "world-index 自动发帖失败：无法读取入口服务器。",
+              "Failed to auto-post to world-index: entry guild unavailable.",
+            ),
+          );
+        } else {
+          const cover = await resolveShowcaseCoverImage();
+          if (cover.warning) {
+            notes.push(cover.warning);
+          }
+          try {
+            const showcaseResult = await this.publishWorldShowcasePost({
+              guild,
+              worldId: meta.id,
+              worldName: meta.name,
+              creatorId: meta.creatorId,
+              language: input.language,
+              coverImage: cover.image,
+            });
+            if (showcaseResult.status === "created") {
+              notes.push(
+                pickByLanguage(
+                  input.language,
+                  `已补发 world-index：<#${showcaseResult.channelId}>`,
+                  `Re-published to world-index: <#${showcaseResult.channelId}>`,
+                ),
+              );
+            }
+          } catch (err) {
+            this.logger.warn(
+              { err, worldId: meta.id, guildId: meta.homeGuildId },
+              "Failed to ensure world showcase post for published world",
+            );
+            notes.push(
+              pickByLanguage(
+                input.language,
+                "world-index 自动发帖失败：请检查频道权限后重试。",
+                "Failed to auto-post to world-index: please verify channel permissions and retry.",
+              ),
+            );
+          }
+        }
+      }
+
+      const base = pickByLanguage(
         input.language,
         `世界已发布：W${meta.id} ${meta.name}（status=${meta.status}）`,
         `World already published: W${meta.id} ${meta.name} (status=${meta.status})`,
       );
+      return notes.length > 0 ? `${base}\n${notes.join("\n")}` : base;
     }
 
     const guild = await this.client.guilds
@@ -4670,6 +5116,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       categoryId: created.categoryId,
       infoChannelId: created.infoChannelId,
       roleplayChannelId: created.discussionChannelId,
+      forumChannelId: created.forumChannelId,
       proposalsChannelId: created.proposalsChannelId,
       voiceChannelId: created.voiceChannelId,
     });
@@ -4701,6 +5148,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       worldId: meta.id,
       worldName,
       discussionChannelId: created.discussionChannelId,
+      forumChannelId: created.forumChannelId,
       proposalsChannelId: created.proposalsChannelId,
     }).catch((err) => {
       this.logger.warn(
@@ -4709,25 +5157,49 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       );
     });
 
-    void this.publishWorldShowcasePost({
-      guild,
-      worldId: meta.id,
-      worldName,
-      creatorId: meta.creatorId,
-      language: input.language,
-    }).catch((err) => {
+    const publishNotes: string[] = [];
+    const cover = await resolveShowcaseCoverImage();
+    if (cover.warning) {
+      publishNotes.push(cover.warning);
+    }
+
+    try {
+      const showcaseResult = await this.publishWorldShowcasePost({
+        guild,
+        worldId: meta.id,
+        worldName,
+        creatorId: meta.creatorId,
+        language: input.language,
+        coverImage: cover.image,
+      });
+      publishNotes.push(
+        pickByLanguage(
+          input.language,
+          `索引：<#${showcaseResult.channelId}>`,
+          `Index: <#${showcaseResult.channelId}>`,
+        ),
+      );
+    } catch (err) {
       this.logger.warn(
         { err, worldId: meta.id, guildId: meta.homeGuildId },
         "Failed to publish world showcase post",
       );
-    });
+      publishNotes.push(
+        pickByLanguage(
+          input.language,
+          "world-index 自动发帖失败：请检查频道权限后重试。",
+          "Failed to auto-post to world-index: please verify channel permissions and retry.",
+        ),
+      );
+    }
 
-    return pickByLanguage(
+    const base = pickByLanguage(
       input.language,
       [
         `世界已发布：W${meta.id} ${worldName}`,
         `公告：<#${created.infoChannelId}>`,
         `讨论：<#${created.discussionChannelId}>`,
+        `论坛：<#${created.forumChannelId}>`,
         `提案：<#${created.proposalsChannelId}>`,
         `加入：/world join world_id:${meta.id}`,
       ].join("\n"),
@@ -4735,10 +5207,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         `World published: W${meta.id} ${worldName}`,
         `Announcements: <#${created.infoChannelId}>`,
         `Discussion: <#${created.discussionChannelId}>`,
+        `Forum: <#${created.forumChannelId}>`,
         `Proposals: <#${created.proposalsChannelId}>`,
         `Join: /world join world_id:${meta.id}`,
       ].join("\n"),
     );
+    return publishNotes.length > 0
+      ? `${base}\n${publishNotes.join("\n")}`
+      : base;
   }
 
   private async publishWorldFunctionalGuides(input: {
@@ -4746,6 +5222,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     worldId: number;
     worldName: string;
     discussionChannelId: string;
+    forumChannelId: string;
     proposalsChannelId: string;
   }): Promise<void> {
     await this.sendLongTextToChannel({
@@ -4754,6 +5231,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       content: buildWorldDiscussionGuide({
         worldId: input.worldId,
         worldName: input.worldName,
+        forumChannelId: input.forumChannelId,
       }),
     });
 
@@ -4769,6 +5247,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
   private async handleWorldPublish(
     interaction: ChatInputCommandInteraction,
+    input?: { cover?: Attachment },
   ): Promise<void> {
     const language = await this.userState
       .getLanguage(interaction.user.id)
@@ -4779,6 +5258,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         channelId: interaction.channelId,
         requesterUserId: interaction.user.id,
         language,
+        showcaseCover: input?.cover,
       });
       await safeReply(interaction, message, { ephemeral: true });
     } catch (err) {
@@ -4901,15 +5381,21 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             [
               `公告：<#${meta.infoChannelId}>`,
               `讨论：<#${meta.roleplayChannelId}>`,
+              meta.forumChannelId ? `论坛：<#${meta.forumChannelId}>` : null,
               `提案：<#${meta.proposalsChannelId}>`,
               `加入：\`/world join world_id:${meta.id}\``,
-            ].join("\n"),
+            ]
+              .filter((line): line is string => Boolean(line))
+              .join("\n"),
             [
               `Announcements: <#${meta.infoChannelId}>`,
               `Discussion: <#${meta.roleplayChannelId}>`,
+              meta.forumChannelId ? `Forum: <#${meta.forumChannelId}>` : null,
               `Proposals: <#${meta.proposalsChannelId}>`,
               `Join: \`/world join world_id:${meta.id}\``,
-            ].join("\n"),
+            ]
+              .filter((line): line is string => Boolean(line))
+              .join("\n"),
           );
 
     const patchedCard =
@@ -5458,85 +5944,43 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     try {
-      const member = await interaction.guild.members.fetch(interaction.user.id);
-      await member.roles.add(meta.roleId, "world join");
-      await this.worldStore
-        .addMember(meta.id, interaction.user.id)
-        .catch(() => false);
-      const persisted = await this.worldFiles
-        .ensureMember(meta.id, interaction.user.id)
-        .catch(async () => ({
-          added: false,
-          stats: await this.worldFiles.readStats(meta.id),
-        }));
-      if (persisted.added) {
-        await this.worldFiles.appendEvent(meta.id, {
-          type: "world_joined",
-          worldId: meta.id,
-          userId: interaction.user.id,
-        });
-      }
-      const selectedCharacterId = await this.resolveJoinCharacterId({
+      const joined = await this.joinWorldForUser({
+        guildId: interaction.guildId,
+        guild: interaction.guild,
         userId: interaction.user.id,
+        worldId: input.worldId,
+        language,
         explicitCharacterId: input.characterId,
       });
-
-      const worldCharacter = await this.ensureWorldSpecificCharacter({
-        worldId: meta.id,
-        worldName: meta.name,
-        userId: interaction.user.id,
-        sourceCharacterId: selectedCharacterId,
-      });
-
-      await this.worldStore.setActiveCharacter({
-        worldId: meta.id,
-        userId: interaction.user.id,
-        characterId: worldCharacter.characterId,
-      });
-      await this.worldStore
-        .addCharacterToWorld(meta.id, worldCharacter.characterId)
-        .catch(() => false);
-      await this.worldFiles
-        .ensureWorldCharacter(meta.id, worldCharacter.characterId)
-        .catch(() => {});
-
-      await this.userState
-        .addJoinedWorld(interaction.user.id, meta.id)
-        .catch(() => {});
-
-      if (worldCharacter.forked) {
-        await this.maybeStartWorldCharacterAutoFix({
-          worldId: meta.id,
-          worldName: meta.name,
-          userId: interaction.user.id,
-          characterId: worldCharacter.characterId,
-        }).catch((err) => {
-          this.logger.warn({ err }, "Failed to start world character auto-fix");
-        });
-      }
 
       await safeReply(
         interaction,
         pickByLanguage(
           language,
           [
-            `已加入世界：W${meta.id} ${meta.name}`,
-            `讨论：<#${meta.roleplayChannelId}>`,
-            `当前角色：C${worldCharacter.characterId}${
-              worldCharacter.forked
-                ? `（本世界专用，fork自 C${worldCharacter.sourceCharacterId}）`
+            `已加入世界：W${joined.worldId} ${joined.worldName}`,
+            `讨论：<#${joined.roleplayChannelId}>`,
+            joined.forumChannelId ? `论坛：<#${joined.forumChannelId}>` : null,
+            `当前角色：C${joined.characterId} ${joined.characterName}${
+              joined.forked
+                ? `（本世界专用，fork自 C${joined.sourceCharacterId}）`
                 : ""
             }`,
-          ].join("\n"),
+          ]
+            .filter((line): line is string => Boolean(line))
+            .join("\n"),
           [
-            `Joined world: W${meta.id} ${meta.name}`,
-            `Discussion: <#${meta.roleplayChannelId}>`,
-            `Active character: C${worldCharacter.characterId}${
-              worldCharacter.forked
-                ? ` (world-specific; forked from C${worldCharacter.sourceCharacterId})`
+            `Joined world: W${joined.worldId} ${joined.worldName}`,
+            `Discussion: <#${joined.roleplayChannelId}>`,
+            joined.forumChannelId ? `Forum: <#${joined.forumChannelId}>` : null,
+            `Active character: C${joined.characterId} ${joined.characterName}${
+              joined.forked
+                ? ` (world-specific; forked from C${joined.sourceCharacterId})`
                 : ""
             }`,
-          ].join("\n"),
+          ]
+            .filter((line): line is string => Boolean(line))
+            .join("\n"),
         ),
         { ephemeral: true },
       );
@@ -5564,7 +6008,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     worldId: number;
     worldName: string;
     roleplayChannelId: string;
+    forumChannelId?: string;
     characterId: number;
+    characterName: string;
     forked: boolean;
     sourceCharacterId: number;
   }> {
@@ -5589,6 +6035,12 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     try {
+      const worldCard = await this.worldFiles
+        .readWorldCard(meta.id)
+        .catch(() => null);
+      const resolvedWorldName =
+        extractWorldNameFromCard(worldCard)?.trim() || meta.name;
+
       const member = await input.guild.members.fetch(input.userId);
       await member.roles.add(meta.roleId, "world join");
       await this.worldStore.addMember(meta.id, input.userId).catch(() => false);
@@ -5612,10 +6064,21 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       });
       const worldCharacter = await this.ensureWorldSpecificCharacter({
         worldId: meta.id,
-        worldName: meta.name,
+        worldName: resolvedWorldName,
         userId: input.userId,
         sourceCharacterId: selectedCharacterId,
       });
+
+      const worldCharacterMeta = await this.worldStore
+        .getCharacter(worldCharacter.characterId)
+        .catch(() => null);
+      const worldCharacterCard = await this.worldFiles
+        .readCharacterCard(worldCharacter.characterId)
+        .catch(() => null);
+      const resolvedCharacterName =
+        extractCharacterNameFromCard(worldCharacterCard)?.trim() ||
+        worldCharacterMeta?.name?.trim() ||
+        `Character-${worldCharacter.characterId}`;
 
       await this.worldStore.setActiveCharacter({
         worldId: meta.id,
@@ -5636,7 +6099,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       if (worldCharacter.forked) {
         await this.maybeStartWorldCharacterAutoFix({
           worldId: meta.id,
-          worldName: meta.name,
+          worldName: resolvedWorldName,
           userId: input.userId,
           characterId: worldCharacter.characterId,
         }).catch((err) => {
@@ -5646,9 +6109,11 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
 
       return {
         worldId: meta.id,
-        worldName: meta.name,
+        worldName: resolvedWorldName,
         roleplayChannelId: meta.roleplayChannelId,
+        forumChannelId: meta.forumChannelId,
         characterId: worldCharacter.characterId,
+        characterName: resolvedCharacterName,
         forked: worldCharacter.forked,
         sourceCharacterId: worldCharacter.sourceCharacterId,
       };
@@ -5906,6 +6371,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           meta.infoChannelId,
           meta.joinChannelId,
           meta.roleplayChannelId,
+          meta.forumChannelId,
           meta.proposalsChannelId,
           meta.voiceChannelId,
           meta.buildChannelId,
@@ -7950,6 +8416,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         if (meta.roleplayChannelId === baseChannelId) {
           return meta.id;
         }
+        if (meta.forumChannelId && meta.forumChannelId === baseChannelId) {
+          return meta.id;
+        }
         if (meta.proposalsChannelId === baseChannelId) {
           return meta.id;
         }
@@ -8174,6 +8643,10 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           ? card.trim()
           : "";
     const patchedRules = rules?.trim() ? rules.trim() : "";
+    const wikiLinks = buildWorldWikiLinks({
+      worldId: input.worldId,
+      baseUrl: getConfig().WIKI_PUBLIC_BASE_URL,
+    });
 
     const embeds: APIEmbed[] = [
       {
@@ -8183,6 +8656,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           creatorLabel ? `创作者：${creatorLabel}` : null,
           `访客数：${stats.visitorCount} 角色数：${stats.characterCount}`,
           `加入：\`/world join world_id:${input.worldId}\``,
+          wikiLinks ? `Wiki（中文）：${wikiLinks.zhWorldCard}` : null,
+          wikiLinks ? `Wiki（English）：${wikiLinks.enWorldCard}` : null,
         ]
           .filter((line): line is string => Boolean(line))
           .join("\n"),
@@ -8219,6 +8694,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     categoryId: string;
     infoChannelId: string;
     discussionChannelId: string;
+    forumChannelId: string;
     proposalsChannelId: string;
     voiceChannelId: string;
   }> {
@@ -8254,6 +8730,31 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       permissionOverwrites: baseOverwrites.roleplay,
       reason: `world publish by ${input.creatorUserId}`,
     });
+
+    let forumChannelMode: "forum" | "text" = "forum";
+    const forumChannel = await input.guild.channels
+      .create({
+        name: "world-forum",
+        type: ChannelType.GuildForum,
+        parent: category.id,
+        permissionOverwrites: baseOverwrites.forum,
+        reason: `world publish by ${input.creatorUserId}`,
+      })
+      .catch(async (err) => {
+        this.logger.warn(
+          { err, worldId: input.worldId, guildId: input.guild.id },
+          "Failed to create world forum channel; fallback to text",
+        );
+        forumChannelMode = "text";
+        return input.guild.channels.create({
+          name: "world-forum",
+          type: ChannelType.GuildText,
+          parent: category.id,
+          permissionOverwrites: baseOverwrites.forum,
+          reason: `world publish by ${input.creatorUserId}`,
+        });
+      });
+
     const proposalsChannel = await input.guild.channels.create({
       name: "world-proposals",
       type: ChannelType.GuildText,
@@ -8278,6 +8779,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       categoryId: category.id,
       infoChannelId: infoChannel.id,
       discussionChannelId: discussionChannel.id,
+      forumChannelId: forumChannel.id,
+      forumChannelMode,
       proposalsChannelId: proposalsChannel.id,
       voiceChannelId: voiceChannel.id,
     });
@@ -8287,6 +8790,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       categoryId: category.id,
       infoChannelId: infoChannel.id,
       discussionChannelId: discussionChannel.id,
+      forumChannelId: forumChannel.id,
       proposalsChannelId: proposalsChannel.id,
       voiceChannelId: voiceChannel.id,
     };
@@ -8298,15 +8802,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     worldName: string;
     creatorId: string;
     language: UserLanguage | null;
-  }): Promise<void> {
+    coverImage?: WorldShowcaseCoverImage | null;
+  }): Promise<{ status: "created" | "exists"; channelId: string }> {
     const exists = await this.worldStore.getWorldShowcasePost(input.worldId);
     if (exists) {
-      return;
+      return { status: "exists", channelId: exists.channelId };
     }
 
     const botUserId = this.botUserId ?? this.client.user?.id ?? "";
     if (!botUserId) {
-      return;
+      throw new Error("bot user id is unavailable");
     }
 
     const showcase = await this.ensureWorldShowcaseChannel({
@@ -8318,7 +8823,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       .fetch(showcase.channelId)
       .catch(() => null);
     if (!channel) {
-      return;
+      throw new Error(`showcase channel not found: ${showcase.channelId}`);
     }
 
     const threadName = `W${input.worldId} ${input.worldName}`.slice(0, 100);
@@ -8343,10 +8848,16 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       card,
       rules,
     });
-    const starterContent = [opener, payload.content]
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .join("\n\n");
+    const starterContent = buildWorldShowcaseStarterContent({
+      opener,
+      content: payload.content,
+    });
+    const showcased = applyWorldShowcaseCover({
+      embeds: payload.embeds,
+      cover: input.coverImage,
+    });
+    const showcaseEmbeds = showcased.embeds;
+    const showcaseFiles = showcased.files;
 
     let threadId: string | null = null;
     let messageId: string | null = null;
@@ -8373,7 +8884,8 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           name: threadName,
           message: {
             content: starterContent,
-            embeds: payload.embeds,
+            embeds: showcaseEmbeds,
+            ...(showcaseFiles.length > 0 ? { files: showcaseFiles } : {}),
           },
           ...(appliedTags.length > 0 ? { appliedTags } : {}),
           reason,
@@ -8414,18 +8926,19 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       }
     }
     if (!threadId) {
-      return;
+      throw new Error("failed to create world showcase thread");
     }
 
     if (!messageId) {
       messageId = await this.sendRichToChannelAndGetId({
         channelId: threadId,
         content: showcase.mode === "forum" ? payload.content : starterContent,
-        embeds: payload.embeds,
+        embeds: showcaseEmbeds,
+        files: showcaseFiles,
       });
     }
     if (!messageId) {
-      return;
+      throw new Error("failed to send world showcase message");
     }
 
     await this.worldStore.setWorldShowcasePost({
@@ -8434,6 +8947,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       threadId,
       messageId,
     });
+    return { status: "created", channelId: showcase.channelId };
   }
 
   private async ensureWorldShowcaseChannel(input: {
@@ -8588,6 +9102,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     channelId: string;
     content?: string;
     embeds?: APIEmbed[];
+    files?: DiscordBufferAttachment[];
   }): Promise<string | null> {
     const channel = await this.client.channels
       .fetch(input.channelId)
@@ -8601,7 +9116,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     ) {
       return null;
     }
-    const payload: { content?: string; embeds?: APIEmbed[] } = {};
+    const payload: MessageCreateOptions = {};
     const content = input.content?.trim() ?? "";
     if (content) {
       payload.content = content;
@@ -8609,7 +9124,14 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     if (input.embeds && input.embeds.length > 0) {
       payload.embeds = input.embeds;
     }
-    if (!payload.content && (!payload.embeds || payload.embeds.length === 0)) {
+    if (input.files && input.files.length > 0) {
+      payload.files = input.files;
+    }
+    if (
+      !payload.content &&
+      (!payload.embeds || payload.embeds.length === 0) &&
+      (!payload.files || payload.files.length === 0)
+    ) {
       return null;
     }
 
@@ -8814,6 +9336,32 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           .setCustomId(
             buildOnboardingCustomId({
               userId: input.userId,
+              action: "character_generate_portrait",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(input.language === "en" ? "Portrait" : "生成角色立绘")
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
+              action: "character_generate_portrait_ref",
+              payload: String(input.characterId),
+            }),
+          )
+          .setLabel(
+            input.language === "en"
+              ? "Portrait (Ref)"
+              : "生成角色立绘（参考图）",
+          )
+          .setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.userId,
               action: "language_set",
               payload: "zh",
             }),
@@ -8900,13 +9448,7 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
         );
       }
 
-      // Ensure discussion channel exists (best-effort).
-      const cachedDiscussion = guild.channels.cache.find(
-        (candidate) =>
-          candidate.type === ChannelType.GuildText &&
-          candidate.parentId === category.id &&
-          candidate.name === "world-discussion",
-      );
+      // Ensure world subspace channels and creator permissions (best-effort).
       try {
         const overwrites = buildWorldBaseOverwrites({
           everyoneRoleId: guild.roles.everyone.id,
@@ -8914,8 +9456,42 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
           creatorUserId: meta.creatorId,
           botUserId: botId,
         });
-        if (!cachedDiscussion) {
-          await guild.channels.create({
+
+        const syncPermissions = async (
+          channel: unknown,
+          values: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>,
+          reason: string,
+        ): Promise<void> => {
+          const setter = (
+            channel as { permissionOverwrites?: { set?: unknown } }
+          ).permissionOverwrites?.set;
+          if (typeof setter !== "function") {
+            return;
+          }
+          await (
+            channel as {
+              permissionOverwrites: {
+                set: (
+                  overwrites: Array<{
+                    id: string;
+                    allow?: bigint[];
+                    deny?: bigint[];
+                  }>,
+                  reason?: string,
+                ) => Promise<unknown>;
+              };
+            }
+          ).permissionOverwrites.set(values, reason);
+        };
+
+        let discussion = guild.channels.cache.find(
+          (candidate) =>
+            candidate.type === ChannelType.GuildText &&
+            candidate.parentId === category.id &&
+            candidate.name === "world-discussion",
+        );
+        if (!discussion) {
+          discussion = await guild.channels.create({
             name: "world-discussion",
             type: ChannelType.GuildText,
             parent: category.id,
@@ -8927,16 +9503,22 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             worldId: meta.id,
             guildId: meta.homeGuildId,
           });
+        } else {
+          await syncPermissions(
+            discussion,
+            overwrites.roleplay,
+            `world discussion permission sync W${meta.id}`,
+          );
         }
 
-        const cachedProposals = guild.channels.cache.find(
+        let proposals = guild.channels.cache.find(
           (candidate) =>
             candidate.type === ChannelType.GuildText &&
             candidate.parentId === category.id &&
             candidate.name === "world-proposals",
         );
-        if (!cachedProposals) {
-          await guild.channels.create({
+        if (!proposals) {
+          proposals = await guild.channels.create({
             name: "world-proposals",
             type: ChannelType.GuildText,
             parent: category.id,
@@ -8948,6 +9530,70 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
             worldId: meta.id,
             guildId: meta.homeGuildId,
           });
+        } else {
+          await syncPermissions(
+            proposals,
+            overwrites.proposals,
+            `world proposals permission sync W${meta.id}`,
+          );
+        }
+
+        let forum = guild.channels.cache.find(
+          (candidate) =>
+            (candidate.type === ChannelType.GuildForum ||
+              candidate.type === ChannelType.GuildText) &&
+            candidate.parentId === category.id &&
+            candidate.name === "world-forum",
+        );
+        let forumMode: "forum" | "text" =
+          forum && forum.type === ChannelType.GuildForum ? "forum" : "text";
+        if (!forum) {
+          forumMode = "forum";
+          forum = await guild.channels
+            .create({
+              name: "world-forum",
+              type: ChannelType.GuildForum,
+              parent: category.id,
+              permissionOverwrites: overwrites.forum,
+              reason: `world forum ensure W${meta.id}`,
+            })
+            .catch(async (err) => {
+              this.logger.warn(
+                { err, worldId: meta.id, guildId: meta.homeGuildId },
+                "Failed to create world forum channel during migration; fallback to text",
+              );
+              forumMode = "text";
+              return guild.channels.create({
+                name: "world-forum",
+                type: ChannelType.GuildText,
+                parent: category.id,
+                permissionOverwrites: overwrites.forum,
+                reason: `world forum ensure W${meta.id}`,
+              });
+            });
+          await this.worldFiles.appendEvent(meta.id, {
+            type: "world_forum_channel_created",
+            worldId: meta.id,
+            guildId: meta.homeGuildId,
+            mode: forumMode,
+          });
+        } else {
+          await syncPermissions(
+            forum,
+            overwrites.forum,
+            `world forum permission sync W${meta.id}`,
+          );
+        }
+
+        if (forum?.id && meta.forumChannelId !== forum.id) {
+          await this.worldStore
+            .setWorldForumChannelId({
+              worldId: meta.id,
+              channelId: forum.id,
+            })
+            .catch(() => {
+              // ignore
+            });
         }
       } catch (err) {
         this.logger.warn(
@@ -9227,6 +9873,65 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     } satisfies SessionEvent<DiscordInteractionExtras>);
   }
 
+  private async emitSyntheticCharacterPortraitGenerate(input: {
+    channelId: string;
+    userId: string;
+    characterId: number;
+    characterName: string;
+    withReference: boolean;
+    traceId?: string;
+  }): Promise<void> {
+    if (this.listenerCount("event") === 0) {
+      return;
+    }
+    const botId = this.botUserId?.trim() ?? "";
+    if (!botId) {
+      return;
+    }
+
+    const language = await this.userState
+      .getLanguage(input.userId)
+      .catch(() => null);
+    const content = input.withReference
+      ? buildDiscordCharacterPortraitGenerateWithReference({
+          characterId: input.characterId,
+          characterName: input.characterName,
+          language,
+        })
+      : buildDiscordCharacterPortraitGenerate({
+          characterId: input.characterId,
+          characterName: input.characterName,
+          language,
+        });
+
+    const messageId = `synthetic-character-portrait-${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}`;
+    await this.emitEvent({
+      type: "message",
+      platform: "discord",
+      selfId: botId,
+      userId: input.userId,
+      guildId: undefined,
+      channelId: input.channelId,
+      messageId,
+      content,
+      elements: [{ type: "text", text: content }],
+      timestamp: Date.now(),
+      extras: {
+        traceId: input.traceId,
+        synthetic: true,
+        interactionId: messageId,
+        commandName: input.withReference
+          ? "character.portrait.reference"
+          : "character.portrait",
+        channelId: input.channelId,
+        guildId: undefined,
+        userId: input.userId,
+      },
+    } satisfies SessionEvent<DiscordInteractionExtras>);
+  }
+
   private async emitSyntheticWorldCharacterBuildKickoff(input: {
     channelId: string;
     userId: string;
@@ -9415,6 +10120,202 @@ function patchCreatorLineInMarkdown(
   return patched ? lines.join("\n") : input;
 }
 
+async function fetchDiscordImageAttachment(
+  attachment: Attachment,
+  options?: {
+    maxBytes?: number;
+    timeoutMs?: number;
+    logger?: Pick<Logger, "debug">;
+  },
+): Promise<{ filename: string; contentType: string; buffer: Buffer }> {
+  const url = safeParseHttpUrl(attachment.url ?? "");
+  if (!url) {
+    throw new Error("attachment url is invalid");
+  }
+
+  const filename = (attachment.name ?? "").trim() || "image";
+  const declaredContentType = (attachment.contentType ?? "")
+    .split(";")[0]
+    ?.trim()
+    .toLowerCase();
+  const extension = extensionFromFilename(filename);
+  const hasImageType = Boolean(
+    declaredContentType && declaredContentType.startsWith("image/"),
+  );
+  const hasImageExt = Boolean(
+    extension && ALLOWED_DISCORD_IMAGE_EXTENSIONS.has(extension),
+  );
+  if (!hasImageType && !hasImageExt) {
+    throw new Error(
+      `unsupported attachment type: contentType=${attachment.contentType ?? "n/a"} filename=${filename}`,
+    );
+  }
+
+  const maxBytes =
+    options?.maxBytes ?? DEFAULT_DISCORD_IMAGE_ATTACHMENT_MAX_BYTES;
+  const timeoutMs =
+    options?.timeoutMs ?? DEFAULT_DISCORD_IMAGE_ATTACHMENT_TIMEOUT_MS;
+
+  const declaredSize = attachment.size;
+  if (
+    typeof declaredSize === "number" &&
+    Number.isFinite(declaredSize) &&
+    declaredSize > maxBytes
+  ) {
+    throw new Error(`attachment too large: ${declaredSize} > ${maxBytes}`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const ssrfPolicy = createSsrfPolicy(getConfig());
+    const { response } = await fetchWithSsrfProtection(
+      url,
+      {
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          accept: "image/*,*/*;q=0.8",
+          "user-agent":
+            "Mozilla/5.0 (compatible; opencode-bot-agent/1.0; +https://github.com/opencode-ai/opencode)",
+        },
+      },
+      ssrfPolicy,
+      (input, init) => fetch(input, init),
+    );
+
+    if (!response.ok) {
+      throw new Error(`attachment fetch failed: http ${response.status}`);
+    }
+
+    const contentLength = response.headers.get("content-length");
+    if (contentLength) {
+      const length = Number(contentLength);
+      if (Number.isFinite(length) && length > maxBytes) {
+        throw new Error(`attachment too large: ${length} > ${maxBytes}`);
+      }
+    }
+
+    const responseContentType =
+      response.headers
+        .get("content-type")
+        ?.split(";")[0]
+        ?.trim()
+        .toLowerCase() ?? "";
+    if (responseContentType && !responseContentType.startsWith("image/")) {
+      throw new Error(
+        `unsupported attachment type: contentType=${responseContentType} filename=${filename}`,
+      );
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength > maxBytes) {
+      throw new Error(
+        `attachment too large: ${buffer.byteLength} > ${maxBytes}`,
+      );
+    }
+    if (buffer.byteLength === 0) {
+      throw new Error("attachment is empty");
+    }
+
+    const resolvedContentType =
+      responseContentType || declaredContentType || "";
+    return {
+      filename,
+      contentType: resolvedContentType,
+      buffer,
+    };
+  } catch (err) {
+    options?.logger?.debug?.(
+      { err, url: attachment.url },
+      "Failed to fetch discord image attachment",
+    );
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildWorldWikiLinks(input: {
+  worldId: number;
+  baseUrl?: string | null;
+}): { zhWorldCard: string; enWorldCard: string } | null {
+  if (!Number.isInteger(input.worldId) || input.worldId <= 0) {
+    return null;
+  }
+  const wikiBase = normalizeWikiPublicBaseUrl(input.baseUrl);
+  if (!wikiBase) {
+    return null;
+  }
+
+  const worldSegment = `worlds/W${input.worldId}/world-card.md`;
+  return {
+    zhWorldCard: new URL(`zh/#/${worldSegment}`, wikiBase).toString(),
+    enWorldCard: new URL(`en/#/${worldSegment}`, wikiBase).toString(),
+  };
+}
+
+function normalizeWikiPublicBaseUrl(
+  raw: string | null | undefined,
+): URL | null {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const base = new URL(trimmed);
+    const pathname = base.pathname.replace(/\/+$/, "");
+    const wikiIndex = pathname.indexOf("/wiki");
+
+    let wikiPath = "";
+    if (wikiIndex >= 0) {
+      wikiPath = pathname.slice(0, wikiIndex + "/wiki".length);
+    } else if (!pathname || pathname === "/") {
+      wikiPath = "/wiki";
+    } else {
+      wikiPath = `${pathname}/wiki`;
+    }
+
+    base.pathname = `${wikiPath}/`;
+    base.search = "";
+    base.hash = "";
+    return base;
+  } catch {
+    return null;
+  }
+}
+
+function safeParseHttpUrl(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function extensionFromFilename(filename: string): string | null {
+  const basename = filename.split("/").pop()?.trim() ?? "";
+  const idx = basename.lastIndexOf(".");
+  if (idx <= 0 || idx === basename.length - 1) {
+    return null;
+  }
+  return basename.slice(idx).toLowerCase();
+}
+
+const ALLOWED_DISCORD_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".bmp",
+]);
+
 function isAllowedWikiImportFilename(filename: string): boolean {
   const trimmed = filename.trim().toLowerCase();
   return (
@@ -9544,7 +10445,13 @@ function buildSlashCommands() {
       .addSubcommand((sub) =>
         sub
           .setName("publish")
-          .setDescription("发布当前草稿世界（仅创作者，在编辑话题中执行）"),
+          .setDescription("发布当前草稿世界（仅创作者，在编辑话题中执行）")
+          .addAttachmentOption((option) =>
+            option
+              .setName("cover")
+              .setDescription("可选：world-index 首帖封面图")
+              .setRequired(false),
+          ),
       )
       .addSubcommand((sub) =>
         sub
@@ -9579,6 +10486,32 @@ function buildSlashCommands() {
             option
               .setName("file")
               .setDescription("要覆盖的 Markdown/TXT 文件")
+              .setRequired(true),
+          )
+          .addIntegerOption((option) =>
+            option
+              .setName("world_id")
+              .setDescription("世界ID（在世界子空间/编辑话题内可省略）")
+              .setMinValue(1)
+              .setRequired(false),
+          ),
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName("image")
+          .setDescription("上传世界素材图并写入世界书（仅创作者）")
+          .addStringOption((option) =>
+            option
+              .setName("name")
+              .setDescription("图片名称（写入世界书）")
+              .setMinLength(1)
+              .setMaxLength(80)
+              .setRequired(true),
+          )
+          .addAttachmentOption((option) =>
+            option
+              .setName("file")
+              .setDescription("图片文件（png/jpg/webp/gif/bmp）")
               .setRequired(true),
           )
           .addIntegerOption((option) =>
@@ -10008,6 +10941,7 @@ function buildWorldBaseOverwrites(input: {
   info: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
   join: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
   roleplay: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
+  forum: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
   proposals: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
   voice: Array<{ id: string; allow?: bigint[]; deny?: bigint[] }>;
 } {
@@ -10016,6 +10950,8 @@ function buildWorldBaseOverwrites(input: {
   const send = PermissionFlagsBits.SendMessages;
   const sendInThreads = PermissionFlagsBits.SendMessagesInThreads;
   const createPrivateThreads = PermissionFlagsBits.CreatePrivateThreads;
+  const createPublicThreads = PermissionFlagsBits.CreatePublicThreads;
+  const manageThreads = PermissionFlagsBits.ManageThreads;
   const useCommands = PermissionFlagsBits.UseApplicationCommands;
   const connect = PermissionFlagsBits.Connect;
   const speak = PermissionFlagsBits.Speak;
@@ -10031,17 +10967,36 @@ function buildWorldBaseOverwrites(input: {
               send,
               sendInThreads,
               createPrivateThreads,
+              createPublicThreads,
+              manageThreads,
             ],
           },
         ]
       : [];
 
-  const allowCreator =
+  const allowCreatorText =
     input.creatorUserId && input.creatorUserId.trim()
       ? [
           {
             id: input.creatorUserId,
-            allow: [view, readHistory, send, sendInThreads],
+            allow: [
+              view,
+              readHistory,
+              send,
+              sendInThreads,
+              createPublicThreads,
+              manageThreads,
+            ],
+          },
+        ]
+      : [];
+
+  const allowCreatorVoice =
+    input.creatorUserId && input.creatorUserId.trim()
+      ? [
+          {
+            id: input.creatorUserId,
+            allow: [view, connect, speak],
           },
         ]
       : [];
@@ -10060,15 +11015,43 @@ function buildWorldBaseOverwrites(input: {
     id: input.worldRoleId,
     allow: [view, readHistory, useCommands, send, sendInThreads],
   };
+  const worldForumWritable = {
+    id: input.worldRoleId,
+    allow: [
+      view,
+      readHistory,
+      useCommands,
+      send,
+      sendInThreads,
+      createPublicThreads,
+    ],
+  };
 
   return {
-    info: [everyoneReadOnly, worldReadOnly, ...allowCreator, ...allowBot],
-    join: [everyoneReadOnly, worldWritable, ...allowBot],
-    roleplay: [everyoneReadOnly, worldWritable, ...allowBot],
-    proposals: [everyoneReadOnly, worldWritable, ...allowBot],
+    info: [everyoneReadOnly, worldReadOnly, ...allowCreatorText, ...allowBot],
+    join: [everyoneReadOnly, worldWritable, ...allowCreatorText, ...allowBot],
+    roleplay: [
+      everyoneReadOnly,
+      worldWritable,
+      ...allowCreatorText,
+      ...allowBot,
+    ],
+    forum: [
+      everyoneReadOnly,
+      worldForumWritable,
+      ...allowCreatorText,
+      ...allowBot,
+    ],
+    proposals: [
+      everyoneReadOnly,
+      worldWritable,
+      ...allowCreatorText,
+      ...allowBot,
+    ],
     voice: [
       { id: input.everyoneRoleId, allow: [view], deny: [connect, speak] },
       { id: input.worldRoleId, allow: [view, connect, speak] },
+      ...allowCreatorVoice,
     ],
   };
 }
@@ -10525,6 +11508,7 @@ function buildWorldShowcasePost(input: {
 function buildWorldDiscussionGuide(input: {
   worldId: number;
   worldName: string;
+  forumChannelId: string;
 }): string {
   return [
     `# World Discussion Guide · W${input.worldId} ${input.worldName}`,
@@ -10537,6 +11521,7 @@ function buildWorldDiscussionGuide(input: {
     "- Coordinate cross-character interactions",
     "- Share session notes and follow-up ideas",
     "",
+    `Topic posts / world introductions: use <#${input.forumChannelId}>.`,
     "Please avoid posting formal rule/progression proposals here.",
     "For structured changes, use #world-proposals.",
   ].join("\n");
@@ -10875,6 +11860,29 @@ function extractWorldNameFromCard(card: string | null): string | null {
   return name.length > 60 ? name.slice(0, 60) : name;
 }
 
+function extractCharacterNameFromCard(card: string | null): string | null {
+  const raw = (card ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const bulletMatch = normalized.match(
+    /^\s*-\s*(?:角色名|Name)\s*[:：]\s*(.+)\s*$/m,
+  );
+  const tableMatch = normalized.match(
+    /^\s*\|\s*(?:角色名|Name)\s*\|\s*([^|\n]+?)\s*\|/m,
+  );
+  const headingMatch = normalized.match(
+    /^\s*#\s*(?:角色卡|Character Card)\s*[:：]\s*(.+)\s*$/m,
+  );
+  const name = (
+    bulletMatch?.[1] ??
+    tableMatch?.[1] ??
+    headingMatch?.[1] ??
+    ""
+  ).trim();
+  if (!name) return null;
+  return name.length > 60 ? name.slice(0, 60) : name;
+}
+
 function splitDiscordMessage(input: string, maxLen: number): string[] {
   const normalized = input.trim();
   if (!normalized) {
@@ -11160,6 +12168,8 @@ type OnboardingComponentAction =
   | "language_set"
   | "character_create"
   | "character_autopilot"
+  | "character_generate_portrait"
+  | "character_generate_portrait_ref"
   | "character_publish"
   | "character_show"
   | "world_create"
@@ -11210,6 +12220,8 @@ function parseOnboardingCustomId(customId: string): {
     "language_set",
     "character_create",
     "character_autopilot",
+    "character_generate_portrait",
+    "character_generate_portrait_ref",
     "character_publish",
     "character_show",
     "world_create",

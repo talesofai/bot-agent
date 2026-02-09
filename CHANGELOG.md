@@ -50,6 +50,7 @@
 - 文档：修正管理与热更新说明，明确 `/reload` 仅支持受保护 API，并补充现有测试命令
 - 文档：API/部署文案按实现状态分层，明确 `/wiki` 与群重载已实现、`/metrics` 与 WebSocket 未实现
 - 文档：开发规划总览更新为“QQ/Discord 已支持”，避免首页描述与现状冲突
+- Refactor：`src/texts.ts` 按领域拆分为 `texts/common|session|discord|world`，并保持原导出接口兼容
 
 ### Fixed
 

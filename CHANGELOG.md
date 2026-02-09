@@ -53,6 +53,7 @@
 - Refactor：`src/texts.ts` 按领域拆分为 `texts/common|session|discord|world`，并保持原导出接口兼容
 - Refactor：拆分 `src/world/store.ts` 的类型与解析逻辑到 `world/store-types.ts`、`world/store-parsers.ts`，保持对外 API 不变
 - Refactor：提取 `message-dispatcher` 纯函数到 `entry/message-dispatcher-helpers.ts`，收敛路由与管理判断辅助逻辑
+- Refactor：提取 Discord Adapter 卡片解析与展示辅助函数到 `adapters/discord/card-parsers.ts`，缩减 `adapter.ts` 体积并保持行为一致
 
 ### Fixed
 

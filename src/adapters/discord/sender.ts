@@ -6,6 +6,8 @@ import type {
 } from "../../types/platform";
 import { Client, type MessageCreateOptions } from "discord.js";
 import { resolveDiscordImageAttachments } from "./image-attachments";
+import { resolveDiscordAudioAttachments } from "./audio-attachments";
+import { normalizeDiscordAudioMarkup } from "./audio-markup";
 import { getTraceIdFromExtras } from "../../telemetry";
 import { BotMessageStore } from "../../store/bot-message-store";
 import { feishuLogJson } from "../../feishu/webhook";
@@ -50,8 +52,28 @@ export class MessageSender {
 
     const resolvedReply = resolveReplyTarget(session, elements);
     const payload = buildPayload(content, resolvedReply.elements);
-    if (files.length > 0) {
-      payload.files = files;
+    const audioNormalized = normalizeDiscordAudioMarkup(payload.content ?? "");
+    if (audioNormalized.content) {
+      payload.content = audioNormalized.content;
+    } else {
+      delete payload.content;
+    }
+
+    const resolvedAudio = await resolveDiscordAudioAttachments(
+      audioNormalized.audioUrls,
+      { logger: log },
+    );
+
+    const allFiles = [...files, ...resolvedAudio.files];
+    if (allFiles.length > 0) {
+      payload.files = allFiles;
+    }
+
+    if (resolvedAudio.keptUrls.length > 0) {
+      const fallback = buildAudioFallbackLines(resolvedAudio.keptUrls);
+      payload.content = [payload.content?.trim() ?? "", fallback]
+        .filter((part) => part.length > 0)
+        .join("\n\n");
     }
     if (resolvedReply.replyTo) {
       payload.reply = {
@@ -304,6 +326,10 @@ function isScheduledPushEvent(extras: unknown): boolean {
   }
   const record = extras as Record<string, unknown>;
   return record["isScheduledPush"] === true;
+}
+
+function buildAudioFallbackLines(urls: ReadonlyArray<string>): string {
+  return urls.map((url) => `🎧 ${url}`).join("\n");
 }
 
 function previewTextForLog(text: string, maxBytes: number): string {

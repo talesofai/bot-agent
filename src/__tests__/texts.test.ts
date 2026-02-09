@@ -7,6 +7,9 @@ import {
   buildDiscordHelp,
   buildDiscordOnboardingAutoPrompt,
   buildDiscordOnboardingGuide,
+  buildDiscordWorldBuildKickoff,
+  buildHotPushPrompt,
+  buildOpencodeBaseSystemRules,
 } from "../texts";
 
 describe("Discord help/onboarding texts", () => {
@@ -87,7 +90,19 @@ describe("Discord help/onboarding texts", () => {
     expect(prompt).not.toContain("character/character-card.md");
   });
 
-  test("buildCharacterBuildAgentPrompt mentions character/source.md", () => {
+  test("buildDiscordWorldBuildKickoff (zh) avoids workspace path semantics", () => {
+    const prompt = buildDiscordWorldBuildKickoff({
+      worldId: 1,
+      worldName: "Test",
+      language: null,
+    });
+    expect(prompt).toContain("世界书");
+    expect(prompt).toContain("world-design-card");
+    expect(prompt).not.toContain("world/source.md");
+    expect(prompt).not.toContain("world/world-card.md");
+  });
+
+  test("buildCharacterBuildAgentPrompt keeps internal file contracts", () => {
     const prompt = buildCharacterBuildAgentPrompt({
       characterId: 1,
       characterName: "Test",
@@ -95,5 +110,20 @@ describe("Discord help/onboarding texts", () => {
     });
     expect(prompt).toContain("character/source.md");
     expect(prompt).toContain("character/character-card.md");
+  });
+
+  test("buildOpencodeBaseSystemRules routes behavior to skills", () => {
+    const rules = buildOpencodeBaseSystemRules(null);
+    expect(rules).toContain("url-access-check");
+    expect(rules).toContain("`nano`");
+    expect(rules).toContain("`polish`");
+    expect(rules).toContain("`quest`");
+    expect(rules).not.toContain("check_url.sh");
+  });
+
+  test("buildHotPushPrompt points to skill instead of hardcoded workflow", () => {
+    const prompt = buildHotPushPrompt(null);
+    expect(prompt).toContain("hot-push");
+    expect(prompt).not.toContain("精选 5 条");
   });
 });

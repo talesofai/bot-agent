@@ -356,21 +356,17 @@ world:
 
 ## 9. Skill 规划（这是 bot 的 skills，不是 Codex skills）
 
-你提供的模板文件：
+当前仓库的 opencode skills 结构是：`configs/skills/<skillName>/SKILL.md`（会同步进 session workspace）。
 
-- `/Users/zyp/Downloads/world-design-card-skill.md`
-- `/Users/zyp/Downloads/character-card-skill.md`
-
-本仓库的 opencode skills 结构是：`configs/skills/<skillName>/SKILL.md`（会同步进 session workspace）。
-
-计划新增（命名建议）：
+当前已内置（示例）：
 
 - `configs/skills/world-design-card/SKILL.md`：世界卡结构化生成
 - `configs/skills/character-card/SKILL.md`：角色卡结构化生成
 - `configs/skills/polish/SKILL.md`：文本润色（`/polish <草稿>`）
 - `configs/skills/quest/SKILL.md`：新手任务引导（`/quest`）
-- `configs/skills/world-readonly/SKILL.md`：在 roleplay 前**必读** `workspace/world/` 下的世界卡与规则，禁止胡编世界设定
-- `configs/skills/canon-conflict-check/SKILL.md`：冲突检测的工作流（先检索正典，再输出冲突点）
+- `configs/skills/world-readonly/SKILL.md`：世界游玩会话只读行为规范
+- `configs/skills/canon-conflict-check/SKILL.md`：正典冲突检测工作流
+- `configs/skills/hot-push/SKILL.md`：定时热点推送工作流
 
 注意：skill 只是一套提示词/工作流，**持久化写入仍由 bot 代码执行**，否则你就是在给模型发“随便写磁盘”的通行证。
 

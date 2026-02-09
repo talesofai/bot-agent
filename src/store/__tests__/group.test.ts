@@ -153,28 +153,6 @@ Be friendly and concise.
       );
     });
 
-    test("should load skills from skills directory", async () => {
-      const groupPath = join(testDir, "skills-group");
-      mkdirSync(groupPath, { recursive: true });
-      writeFileSync(join(groupPath, "config.yaml"), "enabled: true\n");
-      writeFileSync(join(groupPath, "agent.md"), "# Agent\n\nYou are helpful.");
-      mkdirSync(join(groupPath, "skills"), { recursive: true });
-      writeFileSync(
-        join(groupPath, "skills", "draw.md"),
-        "# Draw\n\nYou can draw images.",
-      );
-      writeFileSync(
-        join(groupPath, "skills", "code.md"),
-        "# Code\n\nYou can write code.",
-      );
-
-      const group = await store.loadGroup("skills-group");
-
-      expect(group).not.toBeNull();
-      expect(Object.keys(group!.skills).length).toBe(2);
-      expect(Object.keys(group!.skills).sort()).toEqual(["code", "draw"]);
-    });
-
     test("should return null for non-existent group", async () => {
       const group = await store.loadGroup("non-existent");
       expect(group).toBeNull();

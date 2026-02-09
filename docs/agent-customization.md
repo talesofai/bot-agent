@@ -1,6 +1,6 @@
 # Agent 自定义指南
 
-本文档介绍如何为每个群自定义 Agent 行为。当前已支持读取群目录下的 `agent.md` 与 `config.yaml`，skills 注入仍在规划中。
+本文档介绍如何为每个群自定义 Agent 行为。当前已支持读取群目录下的 `agent.md`、`config.yaml` 与 `skills/{skillName}/SKILL.md`（含脚本目录）。
 
 ## 概述
 
@@ -16,10 +16,13 @@
 /data/groups/{group_id}/
 ├── agent.md          # 主要人设配置
 ├── config.yaml       # 群配置
-├── skills/           # 技能目录（默认技能规划中）
-│   ├── draw.md       # 绘画技能
-│   ├── roleplay.md   # 角色扮演技能
-│   └── search.md     # 搜索技能
+├── skills/           # 技能目录（按 `{skillName}/SKILL.md` 组织）
+│   ├── nano/
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   └── world-design-card/
+│       ├── SKILL.md
+│       └── scripts/
 └── assets/           # 资源文件
     ├── images/
     └── characters/   # 角色配置（按需自建）

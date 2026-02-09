@@ -58,7 +58,7 @@
 	    │   ├── {group_id}/
 	    │   │   ├── agent.md   # 群 Agent 人设（覆盖默认）
 	    │   │   ├── config.yaml # 群配置
-	    │   │   ├── skills/    # 群技能（skills/*.md）
+	    │   │   ├── skills/    # 群技能（{skillName}/SKILL.md + scripts/*）
 	    │   │   └── assets/    # 群资源
 	    │   │       └── images/
 	    │   └── sessions/      # 会话目录（每个用户/会话一个目录）
@@ -82,7 +82,7 @@
 	    └── redis/             # Docker Compose：Redis 数据
 ```
 
-默认 Agent 设计来自 `configs/default-agent.md`。通用技能仍在规划中，目前仅加载群内 `skills/`。
+默认 Agent 设计来自 `configs/default-agent.md`。Opencode skills 采用分层覆盖并在会话启动前同步：`configs/skills/` -> `/data/global/skills/` -> `/data/groups/{group_id}/skills/` -> `/data/bots/{botId}/skills/`。
 
 ## 🗃️ 历史与记录存放位置
 

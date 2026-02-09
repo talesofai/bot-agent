@@ -390,7 +390,7 @@ Bot Agent 每次启动 opencode 前，会把技能目录同步到会话工作区
 ### 支持热更新的配置
 
 - 群目录下的 `agent.md`
-- 群目录下的 `skills/*.md`
+- 群目录下的 `skills/`（目录结构：`{skillName}/SKILL.md` + 可选 `scripts/*`）
 - 群目录下的 `config.yaml`
 
 ### 触发方式

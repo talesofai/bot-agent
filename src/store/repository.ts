@@ -1,12 +1,5 @@
 import { constants } from "node:fs";
-import {
-  access,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import matter from "gray-matter";
@@ -19,7 +12,6 @@ import {
   AgentFrontmatterSchema,
   type GroupConfig,
   type GroupData,
-  type Skill,
 } from "../types/group";
 import { assertSafePathSegment } from "../utils/path";
 import type { UserLanguage } from "../user/state-store";
@@ -144,10 +136,9 @@ export class GroupFileRepository {
       return null;
     }
 
-    const [config, agentContent, skills] = await Promise.all([
+    const [config, agentContent] = await Promise.all([
       this.loadConfig(groupPath),
       this.loadAgentPrompt(groupPath),
-      this.loadSkills(groupPath),
     ]);
 
     return {
@@ -155,7 +146,6 @@ export class GroupFileRepository {
       path: groupPath,
       config,
       agentPrompt: agentContent.content,
-      skills,
     };
   }
 
@@ -240,42 +230,6 @@ export class GroupFileRepository {
         content: content.trim(),
       };
     }
-  }
-
-  async loadSkills(groupPath: string): Promise<Record<string, Skill>> {
-    const skillsPath = join(groupPath, "skills");
-
-    if (!(await this.exists(skillsPath))) {
-      return {};
-    }
-
-    const skills: Record<string, Skill> = {};
-
-    try {
-      const entries = await readdir(skillsPath, { withFileTypes: true });
-      const skillEntries = entries.filter(
-        (entry) => entry.isFile() && entry.name.endsWith(".md"),
-      );
-
-      for (const entry of skillEntries) {
-        const skillPath = join(skillsPath, entry.name);
-        try {
-          const content = await readFile(skillPath, "utf-8");
-          const name = basename(entry.name, ".md");
-          skills[name] = {
-            name,
-            content: content.trim(),
-            enabled: true,
-          };
-        } catch (err) {
-          this.logger.warn({ err, skillPath }, "Failed to load skill file");
-        }
-      }
-    } catch (err) {
-      this.logger.warn({ err, skillsPath }, "Failed to load skills");
-    }
-
-    return skills;
   }
 
   private async exists(targetPath: string): Promise<boolean> {

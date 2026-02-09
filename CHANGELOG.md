@@ -25,6 +25,7 @@
 - Discord：角色创建流程新增【生成角色立绘】与【生成角色立绘（参考图）】按钮，自动触发 opencode 调用生图/改图技能
 - Discord：消息发送支持音频标记规范化与外链音频附件化，提升 Discord 端音频可读性与可播放性
 - Config：新增 `WIKI_PUBLIC_BASE_URL`，用于在世界公告中生成 Wiki 网页直达链接
+- Skills：新增 `hot-push`、`world-readonly` 与 `canon-conflict-check`，分别用于定时热点推送、世界游玩只读约束与正典冲突检测
 
 ### Changed
 
@@ -41,6 +42,9 @@
 - Discord：世界列表/加入等展示优先读取世界卡与角色卡中的实际名称（不存在时再回退默认名）
 - Texts：统一用户可见文案为产品术语，不再暴露工作区/文件路径语义；内部 LLM 提示保留路径指令并显式要求不得对用户外露
 - Discord：世界公告在配置 `WIKI_PUBLIC_BASE_URL` 后会附带 Wiki 中/英文直达链接
+- Store：移除群目录旧格式 `skills/*.md` 读取链路，统一以 `{skillName}/SKILL.md` 目录技能为单一真相
+- Texts：收敛基础系统规则与世界/角色构建提示，执行细节下沉至 skills（代码侧保留安全边界与最小路由）
+- 文档：README 与配置/自定义文档同步为目录化 skills 结构及分层覆盖策略
 
 ### Fixed
 

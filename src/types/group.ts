@@ -59,15 +59,6 @@ export const GroupConfigSchema = z.object({
 export type GroupConfig = z.infer<typeof GroupConfigSchema>;
 
 /**
- * Skill definition
- */
-export interface Skill {
-  name: string;
-  content: string;
-  enabled: boolean;
-}
-
-/**
  * Complete group data
  */
 export interface GroupData {
@@ -75,7 +66,6 @@ export interface GroupData {
   path: string;
   config: GroupConfig;
   agentPrompt: string;
-  skills: Record<string, Skill>;
 }
 
 /**

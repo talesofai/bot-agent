@@ -47,6 +47,7 @@
 - 文档：README 与配置/自定义文档同步为目录化 skills 结构及分层覆盖策略
 - 文档：清理剩余“skills 仍在规划中 / skills\*.md”历史表述，统一为 `{skillName}/SKILL.md` 语义
 - 文档：README 首页文案同步为目录化 skills（`SKILL.md + scripts`），移除“注入规划中”过时描述
+- 文档：修正管理与热更新说明，明确 `/reload` 仅支持受保护 API，并补充现有测试命令
 
 ### Fixed
 

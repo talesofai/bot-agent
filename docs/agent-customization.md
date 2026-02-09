@@ -187,16 +187,17 @@ adminUsers:
 | `/login [token]`     | 保存 MCP token 到当前会话（不推荐在群里执行）    |
 | `/logout`            | 从当前会话移除 MCP token                         |
 
-仍在规划中：
+暂未提供（请勿使用）：
 
-| 指令                 | 说明                  |
-| -------------------- | --------------------- |
-| `/reload`            | 重载配置（规划）      |
-| `/enable`            | 启用 AI               |
-| `/disable`           | 禁用 AI               |
-| `/status`            | 查看状态              |
-| `/edit agent`        | 编辑 agent.md（规划） |
-| `/edit skill <name>` | 编辑技能（规划）      |
+| 指令                 | 说明                                             |
+| -------------------- | ------------------------------------------------ |
+| `/enable`            | 启用 AI（当前未实现；请在 `config.yaml` 中配置） |
+| `/disable`           | 禁用 AI（当前未实现；请在 `config.yaml` 中配置） |
+| `/status`            | 查看状态（当前未实现）                           |
+| `/edit agent`        | 在线编辑 agent（当前未实现）                     |
+| `/edit skill <name>` | 在线编辑 skill（当前未实现）                     |
+
+> 说明：`/reload` 目前仅提供受保护 HTTP API（`POST /api/v1/groups/{groupId}/reload`），不提供聊天管理指令。
 
 ## 最佳实践
 
@@ -217,4 +218,9 @@ bun run start:adapter
 
 ### 测试配置
 
-测试指令仍在规划中。
+建议至少执行以下命令：
+
+```bash
+bun run test
+bun run check
+```

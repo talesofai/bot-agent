@@ -402,7 +402,7 @@ Bot Agent 每次启动 opencode 前，会把技能目录同步到会话工作区
 ### 触发方式
 
 1. **自动**：文件修改后自动重载（通过 chokidar）
-2. **手动**：发送管理指令 `/reload`（规划中）
+2. **手动**：调用受保护 API `POST /api/v1/groups/{groupId}/reload`（需配置 `API_TOKEN`）
 
 ### 不支持热更新的配置
 

@@ -1,6 +1,6 @@
 # opencode-bot-agent
 
-基于 AI Agent 的 QQ 群机器人系统，使用 opencode 作为核心 Agent，支持自定义群配置与技能目录（注入规划中）。
+基于 AI Agent 的 QQ 群机器人系统，使用 opencode 作为核心 Agent，支持自定义群配置与目录化技能（SKILL.md + scripts）。
 
 ## 当前状态
 
@@ -9,7 +9,7 @@
 ## ✨ 特性
 
 - 🤖 **AI Agent 驱动**：使用 opencode 作为核心 Agent，支持 MCP 协议扩展
-- 📁 **群隔离架构**：每个群独立配置目录，支持自定义 Agent 人设与技能目录（注入规划中）
+- 📁 **群隔离架构**：每个群独立配置目录，支持自定义 Agent 人设与目录化技能覆盖
 - 🔌 **可扩展**：通过 talesofai MCP 扩展能力，支持捏 Ta 等核心玩法
 - 🐧 **Linux 原生**：支持 Docker/K8s 容器化部署
 - 🌐 **多平台规划**：未来支持 Discord 等海外平台

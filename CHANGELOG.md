@@ -51,6 +51,7 @@
 - 文档：API/部署文案按实现状态分层，明确 `/wiki` 与群重载已实现、`/metrics` 与 WebSocket 未实现
 - 文档：开发规划总览更新为“QQ/Discord 已支持”，避免首页描述与现状冲突
 - Refactor：`src/texts.ts` 按领域拆分为 `texts/common|session|discord|world`，并保持原导出接口兼容
+- Refactor：拆分 `src/world/store.ts` 的类型与解析逻辑到 `world/store-types.ts`、`world/store-parsers.ts`，保持对外 API 不变
 
 ### Fixed
 

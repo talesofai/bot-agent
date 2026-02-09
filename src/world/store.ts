@@ -4,52 +4,23 @@ import { logger as defaultLogger } from "../logger";
 import { buildWorldGroupId, normalizeWorldId, type WorldId } from "./ids";
 import { assertSafePathSegment, isSafePathSegment } from "../utils/path";
 
-export type WorldStatus = "draft" | "active" | "archived" | "failed";
+import type {
+  CharacterMeta,
+  CharacterVisibility,
+  WorldActiveMeta,
+  WorldDraftMeta,
+  WorldMeta,
+} from "./store-types";
+import { parseCharacterMeta, parseWorldMeta } from "./store-parsers";
 
-export type CharacterVisibility = "public" | "private";
-
-export type WorldDraftMeta = {
-  id: WorldId;
-  homeGuildId: string;
-  creatorId: string;
-  name: string;
-  status: "draft";
-  createdAt: string;
-  updatedAt: string;
-  buildChannelId?: string;
-};
-
-export type WorldActiveMeta = {
-  id: WorldId;
-  homeGuildId: string;
-  creatorId: string;
-  name: string;
-  status: Exclude<WorldStatus, "draft">;
-  createdAt: string;
-  updatedAt: string;
-  roleId: string;
-  categoryId: string;
-  infoChannelId: string;
-  joinChannelId?: string;
-  roleplayChannelId: string;
-  forumChannelId?: string;
-  proposalsChannelId: string;
-  voiceChannelId: string;
-  buildChannelId?: string;
-};
-
-export type WorldMeta = WorldDraftMeta | WorldActiveMeta;
-
-export type CharacterMeta = {
-  id: number;
-  creatorId: string;
-  name: string;
-  visibility: CharacterVisibility;
-  status: "active" | "retired" | "failed";
-  createdAt: string;
-  updatedAt: string;
-  buildChannelId?: string;
-};
+export type {
+  CharacterMeta,
+  CharacterVisibility,
+  WorldActiveMeta,
+  WorldDraftMeta,
+  WorldMeta,
+  WorldStatus,
+} from "./store-types";
 
 export interface WorldStoreOptions {
   redisUrl: string;
@@ -949,115 +920,4 @@ export class WorldStore {
     }
     return this.key(`world:${worldId}:fork:${userId}:${sourceCharacterId}`);
   }
-}
-
-function parseWorldMeta(raw: Record<string, string>): WorldMeta | null {
-  const id = Number(raw.id);
-  if (!Number.isInteger(id) || id <= 0) {
-    return null;
-  }
-  const status = raw.status as WorldStatus;
-  if (
-    status !== "draft" &&
-    status !== "active" &&
-    status !== "archived" &&
-    status !== "failed"
-  ) {
-    return null;
-  }
-
-  const baseRequired = [
-    "homeGuildId",
-    "creatorId",
-    "name",
-    "createdAt",
-    "updatedAt",
-  ] as const;
-  for (const key of baseRequired) {
-    if (!raw[key] || raw[key].trim() === "") {
-      return null;
-    }
-  }
-
-  if (status === "draft") {
-    const buildChannelId = raw.buildChannelId?.trim() || undefined;
-    return {
-      id,
-      homeGuildId: raw.homeGuildId,
-      creatorId: raw.creatorId,
-      name: raw.name,
-      status,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt,
-      buildChannelId,
-    };
-  }
-
-  const channelRequired = [
-    "roleId",
-    "categoryId",
-    "infoChannelId",
-    "roleplayChannelId",
-    "proposalsChannelId",
-    "voiceChannelId",
-  ] as const;
-  for (const key of channelRequired) {
-    if (!raw[key] || raw[key].trim() === "") {
-      return null;
-    }
-  }
-
-  const buildChannelId = raw.buildChannelId?.trim() || undefined;
-  const joinChannelId = raw.joinChannelId?.trim() || undefined;
-  const forumChannelId = raw.forumChannelId?.trim() || undefined;
-
-  return {
-    id,
-    homeGuildId: raw.homeGuildId,
-    creatorId: raw.creatorId,
-    name: raw.name,
-    status,
-    createdAt: raw.createdAt,
-    updatedAt: raw.updatedAt,
-    roleId: raw.roleId,
-    categoryId: raw.categoryId,
-    infoChannelId: raw.infoChannelId,
-    joinChannelId,
-    roleplayChannelId: raw.roleplayChannelId,
-    forumChannelId,
-    proposalsChannelId: raw.proposalsChannelId,
-    voiceChannelId: raw.voiceChannelId,
-    buildChannelId,
-  };
-}
-
-function parseCharacterMeta(raw: Record<string, string>): CharacterMeta | null {
-  const id = Number(raw.id);
-  if (!Number.isInteger(id) || id <= 0) {
-    return null;
-  }
-  const visibility = raw.visibility as CharacterVisibility;
-  if (visibility !== "public" && visibility !== "private") {
-    return null;
-  }
-  const status = raw.status as CharacterMeta["status"];
-  if (status !== "active" && status !== "retired" && status !== "failed") {
-    return null;
-  }
-  const required = ["creatorId", "name", "createdAt", "updatedAt"] as const;
-  for (const key of required) {
-    if (!raw[key] || raw[key].trim() === "") {
-      return null;
-    }
-  }
-  return {
-    id,
-    creatorId: raw.creatorId,
-    name: raw.name,
-    visibility,
-    status,
-    createdAt: raw.createdAt,
-    updatedAt: raw.updatedAt,
-    buildChannelId: raw.buildChannelId?.trim() || undefined,
-  };
 }

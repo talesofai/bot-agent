@@ -20,6 +20,11 @@
 - Config：新增 Discord onboarding 自动触发与身份组角色关键词映射配置（`DISCORD_ONBOARDING_AUTO_START`、`DISCORD_ONBOARDING_IDENTITY_ROLE_NAMES_*`）
 - Discord：新手引导支持按钮/下拉菜单交互（点击创建角色/世界、加入世界、查看卡片），减少新用户记忆指令负担（指令仍保留）
 - Discord：世界创建编辑话题的 Quick Actions 新增【自动推进】【发布】【语言切换】按钮（仍支持 `/world publish`）
+- Skills：新增 `banana-image` 与 `character-portrait`，统一约束 TalesOfAI MCP 生图/改图与角色立绘生成流程
+- Discord：新增 `/world image`（创作者上传世界素材图并写入世界书 source），素材落盘到 `worlds/<id>/assets/images/` 并维护索引
+- Discord：角色创建流程新增【生成角色立绘】与【生成角色立绘（参考图）】按钮，自动触发 opencode 调用生图/改图技能
+- Discord：消息发送支持音频标记规范化与外链音频附件化，提升 Discord 端音频可读性与可播放性
+- Config：新增 `WIKI_PUBLIC_BASE_URL`，用于在世界公告中生成 Wiki 网页直达链接
 
 ### Changed
 
@@ -31,6 +36,10 @@
 - Discord：`/onboard role` 关键词调整为 `admin|both|adventurer|world creater`，支持多身份并新增管理员引导；onboarding 自动引导不再依赖 homeGuild，且在显式映射不匹配时会回退到启发式匹配
 - Discord：`/onboard` 与 onboarding 自动提示默认发送点击式菜单（不再直接抛命令清单）
 - Worker：默认禁用 opencode `question` 工具（避免在 bot 场景卡住等待宿主交互回答导致超时）
+- Discord：`/world publish` 支持可选 `cover` 附件，并在 `world-index` 发帖失败时返回可见提示（不再静默吞错）
+- Discord：世界发布/迁移会自动补建 `world-forum`（优先 Forum，失败回退 Text）并同步创作者权限
+- Discord：世界列表/加入等展示优先读取世界卡与角色卡中的实际名称（不存在时再回退默认名）
+- Discord：世界公告在配置 `WIKI_PUBLIC_BASE_URL` 后会附带 Wiki 中/英文直达链接
 
 ### Fixed
 
@@ -53,6 +62,8 @@
 - Discord：创建角色后 “Step 1: Character Created” 回执不再附带按钮（避免在世界/引导话题里造成干扰）
 - Discord：角色创建编辑话题 Quick Actions 新增【自动推进】【公开角色】【语言切换】按钮（仍支持 `/character publish`）
 - Discord：世界/角色新手文案统一为“世界书/角色图书馆/角色卡”表述，避免向用户暴露文件系统路径
+- Discord：修复 world-index 首帖偶发未创建的问题；世界已发布时再次执行发布会尝试补发索引帖
+- Discord：修复世界公告 Embed 中 Markdown 分隔符（如 `---`、`| ---- |`）污染阅读的问题
 
 ## [0.0.31] - 2026-01-30
 

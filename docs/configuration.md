@@ -263,10 +263,12 @@ logging:
 2. 如果不确定，诚实地说不知道
 3. 避免敏感话题
 
-## 可用技能（规划）
+## 可用技能（示例）
 
-- 闲聊对话
-- 问答解答
+- world-design-card（世界结构化整理）
+- character-card（角色卡整理）
+- nano / banana-image（生图与改图）
+- polish / quest（文案润色与任务引导）
 ```
 
 ## 群目录结构
@@ -277,9 +279,13 @@ logging:
 /data/groups/{group_id}/
 ├── agent.md          # 群 Agent 人设（覆盖默认）
 ├── config.yaml       # 群配置
-├── skills/           # 群技能（默认技能规划中）
-│   ├── draw.md
-│   └── roleplay.md
+├── skills/           # 群技能（目录化）
+│   ├── nano/
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   └── world-design-card/
+│       ├── SKILL.md
+│       └── scripts/
 └── assets/           # 群资源
     └── images/
 ```
@@ -308,7 +314,7 @@ EXPIRE bot:route:{bot_account_id} 30
 ### 继承与覆盖规则
 
 - 群目录初始化或修复时若缺少 `agent.md` 会生成默认内容。
-- 通用技能仍在规划中，目前仅加载群目录下的 `skills/`。
+- skills 采用目录化结构（`{skillName}/SKILL.md` + 可选 `scripts/*`），并按内置/全局/群/机器人四层覆盖同步到会话工作区。
 
 ### 群配置 config.yaml
 

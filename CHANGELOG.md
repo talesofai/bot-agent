@@ -45,6 +45,7 @@
 - Store：移除群目录旧格式 `skills/*.md` 读取链路，统一以 `{skillName}/SKILL.md` 目录技能为单一真相
 - Texts：收敛基础系统规则与世界/角色构建提示，执行细节下沉至 skills（代码侧保留安全边界与最小路由）
 - 文档：README 与配置/自定义文档同步为目录化 skills 结构及分层覆盖策略
+- 文档：清理剩余“skills 仍在规划中 / skills\*.md”历史表述，统一为 `{skillName}/SKILL.md` 语义
 
 ### Fixed
 

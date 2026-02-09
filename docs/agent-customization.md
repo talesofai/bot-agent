@@ -107,96 +107,28 @@
 
 ## 技能配置
 
-以下内容为技能格式示例，当前不会自动注入到 prompt。
+技能采用目录化结构，按 `skills/{skillName}/SKILL.md` 组织，可附带 `scripts/*`。
 
-技能是模块化的能力扩展，放在 `skills/` 目录下（注入 prompt 仍在规划中）。
+示例：
 
-### 绘画技能 (skills/draw.md)
-
-```markdown
-# 绘画技能
-
-当用户请求绘画时，使用此技能。
-
-## 触发条件
-
-- 用户消息包含"画"、"绘制"、"生成图片"等关键词
-- 用户明确要求创作图像
-
-## 使用方法
-
-调用 talesofai MCP 的绘画工具：
-
-1. 解析用户的绘画需求
-2. 生成详细的英文提示词
-3. 调用 `mcp_talesofai_draw` 工具
-4. 将生成的图片发送给用户
-
-## 提示词规范
-
-- 使用英文描述
-- 包含主体、风格、细节
-- 避免敏感内容
-
-## 示例
-
-用户请求: 画一只可爱的猫咪
-生成提示词: A cute fluffy cat, chibi style, big eyes, sitting, pastel colors, soft lighting
+```
+skills/
+├── nano/
+│   ├── SKILL.md
+│   └── scripts/
+├── world-design-card/
+│   ├── SKILL.md
+│   └── scripts/
+└── character-card/
+    ├── SKILL.md
+    └── scripts/
 ```
 
-### 角色扮演技能 (skills/roleplay.md)
+推荐做法：
 
-````markdown
-# 角色扮演技能
-
-支持用户与自定义角色互动。
-
-## 触发条件
-
-- 用户 @了某个角色名称
-- 用户说"扮演 XXX"
-
-## 使用方法
-
-1. 识别目标角色
-2. 加载角色配置（从 assets/characters/，规划中）
-3. 以角色身份回复
-
-## 角色配置格式
-
-角色配置放在 `assets/characters/{name}.yaml`（规划）:
-
-```yaml
-name: 小明
-personality: 活泼开朗，喜欢开玩笑
-background: 大学计算机专业学生
-speaking_style: 年轻人网络用语
-```
-````
-
-### 搜索技能 (skills/search.md)
-
-```markdown
-# 搜索技能
-
-当需要查询实时信息时使用。
-
-## 触发条件
-
-- 用户询问当前事件
-- 用户需要最新信息
-- 问题超出知识截止日期
-
-## 使用方法
-
-调用 MCP 搜索工具获取信息，然后总结回复。
-
-## 注意事项
-
-- 标注信息来源
-- 区分事实和观点
-- 对于争议性话题保持中立
-```
+- 把“行为流程/提示词规则”写进 SKILL，而不是散落在代码文案里
+- 在 SKILL 中明确输入、输出格式、失败兜底与安全约束
+- 通过群级/机器人级目录覆盖同名 skill，实现定制而不改代码
 
 ## config.yaml 配置
 

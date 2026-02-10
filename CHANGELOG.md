@@ -56,6 +56,7 @@
 - Refactor：提取 Discord Adapter 卡片解析与展示辅助函数到 `adapters/discord/card-parsers.ts`，缩减 `adapter.ts` 体积并保持行为一致
 - Refactor：提取 Discord Adapter 的 URL/Wiki 导入辅助函数到 `adapters/discord/url-helpers.ts`，统一链接与文件名校验逻辑
 - Refactor：继续按领域拆分 Discord Adapter（交互回复、onboarding custom_id、世界展示构建、角色卡派生、权限覆盖、语言推断、slash commands、图片抓取）到独立模块，`adapter.ts` 仅保留编排与状态流
+- Refactor：Discord Adapter 进一步按领域拆分为 `adapter-interaction-onboarding`、`adapter-onboarding-world-entry`、`adapter-world-lifecycle`、`adapter-world-character-entry`、`adapter-character-subspace`、`adapter-showcase-bootstrap`，并将 `adapter.ts` 压缩到 2000 行以内
 
 ### Fixed
 

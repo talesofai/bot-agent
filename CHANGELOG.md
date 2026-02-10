@@ -29,6 +29,7 @@
 
 ### Changed
 
+- Refactor：拆分 `src/session/processor.ts` 的工作区绑定/同步与通用工具到 `session/processor-workspace.ts`、`session/processor-utils.ts`，主流程文件进一步按职责瘦身并保持行为不变
 - Docker：镜像构建将 `docs/discord_commands/` 一并打包（保证 Wiki 在容器内可读取指令文档）
 - Agent：更新默认奈塔人设模板（中英分文档）为最新预设；并在首次构建 system prompt 时按用户语言选择 `agent.md`/`agent.en.md`；同时清理不可执行的“清理/拉黑”等规则
 - Discord：Adapter 增加 `GuildMembers` intent 以监听成员角色更新（用于 onboarding 自动引导）

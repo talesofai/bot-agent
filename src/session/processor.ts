@@ -1,8 +1,5 @@
 import type { Logger } from "pino";
 
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-
 import type { SessionJob, SessionJobData } from "../queue";
 import type { PlatformAdapter, SessionEvent } from "../types/platform";
 import type { HistoryEntry, SessionInfo } from "../types/session";
@@ -20,7 +17,6 @@ import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { runSessionGateLoop } from "./gate-loop";
-import { buildBotAccountId } from "../utils/bot-id";
 import { extractOutputElements } from "./output-elements";
 import { redactSensitiveText } from "../utils/redact";
 import type { OpencodeClient } from "../opencode/server-client";
@@ -32,10 +28,6 @@ import { parseWorldGroup } from "../world/ids";
 import { WorldStore } from "../world/store";
 import { feishuLogJson } from "../feishu/webhook";
 import { parseCharacterGroup } from "../character/ids";
-import {
-  parseOpencodeModelIdsCsv,
-  selectOpencodeModelId,
-} from "../opencode/model-ids";
 import { UserStateStore, type UserLanguage } from "../user/state-store";
 import {
   buildLanguageDirective,
@@ -50,6 +42,28 @@ import {
   setTraceIdOnExtras,
   withTelemetrySpan,
 } from "../telemetry";
+import {
+  buildOpencodeSessionTitle,
+  classifyOpencodeTimeoutPoint,
+  isAbortError,
+  isLikelyOpencodeSessionId,
+  parseWebfetchStatusCode,
+  readHttpStatusCode,
+  resolveHistoryKey,
+  resolveModelRef,
+  resolveOpencodeAssistantMessageId,
+  resolveOutput,
+  resolveSessionInput,
+  resolveSessionTools,
+  resolveUserCreatedAt,
+  toBufferKey,
+  truncateLogPreview,
+  truncateTextByBytes,
+} from "./processor-utils";
+import {
+  ensureWorkspaceBindingsWithDeps,
+  syncWorkspaceFilesFromWorkspaceWithDeps,
+} from "./processor-workspace";
 
 export interface SessionJobContext {
   id?: string | number | null;
@@ -1050,339 +1064,25 @@ export class SessionProcessor {
   private async ensureWorkspaceBindings(
     sessionInfo: SessionInfo,
   ): Promise<void> {
-    const character = parseCharacterGroup(sessionInfo.meta.groupId);
-    if (character?.kind === "world_build") {
-      await this.ensureWorldCharacterBuildWorkspace(sessionInfo, character);
-      return;
-    }
-
-    const world = parseWorldGroup(sessionInfo.meta.groupId);
-    if (world) {
-      await this.ensureWorldWorkspace(sessionInfo, world);
-      return;
-    }
-    if (character?.kind === "build") {
-      await this.ensureCharacterWorkspace(sessionInfo, character);
-    }
-  }
-
-  private async ensureWorldCharacterBuildWorkspace(
-    sessionInfo: SessionInfo,
-    parsed: Extract<
-      ReturnType<typeof parseCharacterGroup>,
-      { kind: "world_build" }
-    >,
-  ): Promise<void> {
-    const worldId = parsed.worldId;
-    const characterId = parsed.characterId;
-
-    const worldDir = path.join(sessionInfo.workspacePath, "world");
-    const characterDir = path.join(sessionInfo.workspacePath, "character");
-    await Promise.all([
-      mkdir(worldDir, { recursive: true }),
-      mkdir(characterDir, { recursive: true }),
-    ]);
-
-    const [card, rules, source, characterCard, characterSource] =
-      await Promise.all([
-        this.worldFiles.readWorldCard(worldId),
-        this.worldFiles.readRules(worldId),
-        this.worldFiles.readSourceDocument(worldId),
-        this.worldFiles.readCharacterCard(characterId),
-        this.worldFiles.readCharacterSourceDocument(characterId),
-      ]);
-
-    await Promise.all([
-      atomicWrite(
-        path.join(worldDir, "world-card.md"),
-        card ?? `# 世界卡（W${worldId}）\n`,
-      ),
-      atomicWrite(
-        path.join(worldDir, "rules.md"),
-        rules ?? `# 世界规则（W${worldId}）\n`,
-      ),
-      atomicWrite(
-        path.join(characterDir, "character-card.md"),
-        characterCard ?? `# 角色卡（C${characterId}）\n`,
-      ),
-    ]);
-
-    const sourcePath = path.join(worldDir, "source.md");
-    if (source?.trim()) {
-      await atomicWrite(sourcePath, source);
-    } else {
-      await rm(sourcePath, { force: true });
-    }
-
-    const characterSourcePath = path.join(characterDir, "source.md");
-    if (characterSource?.trim()) {
-      await atomicWrite(characterSourcePath, characterSource);
-    } else {
-      await rm(characterSourcePath, { force: true });
-    }
-  }
-
-  private async ensureWorldWorkspace(
-    sessionInfo: SessionInfo,
-    parsed: NonNullable<ReturnType<typeof parseWorldGroup>>,
-  ): Promise<void> {
-    const worldId = parsed.worldId;
-
-    const worldDir = path.join(sessionInfo.workspacePath, "world");
-    await mkdir(worldDir, { recursive: true });
-
-    const [card, rules, source] = await Promise.all([
-      this.worldFiles.readWorldCard(worldId),
-      this.worldFiles.readRules(worldId),
-      parsed.kind === "build"
-        ? this.worldFiles.readSourceDocument(worldId)
-        : null,
-    ]);
-
-    await Promise.all([
-      atomicWrite(
-        path.join(worldDir, "world-card.md"),
-        card ?? `# 世界卡（W${worldId}）\n`,
-      ),
-      atomicWrite(
-        path.join(worldDir, "rules.md"),
-        rules ?? `# 世界规则（W${worldId}）\n`,
-      ),
-    ]);
-
-    const sourcePath = path.join(worldDir, "source.md");
-    if (parsed.kind === "build") {
-      if (source?.trim()) {
-        await atomicWrite(sourcePath, source);
-      } else {
-        await rm(sourcePath, { force: true });
-      }
-      await rm(path.join(worldDir, "active-character.md"), { force: true });
-      return;
-    }
-
-    await rm(sourcePath, { force: true });
-
-    const activeCharacterId = await this.worldStore.getActiveCharacterId({
-      worldId,
-      userId: sessionInfo.meta.ownerId,
-    });
-    const activePath = path.join(worldDir, "active-character.md");
-    if (!activeCharacterId) {
-      await rm(activePath, { force: true });
-      return;
-    }
-    const activeCharacterCard =
-      await this.worldFiles.readCharacterCard(activeCharacterId);
-    if (!activeCharacterCard) {
-      await rm(activePath, { force: true });
-      return;
-    }
-    await atomicWrite(activePath, activeCharacterCard);
-  }
-
-  private async ensureCharacterWorkspace(
-    sessionInfo: SessionInfo,
-    parsed: NonNullable<ReturnType<typeof parseCharacterGroup>>,
-  ): Promise<void> {
-    const characterId = parsed.characterId;
-    const dir = path.join(sessionInfo.workspacePath, "character");
-    await mkdir(dir, { recursive: true });
-
-    const [card, source] = await Promise.all([
-      this.worldFiles.readCharacterCard(characterId),
-      this.worldFiles.readCharacterSourceDocument(characterId),
-    ]);
-    await atomicWrite(
-      path.join(dir, "character-card.md"),
-      card ?? `# 角色卡（C${characterId}）\n`,
+    return ensureWorkspaceBindingsWithDeps(
+      {
+        worldStore: this.worldStore,
+        worldFiles: this.worldFiles,
+      },
+      sessionInfo,
     );
-
-    const sourcePath = path.join(dir, "source.md");
-    if (source?.trim()) {
-      await atomicWrite(sourcePath, source);
-    } else {
-      await rm(sourcePath, { force: true });
-    }
   }
 
   private async syncWorkspaceFilesFromWorkspace(
     sessionInfo: SessionInfo,
   ): Promise<string[]> {
-    const character = parseCharacterGroup(sessionInfo.meta.groupId);
-    if (character?.kind === "world_build") {
-      return this.syncWorldCharacterBuildFilesFromWorkspace(
-        sessionInfo,
-        character,
-      );
-    }
-
-    const world = parseWorldGroup(sessionInfo.meta.groupId);
-    if (world) {
-      return this.syncWorldFilesFromWorkspace(sessionInfo, world);
-    }
-    if (character?.kind === "build") {
-      return this.syncCharacterFilesFromWorkspace(sessionInfo, character);
-    }
-    return [];
-  }
-
-  private async syncWorldCharacterBuildFilesFromWorkspace(
-    sessionInfo: SessionInfo,
-    parsed: Extract<
-      ReturnType<typeof parseCharacterGroup>,
-      { kind: "world_build" }
-    >,
-  ): Promise<string[]> {
-    const characterId = parsed.characterId;
-    const meta = await this.worldStore.getCharacter(characterId);
-    if (!meta) {
-      throw new Error(`角色不存在：C${characterId}`);
-    }
-    if (meta.creatorId !== sessionInfo.meta.ownerId) {
-      throw new Error("无权限：只有角色创作者可以修改角色卡。");
-    }
-
-    const dir = path.join(sessionInfo.workspacePath, "character");
-    const workspacePath = path.join(dir, "character-card.md");
-    const workspaceCard = await readFile(workspacePath, "utf8").catch((err) => {
-      if (err && typeof err === "object" && "code" in err) {
-        if ((err as { code?: unknown }).code === "ENOENT") {
-          return null;
-        }
-      }
-      throw err;
-    });
-    const storedCard = await this.worldFiles.readCharacterCard(characterId);
-
-    if (
-      !workspaceCard?.trim() ||
-      workspaceCard.trimEnd() === (storedCard ?? "").trimEnd()
-    ) {
-      return [];
-    }
-
-    await this.worldFiles.writeCharacterCard(characterId, workspaceCard);
-    await this.worldFiles.appendCharacterEvent(characterId, {
-      type: "character_card_updated",
-      characterId,
-      userId: sessionInfo.meta.ownerId,
-      groupId: sessionInfo.meta.groupId,
-    });
-    return ["character/character-card.md"];
-  }
-
-  private async syncWorldFilesFromWorkspace(
-    sessionInfo: SessionInfo,
-    parsed: NonNullable<ReturnType<typeof parseWorldGroup>>,
-  ): Promise<string[]> {
-    if (parsed.kind === "play") {
-      return [];
-    }
-    const worldId = parsed.worldId;
-
-    const worldDir = path.join(sessionInfo.workspacePath, "world");
-    const readWorkspaceFile = async (
-      filename: string,
-    ): Promise<string | null> =>
-      readFile(path.join(worldDir, filename), "utf8").catch((err) => {
-        if (err && typeof err === "object" && "code" in err) {
-          const code = (err as { code?: unknown }).code;
-          if (code === "ENOENT") {
-            return null;
-          }
-        }
-        throw err;
-      });
-
-    if (parsed.kind === "build") {
-      const meta = await this.worldStore.getWorld(worldId);
-      if (!meta) {
-        throw new Error(`世界不存在：W${worldId}`);
-      }
-      if (meta.creatorId !== sessionInfo.meta.ownerId) {
-        throw new Error("无权限：只有世界创作者可以修改世界文件。");
-      }
-
-      const [workspaceCard, workspaceRules, storedCard, storedRules] =
-        await Promise.all([
-          readWorkspaceFile("world-card.md"),
-          readWorkspaceFile("rules.md"),
-          this.worldFiles.readWorldCard(worldId),
-          this.worldFiles.readRules(worldId),
-        ]);
-
-      const changed: string[] = [];
-      if (
-        workspaceCard?.trim() &&
-        workspaceCard.trimEnd() !== (storedCard ?? "").trimEnd()
-      ) {
-        await this.worldFiles.writeWorldCard(worldId, workspaceCard);
-        changed.push("world-card.md");
-      }
-      if (
-        workspaceRules?.trim() &&
-        workspaceRules.trimEnd() !== (storedRules ?? "").trimEnd()
-      ) {
-        await this.worldFiles.writeRules(worldId, workspaceRules);
-        changed.push("rules.md");
-      }
-
-      if (changed.length > 0) {
-        await this.worldFiles.appendEvent(worldId, {
-          type: "world_files_updated",
-          worldId,
-          userId: sessionInfo.meta.ownerId,
-          groupId: sessionInfo.meta.groupId,
-          files: changed,
-        });
-      }
-
-      return changed;
-    }
-    return [];
-  }
-
-  private async syncCharacterFilesFromWorkspace(
-    sessionInfo: SessionInfo,
-    parsed: NonNullable<ReturnType<typeof parseCharacterGroup>>,
-  ): Promise<string[]> {
-    const characterId = parsed.characterId;
-    const meta = await this.worldStore.getCharacter(characterId);
-    if (!meta) {
-      throw new Error(`角色不存在：C${characterId}`);
-    }
-    if (meta.creatorId !== sessionInfo.meta.ownerId) {
-      throw new Error("无权限：只有角色创作者可以修改角色卡。");
-    }
-
-    const dir = path.join(sessionInfo.workspacePath, "character");
-    const workspacePath = path.join(dir, "character-card.md");
-    const workspaceCard = await readFile(workspacePath, "utf8").catch((err) => {
-      if (err && typeof err === "object" && "code" in err) {
-        if ((err as { code?: unknown }).code === "ENOENT") {
-          return null;
-        }
-      }
-      throw err;
-    });
-    const storedCard = await this.worldFiles.readCharacterCard(characterId);
-
-    if (
-      !workspaceCard?.trim() ||
-      workspaceCard.trimEnd() === (storedCard ?? "").trimEnd()
-    ) {
-      return [];
-    }
-
-    await this.worldFiles.writeCharacterCard(characterId, workspaceCard);
-    await this.worldFiles.appendCharacterEvent(characterId, {
-      type: "character_card_updated",
-      characterId,
-      userId: sessionInfo.meta.ownerId,
-      groupId: sessionInfo.meta.groupId,
-    });
-    return ["character/character-card.md"];
+    return syncWorkspaceFilesFromWorkspaceWithDeps(
+      {
+        worldStore: this.worldStore,
+        worldFiles: this.worldFiles,
+      },
+      sessionInfo,
+    );
   }
 
   private async ensureOpencodeSessionId(
@@ -1730,231 +1430,4 @@ export class SessionProcessor {
       });
     }
   }
-}
-
-function resolveUserCreatedAt(
-  timestamp: number | undefined,
-  fallback: string,
-): string {
-  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
-    return fallback;
-  }
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return fallback;
-  }
-  return date.toISOString();
-}
-
-function resolveSessionInput(content: string): string {
-  const trimmed = content.trim();
-  if (trimmed) {
-    return content;
-  }
-  // Opencode rejects empty input, but we still need a non-empty placeholder.
-  return " ";
-}
-
-function readHttpStatusCode(err: unknown): number | null {
-  if (!err || typeof err !== "object") {
-    return null;
-  }
-  const status = (err as { status?: unknown }).status;
-  return typeof status === "number" && Number.isFinite(status) ? status : null;
-}
-
-function classifyOpencodeTimeoutPoint(input: {
-  errName?: string;
-  errMessage: string;
-  status: number | null;
-}): "opencode-server" | "worker->opencode-server" | null {
-  const errName = input.errName?.trim() ?? "";
-  const messageLower = (input.errMessage ?? "").toLowerCase();
-  const isTimeoutLike =
-    errName === "TimeoutError" || messageLower.includes("timed out");
-  if (!isTimeoutLike) {
-    return null;
-  }
-  if (typeof input.status === "number" && Number.isFinite(input.status)) {
-    return "opencode-server";
-  }
-  return "worker->opencode-server";
-}
-
-function parseWebfetchStatusCode(message: string | undefined): number | null {
-  if (!message) {
-    return null;
-  }
-  const match = message.match(/status code:\s*(\d{3})/i);
-  if (!match) {
-    return null;
-  }
-  const parsed = Number(match[1]);
-  return Number.isInteger(parsed) ? parsed : null;
-}
-
-function truncateLogPreview(text: string, maxChars: number): string {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxChars) {
-    return normalized;
-  }
-  return `${normalized.slice(0, maxChars)}…`;
-}
-
-function truncateTextByBytes(
-  content: string,
-  maxBytes: number,
-): { content: string; truncated: boolean } {
-  if (maxBytes <= 0) {
-    return { content: "", truncated: content.length > 0 };
-  }
-  const buffer = Buffer.from(content, "utf-8");
-  if (buffer.byteLength <= maxBytes) {
-    return { content, truncated: false };
-  }
-  const truncated = buffer.toString("utf-8", 0, maxBytes);
-  return { content: `${truncated}\n\n[truncated]`, truncated: true };
-}
-
-function resolveOutput(output?: string): string | undefined {
-  if (!output) {
-    return undefined;
-  }
-  return output.trim() ? output : undefined;
-}
-
-function resolveOpencodeAssistantMessageId(input: {
-  opencodeAssistantMessageId?: string;
-}): string | undefined {
-  const id = input.opencodeAssistantMessageId;
-  if (typeof id !== "string") {
-    return undefined;
-  }
-  const trimmed = id.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function resolveHistoryKey(session: SessionEvent): HistoryKey | null {
-  if (!session.selfId) {
-    return null;
-  }
-  return {
-    botAccountId: buildBotAccountId(session.platform, session.selfId),
-    userId: session.userId,
-  };
-}
-
-function toBufferKey(jobData: SessionJobData): SessionBufferKey {
-  return {
-    botId: jobData.botId,
-    groupId: jobData.groupId,
-    sessionId: jobData.sessionId,
-  };
-}
-const YOLO_TOOLS: Record<string, boolean> = {
-  bash: true,
-  read: true,
-  write: true,
-  edit: true,
-  list: true,
-  glob: true,
-  grep: true,
-  webfetch: true,
-  task: true,
-  todowrite: true,
-  todoread: true,
-  // Opencode's question tool requires interactive answers from the host.
-  // In our bot runtime, it can stall a session until timeout. Use plain text questions instead.
-  question: false,
-};
-
-const READONLY_TOOLS: Record<string, boolean> = {
-  read: true,
-  list: true,
-  glob: true,
-  grep: true,
-  webfetch: true,
-  task: true,
-  todowrite: true,
-  todoread: true,
-  question: false,
-};
-
-function resolveSessionTools(groupId: string): Record<string, boolean> {
-  const parsed = parseWorldGroup(groupId);
-  if (parsed && parsed.kind === "play") {
-    return READONLY_TOOLS;
-  }
-  return YOLO_TOOLS;
-}
-
-function resolveModelRef(
-  input: Readonly<{
-    groupOverride: string | undefined;
-    openaiBaseUrl: string | undefined;
-    openaiApiKey: string | undefined;
-    modelsCsv: string | undefined;
-  }>,
-): { providerID: string; modelID: string } {
-  const externalBaseUrl = input.openaiBaseUrl?.trim();
-  const externalApiKey = input.openaiApiKey?.trim();
-  const modelsCsv = input.modelsCsv?.trim();
-  const externalModeEnabled = Boolean(
-    externalBaseUrl && externalApiKey && modelsCsv,
-  );
-  if (!externalModeEnabled) {
-    return { providerID: "opencode", modelID: "glm-4.7-free" };
-  }
-
-  const allowed = parseOpencodeModelIdsCsv(modelsCsv!);
-  const selected = selectOpencodeModelId(allowed, input.groupOverride);
-  return { providerID: "litellm", modelID: selected };
-}
-
-function buildOpencodeSessionTitle(sessionInfo: SessionInfo): string {
-  const groupId = sessionInfo.meta.groupId;
-  const location = groupId === "0" ? "dm:0" : `group:${groupId}`;
-  return `${location} user:${sessionInfo.meta.ownerId} bot:${sessionInfo.meta.botId} sid:${sessionInfo.meta.sessionId} key:${sessionInfo.meta.key}`;
-}
-
-function isLikelyOpencodeSessionId(value: string): boolean {
-  return (
-    /^ses_[0-9a-f]{12}[A-Za-z0-9]{14}$/.test(value) || value.startsWith("ses_")
-  );
-}
-
-function isAbortError(err: unknown): boolean {
-  if (!err || typeof err !== "object") {
-    return false;
-  }
-  const status = (err as { status?: unknown }).status;
-  if (typeof status === "number" && Number.isFinite(status)) {
-    return false;
-  }
-  const name = (err as { name?: unknown }).name;
-  if (name === "AbortError" || name === "TimeoutError") {
-    return true;
-  }
-  const message = (err as { message?: unknown }).message;
-  if (
-    typeof message === "string" &&
-    message.toLowerCase().includes("timed out")
-  ) {
-    return true;
-  }
-  return false;
-}
-
-async function atomicWrite(filePath: string, content: string): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const tmpPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  await writeFile(
-    tmpPath,
-    content.endsWith("\n") ? content : `${content}\n`,
-    "utf8",
-  );
-  await rename(tmpPath, filePath);
 }

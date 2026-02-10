@@ -16,7 +16,7 @@ This folder documents **Discord commands** (Slash Commands + message shortcuts).
 
 - `/help`: Show available commands and tips
 - `/ping`: Health check
-- `/onboard role:admin|both|adventurer|world creater`: Onboarding (creates/opens your private onboarding thread)
+- `/onboard role:player|creater`: Onboarding (creates/opens your private onboarding thread)
 - `/language lang:zh|en`: Set reply language (also affects world/character doc writing language)
 - `/reset [key] [user]`: Reset session (admins can target a user)
 - `/resetall [key]`: Reset all sessions in the guild/channel scope (admin only)

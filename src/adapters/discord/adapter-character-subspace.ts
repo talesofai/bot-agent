@@ -1063,16 +1063,10 @@ export function installDiscordAdapterCharacterSubspace(DiscordAdapterClass: {
       parentChannelId: workshop.id,
       name: pickByLanguage(
         input.language,
-        input.role === "admin"
-          ? "管理员指南"
-          : input.role === "world creater"
-            ? "世界创建者指南"
-            : "冒险者指南",
-        input.role === "admin"
-          ? "Admin Guide"
-          : input.role === "world creater"
-            ? "World Creater Guide"
-            : "Adventurer Guide",
+        input.role === "world creater" ? "世界创建者指南" : "冒险者指南",
+        input.role === "world creater"
+          ? "World Creater Guide"
+          : "Adventurer Guide",
       ),
       reason: input.reason,
       memberUserId: input.userId,

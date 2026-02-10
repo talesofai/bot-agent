@@ -446,8 +446,20 @@ function parseWorldName(content: string): string {
 }
 
 function parseCharacterName(content: string): string {
-  const match = content.match(/^\s*-\s*(?:角色名|Name)\s*[:：]\s*(.+?)\s*$/im);
-  return (match?.[1] ?? "").trim();
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const matchers = [
+    /^\s*-\s*(?:角色名|角色名稱|角色|Name|Character Name)\s*[:：]\s*(.+?)\s*$/im,
+    /^\s*\|\s*(?:角色名|角色名稱|角色|Name|Character Name)\s*\|\s*([^|\n]+?)\s*\|/im,
+    /^\s*#\s*(?:角色卡|Character Card)\s*[:：]\s*(.+?)\s*$/im,
+    /^\s*#\s*(.+?)\s*(?:角色卡|Character Card)\s*$/im,
+  ];
+  for (const matcher of matchers) {
+    const value = (normalized.match(matcher)?.[1] ?? "").trim();
+    if (value) {
+      return value.length > 60 ? value.slice(0, 60) : value;
+    }
+  }
+  return "";
 }
 
 function escapeSidebarText(value: string): string {

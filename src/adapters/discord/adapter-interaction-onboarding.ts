@@ -331,15 +331,11 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
     await safeDefer(interaction, { ephemeral: true });
     const roleRaw = interaction.options.getString("role", true).trim();
     const roles: UserRole[] =
-      roleRaw === "both"
-        ? ["adventurer", "world creater"]
-        : roleRaw === "admin"
-          ? ["admin"]
-          : roleRaw === "adventurer"
-            ? ["adventurer"]
-            : roleRaw === "world creater"
-              ? ["world creater"]
-              : ["adventurer"];
+      roleRaw === "creater"
+        ? ["world creater"]
+        : roleRaw === "player"
+          ? ["adventurer"]
+          : ["adventurer"];
     const uniqueRoles = Array.from(new Set(roles));
     await this["userState"].addRoles(interaction.user.id, uniqueRoles);
     const language = await this["userState"]
@@ -381,17 +377,11 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
     const roleLabel =
       language === "en"
         ? (role: UserRole) =>
-            role === "admin"
-              ? "admin / 管理员"
-              : role === "world creater"
-                ? "world creater / 世界创建者"
-                : "adventurer / 冒险者"
+            role === "world creater"
+              ? "world creater / 世界创建者"
+              : "adventurer / 冒险者"
         : (role: UserRole) =>
-            role === "admin"
-              ? "管理员"
-              : role === "world creater"
-                ? "世界创建者"
-                : "冒险者";
+            role === "world creater" ? "世界创建者" : "冒险者";
     await safeReply(
       interaction,
       language === "en"
@@ -1153,7 +1143,7 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
     if (!threads) {
       return null;
     }
-    const roles: UserRole[] = ["admin", "world creater", "adventurer"];
+    const roles: UserRole[] = ["world creater", "adventurer"];
     for (const role of roles) {
       const threadId = threads[role];
       if (typeof threadId === "string" && threadId === input.channelId) {
@@ -1180,9 +1170,7 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
         ? `[Onboarding] ${input.role}`
         : input.role === "world creater"
           ? "【新手引导】世界创建者"
-          : input.role === "admin"
-            ? "【新手引导】管理员"
-            : "【新手引导】冒险者";
+          : "【新手引导】冒险者";
 
     const descriptionLines: string[] = [];
     if (input.language === "en") {
@@ -1199,15 +1187,6 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
           "3) Publish when ready (/world publish)",
           "",
           "Click the button below to start. (Commands still work: /world create)",
-        );
-      } else if (input.role === "admin") {
-        descriptionLines.push(
-          "Admin tips:",
-          "- /language to set default language",
-          "- /model to set guild model override",
-          "- /resetall to reset sessions",
-          "",
-          "Click Help if you need the full command list.",
         );
       } else {
         descriptionLines.push(
@@ -1232,15 +1211,6 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
           "3) 确认 OK 后发布（/world publish）",
           "",
           "现在点下面按钮开始。（指令仍可用：/world create）",
-        );
-      } else if (input.role === "admin") {
-        descriptionLines.push(
-          "管理员常用：",
-          "- /language 设置默认语言",
-          "- /model 设置群模型覆盖",
-          "- /resetall 重置全群会话",
-          "",
-          "需要完整指令清单就点“帮助”。",
         );
       } else {
         descriptionLines.push(
@@ -1314,16 +1284,6 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
           .setCustomId(helpId)
           .setLabel(input.language === "en" ? "Help" : "帮助")
           .setStyle(ButtonStyle.Secondary),
-      );
-      return [row1];
-    }
-
-    if (input.role === "admin") {
-      row1.addComponents(
-        new ButtonBuilder()
-          .setCustomId(helpId)
-          .setLabel(input.language === "en" ? "Help" : "帮助")
-          .setStyle(ButtonStyle.Primary),
       );
       return [row1];
     }

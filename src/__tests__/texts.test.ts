@@ -39,8 +39,8 @@ describe("Discord help/onboarding texts", () => {
     const prompt = buildDiscordOnboardingAutoPrompt(null);
     expect(prompt).toContain("私密");
     expect(prompt).toContain("无需 @");
-    expect(prompt).toContain("/onboard role:adventurer");
-    expect(prompt).toContain("/onboard role:world creater");
+    expect(prompt).toContain("/onboard role:player");
+    expect(prompt).toContain("/onboard role:creater");
     expect(prompt).toContain("/nano");
     expect(prompt).toContain(".rd 2d6");
   });
@@ -54,7 +54,7 @@ describe("Discord help/onboarding texts", () => {
     expect(guide).toContain("/world create");
     expect(guide).toContain("/world publish");
     expect(guide).toContain("找不到");
-    expect(guide).toContain("/onboard role:world creater");
+    expect(guide).toContain("/onboard role:creater");
   });
 
   test("buildDiscordOnboardingGuide (adventurer en) includes workflow and wake hint", () => {

@@ -434,9 +434,6 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
       config: roleConfig,
     });
     const desiredRoles: UserRole[] = [];
-    if (inferred.admin) {
-      desiredRoles.push("admin");
-    }
     if (inferred.worldCreater) {
       desiredRoles.push("world creater");
     }
@@ -483,11 +480,9 @@ export class DiscordAdapter extends EventEmitter implements PlatformAdapter {
     }
 
     const roleLabel = (role: UserRole) =>
-      role === "admin"
-        ? "admin / 管理员"
-        : role === "world creater"
-          ? "world creater / 世界创建者"
-          : "adventurer / 冒险者";
+      role === "world creater"
+        ? "world creater / 世界创建者"
+        : "adventurer / 冒险者";
     const dm =
       language === "en"
         ? [

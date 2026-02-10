@@ -8,7 +8,6 @@ export type DiscordOnboardingIdentityRoleConfig = {
 };
 
 export type DiscordIdentityRoles = {
-  admin: boolean;
   worldCreater: boolean;
   adventurer: boolean;
 };
@@ -75,25 +74,6 @@ export function resolveDiscordIdentityRoles(input: {
     .map(normalizeLower)
     .filter(Boolean);
 
-  const admin = roleNamesLower.some(
-    (name) =>
-      name === "admin" ||
-      name.includes("admin") ||
-      name.includes("administrator") ||
-      name.includes("管理员"),
-  );
-
-  const hasBoth = roleNamesLower.some(
-    (name) =>
-      name.includes("both") ||
-      name.includes("create and play") ||
-      name.includes("既创作") ||
-      name.includes("也游玩"),
-  );
-  if (hasBoth) {
-    return { admin, worldCreater: true, adventurer: true };
-  }
-
   const hasExplicitConfig =
     input.config.worldCreaterRoleIds.length > 0 ||
     input.config.adventurerRoleIds.length > 0 ||
@@ -136,14 +116,12 @@ export function resolveDiscordIdentityRoles(input: {
         input.config.adventurerRoleNameIncludes,
       );
     return {
-      admin,
       worldCreater: configWorldCreater || heuristicWorldCreater,
       adventurer: configAdventurer || heuristicAdventurer,
     };
   }
 
   return {
-    admin,
     worldCreater: heuristicWorldCreater,
     adventurer: heuristicAdventurer,
   };

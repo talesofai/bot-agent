@@ -10,10 +10,8 @@ export function buildSlashCommands() {
           .setName("role")
           .setDescription("身份")
           .addChoices(
-            { name: "admin", value: "admin" },
-            { name: "both", value: "both" },
-            { name: "adventurer", value: "adventurer" },
-            { name: "world creater", value: "world creater" },
+            { name: "player", value: "player" },
+            { name: "creater", value: "creater" },
           )
           .setRequired(true),
       )

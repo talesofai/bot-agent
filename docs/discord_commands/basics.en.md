@@ -10,21 +10,20 @@ Shows available commands and short tips.
 
 Health check. Useful to confirm the bot is online.
 
-## `/onboard role:admin|both|adventurer|world creater`
+## `/onboard role:player|creater`
 
 Onboarding. It creates/opens your private onboarding thread in the server. Inside that thread, you can talk to the bot without mentioning it every time.
 
 If your server enables Discord Server Onboarding (identity roles) and configures role mapping, the bot will auto-start the onboarding guide right after you pick an identity role and roles are assigned. `/onboard` still works to recover the entry link or switch roles.
 
-- `role=admin`: admin guide (configure/maintain the bot)
-- `role=adventurer`: adventurer onboarding flow (create character, join worlds)
-- `role=world creater`: world creater onboarding flow (create/publish worlds)
-- `role=both`: start both `adventurer` + `world creater` guides
+- `role=player`: adventurer onboarding flow (create character, join worlds)
+- `role=creater`: world creater onboarding flow (create/publish worlds)
 
 Example:
 
 ```text
-/onboard role:adventurer
+/onboard role:player
+/onboard role:creater
 ```
 
 ## `/language lang:zh|en`

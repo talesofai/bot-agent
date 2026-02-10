@@ -20,7 +20,7 @@
 
 - `/help`：查看可用指令与快速提示
 - `/ping`：健康检查
-- `/onboard role:admin|both|adventurer|world creater`：新手引导（创建/打开你的私密引导话题）
+- `/onboard role:player|creater`：新手引导（创建/打开你的私密引导话题）
 - `/language lang:zh|en`：设置 bot 回复语言（同时影响世界/角色文档写入语言）
 - `/reset [key] [user]`：重置对话（创建新 session；管理员可指定 user）
 - `/resetall [key]`：重置全群对话（仅管理员）
@@ -67,7 +67,7 @@ This folder documents **Discord commands** (Slash Commands + message shortcuts).
 
 - `/help`: Show available commands and tips
 - `/ping`: Health check
-- `/onboard role:admin|both|adventurer|world creater`: Onboarding (creates/opens your private onboarding thread)
+- `/onboard role:player|creater`: Onboarding (creates/opens your private onboarding thread)
 - `/language lang:zh|en`: Set reply language (also affects world/character doc writing language)
 - `/reset [key] [user]`: Reset session (admins can target a user)
 - `/resetall [key]`: Reset all sessions in the guild/channel scope (admin only)
@@ -108,21 +108,20 @@ See the sub-pages for details.
 
 健康检查，用于确认 bot 在线。
 
-## `/onboard role:admin|both|adventurer|world creater`
+## `/onboard role:player|creater`
 
 新手引导。会在服务器内创建/打开你的私密引导话题（Thread），后续你在该话题内可以直接对 bot 说话（无需每句 @bot）。
 
 如果服务器启用了 Discord Server Onboarding（身份组）并配置了身份组角色映射，bot 会在你选择身份组并被分配角色后自动开启对应引导；此时你不需要手动执行 `/onboard`。`/onboard` 仍可用于找回入口链接或切换身份。
 
-- `role=admin`：管理员指南（配置/维护 bot）
-- `role=adventurer`：冒险者视角的引导流程（创建角色、加入世界开始玩）
-- `role=world creater`：世界创建者视角的引导流程（创建/发布世界）
-- `role=both`：同时开启 `adventurer` + `world creater` 两套引导
+- `role=player`：冒险者视角的引导流程（创建角色、加入世界开始玩）
+- `role=creater`：世界创建者视角的引导流程（创建/发布世界）
 
 示例：
 
 ```text
-/onboard role:adventurer
+/onboard role:player
+/onboard role:creater
 ```
 
 ## `/language lang:zh|en`
@@ -154,21 +153,20 @@ Shows available commands and short tips.
 
 Health check. Useful to confirm the bot is online.
 
-## `/onboard role:admin|both|adventurer|world creater`
+## `/onboard role:player|creater`
 
 Onboarding. It creates/opens your private onboarding thread in the server. Inside that thread, you can talk to the bot without mentioning it every time.
 
 If your server enables Discord Server Onboarding (identity roles) and configures role mapping, the bot will auto-start the onboarding guide right after you pick an identity role and roles are assigned. `/onboard` still works to recover the entry link or switch roles.
 
-- `role=admin`: admin guide (configure/maintain the bot)
-- `role=adventurer`: adventurer onboarding flow (create character, join worlds)
-- `role=world creater`: world creater onboarding flow (create/publish worlds)
-- `role=both`: start both `adventurer` + `world creater` guides
+- `role=player`: adventurer onboarding flow (create character, join worlds)
+- `role=creater`: world creater onboarding flow (create/publish worlds)
 
 Example:
 
 ```text
-/onboard role:adventurer
+/onboard role:player
+/onboard role:creater
 ```
 
 ## `/language lang:zh|en`

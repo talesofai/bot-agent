@@ -8,8 +8,7 @@ import { logger as defaultLogger } from "../logger";
 import { resolveDataRoot } from "../utils/data-root";
 import { assertSafePathSegment } from "../utils/path";
 
-export type UserRole = "admin" | "adventurer" | "world creater";
-export type UserRoleKeyword = UserRole | "both";
+export type UserRole = "adventurer" | "world creater";
 export type UserLanguage = "zh" | "en";
 
 export type UserOnboardingStateV4 = {

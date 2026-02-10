@@ -125,6 +125,16 @@ describe("/wiki", () => {
       ["# 角色卡（C2）", "", "- 角色名：阿猫", ""].join("\n"),
       "utf8",
     );
+    await writeFile(
+      path.join(characterDir, "3.md"),
+      [
+        "# 角色卡（C3）",
+        "",
+        "- 角色：辉夜/八千代（かぐや / 月見ヤチヨ）",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
 
     const context: HttpRequestHandlerContext = {
       logger,
@@ -142,6 +152,7 @@ describe("/wiki", () => {
     const sidebarText = await sidebar.text();
     expect(sidebarText).toContain("W1 测试世界");
     expect(sidebarText).toContain("C2 阿猫");
+    expect(sidebarText).toContain("C3 辉夜/八千代（かぐや / 月見ヤチヨ）");
 
     const card = await handleHttpRequest(
       new Request("http://test/wiki/worlds/W1/world-card.md"),

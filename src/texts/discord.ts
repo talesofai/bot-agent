@@ -14,10 +14,8 @@ export function buildDiscordOnboardingAutoPrompt(
       `如果你把它关掉了/找不到：重新执行一次 /onboard，我会把入口链接再发给你。`,
       ``,
       `请选择身份（可多次执行，允许多选）：`,
-      `- /onboard role:admin`,
-      `- /onboard role:adventurer`,
-      `- /onboard role:world creater`,
-      `- /onboard role:both（= 同时是后两者）`,
+      `- /onboard role:player`,
+      `- /onboard role:creater`,
       ``,
       `机器人不说话？在公共频道需要 @bot 或“唤醒词”（群配置 keywords）开头；但 /nano /polish /quest 和掷骰（如 .rd 2d6）免 @。`,
       ``,
@@ -33,10 +31,8 @@ export function buildDiscordOnboardingAutoPrompt(
       `If you closed/lost it: run /onboard again and I will post the entry link again.`,
       ``,
       `Pick roles (you can run multiple times):`,
-      `- /onboard role:admin`,
-      `- /onboard role:adventurer`,
-      `- /onboard role:world creater`,
-      `- /onboard role:both (adventurer + world creater)`,
+      `- /onboard role:player`,
+      `- /onboard role:creater`,
       ``,
       `Bot not replying? In public channels, you usually need to @mention the bot or start with a wake word (group keywords). But /nano /polish /quest and dice (e.g. .rd 2d6) work without @.`,
       ``,
@@ -54,7 +50,7 @@ export function buildDiscordHelp(
     language,
     [
       "【新手导航（最快上手）】",
-      "1) 先选身份：`/onboard role:adventurer` 或 `/onboard role:world creater`（或 `/onboard role:both`）",
+      "1) 先选身份：`/onboard role:player` 或 `/onboard role:creater`",
       "2) 世界创建者：`/world create` → 在编辑话题里粘贴/上传设定 → `/world publish`",
       "3) 冒险者：`/character create` → `/world list`/`/world search` → `/world join` → `/character act`",
       "4) 机器人不说话？公共频道需要 `@bot` 或“唤醒词”（群配置 keywords）开头；但下面这些**消息命令免 @**。",
@@ -74,7 +70,7 @@ export function buildDiscordHelp(
     ].join("\n"),
     [
       "[Quick Start]",
-      "1) Pick roles: `/onboard role:adventurer` or `/onboard role:world creater` (or `/onboard role:both`)",
+      "1) Pick roles: `/onboard role:player` or `/onboard role:creater`",
       "2) World Creater: `/world create` → paste/upload lore in the editing thread → `/world publish`",
       "3) Adventurer: `/character create` → `/world list`/`/world search` → `/world join` → `/character act`",
       "4) Bot not replying? In public channels, you usually need to @mention the bot or start with a wake word (group keywords). But the message commands below work without @.",
@@ -99,42 +95,6 @@ export function buildDiscordOnboardingGuide(input: {
   role: UserRole;
   language: UserLanguage | null | undefined;
 }): string {
-  if (input.role === "admin") {
-    return pick(
-      input.language,
-      [
-        "【管理员指南】",
-        "",
-        "你将以“管理员”的身份开始配置与维护本服务器的 bot。",
-        "",
-        "常用操作：",
-        "- /language lang:zh|en：设置默认语言（也影响世界与角色文档写入语言）",
-        "- 群配置 `world.createPolicy`：默认仅管理员可创建世界（可改为 open/whitelist）",
-        "- /resetall：重置全群会话（仅管理员）",
-        "- /model：设置/清理群模型覆盖（仅管理员）",
-        "",
-        "提示：",
-        "- 你也可以同时是冒险者/世界创建者：再执行一次 /onboard role:adventurer 或 /onboard role:world creater 即可。",
-        "- 本私密引导话题里可直接对 bot 说话（无需 @）；公共频道需要 @bot 或唤醒词。",
-      ].join("\n"),
-      [
-        "[Admin Guide]",
-        "",
-        'You will start as an "admin" to configure and maintain the bot for this server.',
-        "",
-        "Common actions:",
-        "- /language lang:zh|en: set your default language (also affects world and character document writing language)",
-        "- World creation permission: /world create is admin-only by default (configurable via group config world.createPolicy = open/whitelist)",
-        "- /resetall: reset all sessions (admin-only)",
-        "- /model: set/clear the guild model override (admin-only)",
-        "",
-        "Notes:",
-        "- You can also be an adventurer/world creater: run /onboard role:adventurer or /onboard role:world creater again.",
-        "- In this onboarding thread, you can talk to the bot directly (no @ needed). In public channels, you may need to @mention the bot or use wake words.",
-      ].join("\n"),
-    );
-  }
-
   if (input.role === "world creater") {
     return pick(
       input.language,
@@ -151,7 +111,7 @@ export function buildDiscordOnboardingGuide(input: {
         "",
         "提示：",
         "- 编辑话题会长期保留；后续可以继续编辑来更新设定。",
-        "- 如果你找不到这个私密引导话题：在侧边栏找 `onboarding-` 开头的私密频道；或再执行一次 /onboard role:world creater，我会把入口链接再发给你。",
+        "- 如果你找不到这个私密引导话题：在侧边栏找 `onboarding-` 开头的私密频道；或再执行一次 /onboard role:creater，我会把入口链接再发给你。",
         "- 在本私密引导话题里可直接对 bot 说话（无需 @）；公共频道则需要 @bot 或唤醒词。",
       ].join("\n"),
       [
@@ -167,7 +127,7 @@ export function buildDiscordOnboardingGuide(input: {
         "",
         "Notes:",
         "- The editing thread is persistent; you can keep editing later to update the canon.",
-        "- If you lose this private onboarding thread: look for a private channel named like `onboarding-...` in the server sidebar, or run /onboard role:world creater again.",
+        "- If you lose this private onboarding thread: look for a private channel named like `onboarding-...` in the server sidebar, or run /onboard role:creater again.",
         "- In this onboarding thread, you can talk to the bot directly (no @ needed). In public channels, you may need to @mention the bot or use wake words.",
       ].join("\n"),
     );
@@ -190,7 +150,7 @@ export function buildDiscordOnboardingGuide(input: {
       "提示：",
       "- 你可以创建多张角色卡，也可以加入多个世界。",
       "- 角色卡可设为 public 供他人检索（/character publish）。",
-      "- 如果你找不到这个私密引导话题：在侧边栏找 `onboarding-` 开头的私密频道；或再执行一次 /onboard role:adventurer，我会把入口链接再发给你。",
+      "- 如果你找不到这个私密引导话题：在侧边栏找 `onboarding-` 开头的私密频道；或再执行一次 /onboard role:player，我会把入口链接再发给你。",
       "- 在本私密引导话题里可直接对 bot 说话（无需 @）；公共频道则需要 @bot 或唤醒词。",
     ].join("\n"),
     [
@@ -208,7 +168,7 @@ export function buildDiscordOnboardingGuide(input: {
       "Notes:",
       "- You can create multiple character cards and join multiple worlds.",
       "- You can publish your character card as public for others to search (/character publish).",
-      "- If you lose this private onboarding thread: look for a private channel named like `onboarding-...` in the server sidebar, or run /onboard role:adventurer again.",
+      "- If you lose this private onboarding thread: look for a private channel named like `onboarding-...` in the server sidebar, or run /onboard role:player again.",
       "- In this onboarding thread, you can talk to the bot directly (no @ needed). In public channels, you may need to @mention the bot or use wake words.",
     ].join("\n"),
   );

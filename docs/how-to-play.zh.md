@@ -17,7 +17,7 @@
 在服务器任意可用频道输入：
 
 ```text
-/onboard role:adventurer
+/onboard role:player
 ```
 
 系统会给你一个私密引导话题（线程）。**后续推荐都在这个话题里操作**，省得找频道、也不需要每句都 @机器人。
@@ -79,7 +79,7 @@
 ### 1）打开世界创建者引导
 
 ```text
-/onboard role:world creater
+/onboard role:creater
 ```
 
 ### 2）创建世界草稿并完成世界卡/规则

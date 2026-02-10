@@ -16,7 +16,7 @@
 
 - `/help`：查看可用指令与快速提示
 - `/ping`：健康检查
-- `/onboard role:admin|both|adventurer|world creater`：新手引导（创建/打开你的私密引导话题）
+- `/onboard role:player|creater`：新手引导（创建/打开你的私密引导话题）
 - `/language lang:zh|en`：设置 bot 回复语言（同时影响世界/角色文档写入语言）
 - `/reset [key] [user]`：重置对话（创建新 session；管理员可指定 user）
 - `/resetall [key]`：重置全群对话（仅管理员）

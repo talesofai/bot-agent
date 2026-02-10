@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-10
+
+### Changed
+
+- Discord：`/onboard role` 收敛为仅 `player|creater`，移除 `admin|both|adventurer|world creater` 的用户入口，降低身份模型复杂度
+- Discord：onboarding 交互流程与自动身份映射仅保留玩家/创作者两条路径，去除 admin onboarding 分支
+- 文案与文档：统一 `/onboard` 参数示例为 `role:player` 与 `role:creater`（含 Wiki 指令页、README 指令总览与上手指南）
+- HTTP Wiki：角色侧栏名称解析增强，支持从 `- 角色：...` 等格式提取显示名，避免仅显示 `C<id>`
+
 ## [0.1.0] - 2026-02-10
 
 ### Added

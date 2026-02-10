@@ -17,7 +17,10 @@ import type { OpencodeRequestSpec, OpencodeRunner } from "../worker/runner";
 import type { SessionActivityIndex } from "./activity-store";
 import type { SessionBuffer, SessionBufferKey } from "./buffer";
 import { runSessionGateLoop } from "./gate-loop";
-import { extractOutputElements } from "./output-elements";
+import {
+  extractOutputElements,
+  type CommandActionSuggestion,
+} from "./output-elements";
 import { redactSensitiveText } from "../utils/redact";
 import type { OpencodeClient } from "../opencode/server-client";
 import { appendInputAuditIfSuspicious } from "../opencode/input-audit";
@@ -28,7 +31,11 @@ import { parseWorldGroup } from "../world/ids";
 import { WorldStore } from "../world/store";
 import { feishuLogJson } from "../feishu/webhook";
 import { parseCharacterGroup } from "../character/ids";
-import { UserStateStore, type UserLanguage } from "../user/state-store";
+import {
+  UserStateStore,
+  type UserCommandTranscript,
+  type UserLanguage,
+} from "../user/state-store";
 import {
   buildLanguageDirective,
   buildSessionOpencodeRunFailedReply,
@@ -1008,15 +1015,27 @@ export class SessionProcessor {
     );
     const resolvedInput = resolveSessionInput(promptInput);
     const rawUserText = resolvedInput.trim();
+    const recentCommandTranscripts = await span(
+      "load_command_transcripts",
+      async () =>
+        this.userState.getRecentCommandTranscripts(sessionInfo.meta.ownerId, 8),
+    );
     const systemPrompt = buildSystemPrompt(agentPrompt, language);
     const system = buildOpencodeSystemContext({
       systemPrompt,
       history: [],
     });
     const languageDirective = buildLanguageDirective(language);
-    const rawWithLanguage = languageDirective
-      ? `${rawUserText}\n\n${languageDirective}`.trim()
+    const commandTranscriptContext = this.buildCommandTranscriptContext(
+      recentCommandTranscripts,
+      language,
+    );
+    const rawWithTranscriptContext = commandTranscriptContext
+      ? `${commandTranscriptContext}\n\n${rawUserText}`.trim()
       : rawUserText;
+    const rawWithLanguage = languageDirective
+      ? `${rawWithTranscriptContext}\n\n${languageDirective}`.trim()
+      : rawWithTranscriptContext;
     const userText = rawWithLanguage
       ? appendInputAuditIfSuspicious(rawWithLanguage, language)
       : " ";
@@ -1345,15 +1364,129 @@ export class SessionProcessor {
     if (!output) {
       return;
     }
-    const { content, elements } = extractOutputElements(output);
-    if (!content && elements.length === 0) {
+    const { content, elements, commandActions } = extractOutputElements(output);
+    if (!content && elements.length === 0 && !commandActions) {
       return;
     }
-    await this.adapter.sendMessage(
-      session,
-      content,
-      elements.length > 0 ? { elements } : undefined,
-    );
+
+    if (content || elements.length > 0) {
+      await this.adapter.sendMessage(
+        session,
+        content,
+        elements.length > 0 ? { elements } : undefined,
+      );
+    }
+
+    if (commandActions && commandActions.actions.length > 0) {
+      const sent = await this.sendSuggestedCommandActions(session, {
+        prompt: commandActions.prompt,
+        actions: commandActions.actions,
+      });
+      if (!sent) {
+        const fallbackText = this.buildCommandActionFallbackText({
+          prompt: commandActions.prompt,
+          actions: commandActions.actions,
+        });
+        if (fallbackText) {
+          await this.adapter.sendMessage(session, fallbackText);
+        }
+      }
+    }
+  }
+
+  private buildCommandTranscriptContext(
+    transcripts: UserCommandTranscript[],
+    language: UserLanguage | null,
+  ): string {
+    if (transcripts.length === 0) {
+      return "";
+    }
+    const header =
+      language === "en"
+        ? "Recent user-triggered command actions:"
+        : "用户最近触发过的指令操作：";
+    const lines = transcripts.map((entry, index) => {
+      const command = truncateTextByBytes(entry.command.trim(), 120);
+      const result = truncateTextByBytes(entry.result.trim(), 220);
+      const createdAt = entry.createdAt.trim();
+      return `${index + 1}. ${command} -> ${result} (${createdAt})`;
+    });
+    return `${header}\n${lines.join("\n")}`;
+  }
+
+  private buildCommandActionFallbackText(input: {
+    prompt?: string;
+    actions: CommandActionSuggestion[];
+  }): string {
+    if (input.actions.length === 0) {
+      return "";
+    }
+    const prompt = input.prompt?.trim() || "你可以执行下面这些指令：";
+    const lines = input.actions.map((entry) => {
+      const command = this.resolveSlashCommandFromAction(entry);
+      const label = entry.label?.trim();
+      return label ? `- ${label}: ${command}` : `- ${command}`;
+    });
+    return [prompt, ...lines].join("\n");
+  }
+
+  private resolveSlashCommandFromAction(
+    action: CommandActionSuggestion,
+  ): string {
+    if (action.action === "help") {
+      return "/help";
+    }
+    if (action.action === "character_create") {
+      return "/character create";
+    }
+    if (action.action === "world_create") {
+      return "/world create";
+    }
+    if (action.action === "world_list") {
+      return "/world list";
+    }
+    if (action.action === "world_show") {
+      return action.payload ? `/world info ${action.payload}` : "/world info";
+    }
+    if (action.action === "character_show") {
+      return action.payload
+        ? `/character view ${action.payload}`
+        : "/character view";
+    }
+    return action.payload ? `/world join ${action.payload}` : "/world join";
+  }
+
+  private async sendSuggestedCommandActions(
+    session: SessionEvent,
+    input: {
+      prompt?: string;
+      actions: CommandActionSuggestion[];
+    },
+  ): Promise<boolean> {
+    if (session.platform !== "discord") {
+      return false;
+    }
+    const adapter = this.adapter as PlatformAdapter & {
+      sendSuggestedCommandActions?: (input: {
+        session: SessionEvent;
+        prompt?: string;
+        actions: CommandActionSuggestion[];
+      }) => Promise<boolean | void>;
+    };
+    if (typeof adapter.sendSuggestedCommandActions !== "function") {
+      return false;
+    }
+    try {
+      const sent = await adapter.sendSuggestedCommandActions({
+        session,
+        prompt: input.prompt,
+        actions: input.actions,
+      });
+      return sent !== false;
+    } catch (err) {
+      this.logger.warn({ err }, "Failed to send suggested command actions");
+      return false;
+    }
   }
 
   private startTyping(session: SessionEvent, log: Logger): () => void {

@@ -66,4 +66,32 @@ describe("UserStateStore", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("appends command transcripts with bounded capacity", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "user-state-"));
+    try {
+      const store = new UserStateStore({ dataRoot: dir });
+      const userId = "999";
+      for (let index = 1; index <= 52; index += 1) {
+        await store.appendCommandTranscript({
+          userId,
+          command: `/world show ${index}`,
+          result: `ok-${index}`,
+          createdAt: `2026-02-10T00:00:${String(index).padStart(2, "0")}Z`,
+          platform: "discord",
+        });
+      }
+
+      const loaded = await store.read(userId);
+      expect(loaded?.commandTranscripts).toHaveLength(50);
+      expect(loaded?.commandTranscripts?.[0]?.command).toBe("/world show 3");
+
+      const recent = await store.getRecentCommandTranscripts(userId, 3);
+      expect(recent).toHaveLength(3);
+      expect(recent[0]?.command).toBe("/world show 50");
+      expect(recent[2]?.result).toBe("ok-52");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

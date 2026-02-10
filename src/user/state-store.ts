@@ -11,6 +11,15 @@ import { assertSafePathSegment } from "../utils/path";
 export type UserRole = "adventurer" | "world creater";
 export type UserLanguage = "zh" | "en";
 
+export type UserCommandTranscript = {
+  command: string;
+  result: string;
+  createdAt: string;
+  platform?: string;
+  guildId?: string;
+  channelId?: string;
+};
+
 export type UserOnboardingStateV4 = {
   version: 4;
   userId: string;
@@ -23,6 +32,8 @@ export type UserOnboardingStateV4 = {
   characterCreatedAt?: string;
   /** Distinct worlds the user has joined (best-effort, capped). */
   joinedWorldIds?: number[];
+  /** Recent clickable-command transcripts used for next-turn context. */
+  commandTranscripts?: UserCommandTranscript[];
   updatedAt: string;
 };
 
@@ -100,6 +111,7 @@ export class UserStateStore {
         worldCreatedAt: existing?.worldCreatedAt,
         characterCreatedAt: existing?.characterCreatedAt,
         joinedWorldIds: existing?.joinedWorldIds,
+        commandTranscripts: existing?.commandTranscripts,
         ...patch,
         updatedAt: nowIso,
       };
@@ -200,6 +212,64 @@ export class UserStateStore {
     return this.upsert(userId, { joinedWorldIds: next });
   }
 
+  async appendCommandTranscript(input: {
+    userId: string;
+    command: string;
+    result: string;
+    createdAt?: string;
+    platform?: string;
+    guildId?: string;
+    channelId?: string;
+  }): Promise<UserOnboardingStateV4> {
+    const command = input.command.trim();
+    const result = input.result.trim();
+    if (!command || !result) {
+      return this.upsert(input.userId, {});
+    }
+
+    const existing = await this.read(input.userId);
+    const previous = existing?.commandTranscripts ?? [];
+    const createdAt =
+      typeof input.createdAt === "string" && input.createdAt.trim()
+        ? input.createdAt.trim()
+        : new Date().toISOString();
+
+    const next = [
+      ...previous,
+      {
+        command,
+        result,
+        createdAt,
+        platform:
+          typeof input.platform === "string" && input.platform.trim()
+            ? input.platform.trim()
+            : undefined,
+        guildId:
+          typeof input.guildId === "string" && input.guildId.trim()
+            ? input.guildId.trim()
+            : undefined,
+        channelId:
+          typeof input.channelId === "string" && input.channelId.trim()
+            ? input.channelId.trim()
+            : undefined,
+      } satisfies UserCommandTranscript,
+    ].slice(-50);
+
+    return this.upsert(input.userId, { commandTranscripts: next });
+  }
+
+  async getRecentCommandTranscripts(
+    userId: string,
+    limit = 8,
+  ): Promise<UserCommandTranscript[]> {
+    const existing = await this.read(userId);
+    const entries = existing?.commandTranscripts ?? [];
+    if (!Number.isInteger(limit) || limit <= 0) {
+      return [];
+    }
+    return entries.slice(-limit);
+  }
+
   private async atomicWrite(filePath: string, content: string): Promise<void> {
     await mkdir(path.dirname(filePath), { recursive: true });
     const tmpPath = path.join(
@@ -231,6 +301,51 @@ export class UserStateStore {
     }
   }
 
+  private normalizeCommandTranscripts(
+    value: unknown,
+  ): UserCommandTranscript[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+
+    const entries: UserCommandTranscript[] = [];
+    for (const item of value) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const record = item as Record<string, unknown>;
+      const command =
+        typeof record.command === "string" ? record.command.trim() : "";
+      const result =
+        typeof record.result === "string" ? record.result.trim() : "";
+      const createdAt =
+        typeof record.createdAt === "string" ? record.createdAt.trim() : "";
+      if (!command || !result || !createdAt) {
+        continue;
+      }
+      const entry: UserCommandTranscript = {
+        command,
+        result,
+        createdAt,
+      };
+      if (typeof record.platform === "string" && record.platform.trim()) {
+        entry.platform = record.platform.trim();
+      }
+      if (typeof record.guildId === "string" && record.guildId.trim()) {
+        entry.guildId = record.guildId.trim();
+      }
+      if (typeof record.channelId === "string" && record.channelId.trim()) {
+        entry.channelId = record.channelId.trim();
+      }
+      entries.push(entry);
+    }
+
+    if (entries.length === 0) {
+      return undefined;
+    }
+    return entries.slice(-50);
+  }
+
   private migrateState(
     userId: string,
     record: Record<string, unknown>,
@@ -258,7 +373,13 @@ export class UserStateStore {
     }
 
     if (version === 4) {
-      return record as unknown as UserOnboardingStateV4;
+      const state = record as unknown as UserOnboardingStateV4;
+      return {
+        ...state,
+        commandTranscripts: this.normalizeCommandTranscripts(
+          record["commandTranscripts"],
+        ),
+      };
     }
 
     const role = record["role"];

@@ -2,6 +2,7 @@ import { parseCharacterGroup } from "../../character/ids";
 import { feishuLogJson } from "../../feishu/webhook";
 import { createTraceId } from "../../telemetry";
 import { buildDiscordHelp } from "../../texts";
+import type { CommandActionSuggestion } from "../../session/output-elements";
 import type { SessionElement, SessionEvent } from "../../types/platform";
 import type { UserLanguage, UserRole } from "../../user/state-store";
 import { parseWorldGroup } from "../../world/ids";
@@ -40,6 +41,123 @@ import {
   PermissionFlagsBits,
   StringSelectMenuInteraction,
 } from "discord.js";
+
+function resolveSuggestedActionLabel(
+  action: CommandActionSuggestion["action"],
+  language: UserLanguage | null,
+): string {
+  if (action === "help") {
+    return language === "en" ? "Help" : "帮助";
+  }
+  if (action === "character_create") {
+    return language === "en" ? "Create Character" : "创建角色";
+  }
+  if (action === "world_create") {
+    return language === "en" ? "Create World" : "创建世界";
+  }
+  if (action === "world_list") {
+    return language === "en" ? "Browse Worlds" : "浏览世界";
+  }
+  if (action === "world_show") {
+    return language === "en" ? "View World" : "查看世界";
+  }
+  if (action === "character_show") {
+    return language === "en" ? "View Character" : "查看角色";
+  }
+  return language === "en" ? "Join World" : "加入世界";
+}
+
+function resolveSuggestedActionStyle(
+  action: CommandActionSuggestion["action"],
+): ButtonStyle {
+  if (
+    action === "character_create" ||
+    action === "world_create" ||
+    action === "world_join"
+  ) {
+    return ButtonStyle.Primary;
+  }
+  return ButtonStyle.Secondary;
+}
+
+function resolveSlashCommandFromOnboardingAction(input: {
+  action: OnboardingComponentAction;
+  payload: string;
+}): string {
+  const payload = input.payload.trim();
+  if (input.action === "menu") {
+    return "/onboard";
+  }
+  if (input.action === "help") {
+    return "/help";
+  }
+  if (input.action === "language_set") {
+    return payload ? `/language ${payload}` : "/language";
+  }
+  if (input.action === "character_create") {
+    return "/character create";
+  }
+  if (input.action === "character_autopilot") {
+    return payload ? `/character autopilot ${payload}` : "/character autopilot";
+  }
+  if (input.action === "character_generate_portrait") {
+    return payload ? `/character portrait ${payload}` : "/character portrait";
+  }
+  if (input.action === "character_generate_portrait_ref") {
+    return payload
+      ? `/character portrait-ref ${payload}`
+      : "/character portrait-ref";
+  }
+  if (input.action === "character_publish") {
+    return payload ? `/character publish ${payload}` : "/character publish";
+  }
+  if (input.action === "character_show") {
+    return payload ? `/character view ${payload}` : "/character view";
+  }
+  if (input.action === "world_create") {
+    return "/world create";
+  }
+  if (input.action === "world_autopilot") {
+    return payload ? `/world autopilot ${payload}` : "/world autopilot";
+  }
+  if (input.action === "world_show") {
+    return payload ? `/world info ${payload}` : "/world info";
+  }
+  if (input.action === "world_list") {
+    return "/world list";
+  }
+  if (input.action === "world_join") {
+    return payload ? `/world join ${payload}` : "/world join";
+  }
+  if (input.action === "world_publish") {
+    return payload ? `/world publish ${payload}` : "/world publish";
+  }
+  return payload ? `/world select ${payload}` : "/world select";
+}
+
+async function appendOnboardingActionTranscript(
+  adapter: DiscordAdapter,
+  input: {
+    interaction: MessageComponentInteraction;
+    parsed: { action: OnboardingComponentAction; payload: string };
+    result: string;
+  },
+): Promise<void> {
+  const command = resolveSlashCommandFromOnboardingAction({
+    action: input.parsed.action,
+    payload: input.parsed.payload,
+  });
+  await adapter["userState"]
+    .appendCommandTranscript({
+      userId: input.interaction.user.id,
+      command,
+      result: input.result,
+      platform: "discord",
+      guildId: input.interaction.guildId ?? undefined,
+      channelId: input.interaction.channelId,
+    })
+    .catch(() => undefined);
+}
 
 export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: {
   prototype: DiscordAdapter;
@@ -304,7 +422,36 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
       return;
     }
     await safeDeferUpdate(interaction);
-    await this["handleOnboardingComponentAction"](interaction, parsed);
+    const language = await this["userState"]
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
+    const shouldRecord = interaction.user.id === parsed.userId;
+    try {
+      await this["handleOnboardingComponentAction"](interaction, parsed);
+      if (shouldRecord) {
+        await appendOnboardingActionTranscript(this, {
+          interaction,
+          parsed,
+          result: pickByLanguage(
+            language,
+            "已通过可点击指令触发，结果请查看频道消息。",
+            "Triggered via clickable command. Check channel messages for details.",
+          ),
+        });
+      }
+    } catch (err) {
+      if (shouldRecord) {
+        await appendOnboardingActionTranscript(this, {
+          interaction,
+          parsed,
+          result: resolveUserMessageFromError(language, err, {
+            zh: "触发失败，请稍后重试。",
+            en: "Trigger failed. Please retry later.",
+          }),
+        });
+      }
+      throw err;
+    }
   };
 
   (
@@ -319,7 +466,104 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
       return;
     }
     await safeDeferUpdate(interaction);
-    await this["handleOnboardingComponentAction"](interaction, parsed);
+    const language = await this["userState"]
+      .getLanguage(interaction.user.id)
+      .catch(() => null);
+    const shouldRecord = interaction.user.id === parsed.userId;
+    try {
+      await this["handleOnboardingComponentAction"](interaction, parsed);
+      if (shouldRecord) {
+        await appendOnboardingActionTranscript(this, {
+          interaction,
+          parsed,
+          result: pickByLanguage(
+            language,
+            "已通过可点击指令触发，结果请查看频道消息。",
+            "Triggered via clickable command. Check channel messages for details.",
+          ),
+        });
+      }
+    } catch (err) {
+      if (shouldRecord) {
+        await appendOnboardingActionTranscript(this, {
+          interaction,
+          parsed,
+          result: resolveUserMessageFromError(language, err, {
+            zh: "触发失败，请稍后重试。",
+            en: "Trigger failed. Please retry later.",
+          }),
+        });
+      }
+      throw err;
+    }
+  };
+
+  (
+    DiscordAdapterClass.prototype as unknown as Record<string, unknown>
+  ).sendSuggestedCommandActions = async function (
+    this: DiscordAdapter,
+    input: {
+      session: SessionEvent;
+      prompt?: string;
+      actions: CommandActionSuggestion[];
+    },
+  ): Promise<boolean> {
+    if (!input.session.channelId || !input.session.userId) {
+      return false;
+    }
+
+    const language = await this["userState"]
+      .getLanguage(input.session.userId)
+      .catch(() => null);
+
+    const buttons = input.actions
+      .map((entry) => {
+        const label =
+          entry.label?.trim() ||
+          resolveSuggestedActionLabel(entry.action, language);
+        if (!label) {
+          return null;
+        }
+        return new ButtonBuilder()
+          .setCustomId(
+            buildOnboardingCustomId({
+              userId: input.session.userId,
+              action: entry.action,
+              payload: entry.payload,
+            }),
+          )
+          .setLabel(label.length > 80 ? `${label.slice(0, 79)}…` : label)
+          .setStyle(resolveSuggestedActionStyle(entry.action));
+      })
+      .filter((button): button is ButtonBuilder => Boolean(button));
+
+    if (buttons.length === 0) {
+      return false;
+    }
+
+    const components: ActionRowBuilder<ButtonBuilder>[] = [];
+    for (let index = 0; index < buttons.length; index += 5) {
+      components.push(
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          ...buttons.slice(index, index + 5),
+        ),
+      );
+    }
+
+    await this["sendRichToChannel"]({
+      guildId: input.session.guildId,
+      channelId: input.session.channelId,
+      content:
+        input.prompt?.trim() ||
+        pickByLanguage(
+          language,
+          "你可以点击下面的下一步指令：",
+          "You can click one of the next commands:",
+        ),
+      components,
+    });
+
+    return true;
   };
 
   (

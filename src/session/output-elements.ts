@@ -4,22 +4,54 @@ const DEFAULT_MAX_IMAGES = 4;
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]]*]\(\s*(https?:\/\/[^\s)]+)\s*\)/g;
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/g;
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
+const COMMAND_ACTIONS_PATTERN = /```command-actions\s*([\s\S]*?)```/gi;
+const MAX_COMMAND_ACTIONS = 5;
+
+export type CommandActionType =
+  | "help"
+  | "character_create"
+  | "world_create"
+  | "world_list"
+  | "world_show"
+  | "character_show"
+  | "world_join";
+
+export type CommandActionSuggestion = {
+  action: CommandActionType;
+  label?: string;
+  payload?: string;
+};
+
+export type CommandActionsBlock = {
+  prompt?: string;
+  actions: CommandActionSuggestion[];
+};
 
 export function extractOutputElements(
   output: string,
   options?: { maxImages?: number },
-): { content: string; elements: SessionElement[] } {
+): {
+  content: string;
+  elements: SessionElement[];
+  commandActions: CommandActionsBlock | null;
+} {
   const maxImages = options?.maxImages ?? DEFAULT_MAX_IMAGES;
   if (!output.trim()) {
-    return { content: "", elements: [] };
+    return { content: "", elements: [], commandActions: null };
   }
 
+  const { contentWithoutBlocks, commandActions } =
+    extractCommandActions(output);
   const imageUrls: string[] = [];
-  const content = stripMarkdownImages(output, imageUrls, maxImages)
+  const content = stripMarkdownImages(
+    contentWithoutBlocks,
+    imageUrls,
+    maxImages,
+  )
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  for (const match of output.matchAll(URL_PATTERN)) {
+  for (const match of contentWithoutBlocks.matchAll(URL_PATTERN)) {
     if (imageUrls.length >= maxImages) {
       break;
     }
@@ -39,7 +71,120 @@ export function extractOutputElements(
   return {
     content,
     elements: imageUrls.map((url) => ({ type: "image", url })),
+    commandActions,
   };
+}
+
+function extractCommandActions(output: string): {
+  contentWithoutBlocks: string;
+  commandActions: CommandActionsBlock | null;
+} {
+  let commandActions: CommandActionsBlock | null = null;
+  const contentWithoutBlocks = output.replace(
+    COMMAND_ACTIONS_PATTERN,
+    (_match: string, payloadText: string) => {
+      if (!commandActions) {
+        commandActions = parseCommandActionsBlock(payloadText);
+      }
+      return "";
+    },
+  );
+  return { contentWithoutBlocks, commandActions };
+}
+
+function parseCommandActionsBlock(
+  payloadText: string,
+): CommandActionsBlock | null {
+  const trimmed = payloadText.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const prompt =
+      typeof record.prompt === "string" && record.prompt.trim()
+        ? record.prompt.trim()
+        : undefined;
+    const actionsRaw = record.actions;
+    if (!Array.isArray(actionsRaw)) {
+      return null;
+    }
+
+    const actions: CommandActionSuggestion[] = [];
+    const seen = new Set<string>();
+    for (const rawItem of actionsRaw) {
+      if (!rawItem || typeof rawItem !== "object") {
+        continue;
+      }
+      const item = rawItem as Record<string, unknown>;
+      const rawAction =
+        typeof item.action === "string" ? item.action.trim() : "";
+      if (!isCommandActionType(rawAction)) {
+        continue;
+      }
+
+      const rawPayload =
+        typeof item.payload === "string" ? item.payload.trim() : "";
+      const payload = rawPayload || undefined;
+      if (requiresNumericPayload(rawAction)) {
+        if (!payload || !/^[1-9]\d*$/.test(payload)) {
+          continue;
+        }
+      }
+
+      const rawLabel = typeof item.label === "string" ? item.label.trim() : "";
+      const label = rawLabel ? rawLabel : undefined;
+
+      const dedupeKey = `${rawAction}:${payload ?? ""}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
+
+      actions.push(
+        payload
+          ? { action: rawAction, payload, label }
+          : { action: rawAction, label },
+      );
+
+      if (actions.length >= MAX_COMMAND_ACTIONS) {
+        break;
+      }
+    }
+
+    if (actions.length === 0) {
+      return null;
+    }
+    return { prompt, actions };
+  } catch {
+    return null;
+  }
+}
+
+function isCommandActionType(value: string): value is CommandActionType {
+  return (
+    value === "help" ||
+    value === "character_create" ||
+    value === "world_create" ||
+    value === "world_list" ||
+    value === "world_show" ||
+    value === "character_show" ||
+    value === "world_join"
+  );
+}
+
+function requiresNumericPayload(action: CommandActionType): boolean {
+  return (
+    action === "world_show" ||
+    action === "character_show" ||
+    action === "world_join"
+  );
 }
 
 function stripMarkdownImages(

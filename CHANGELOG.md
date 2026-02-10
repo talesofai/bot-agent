@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Skills：新增 `command-actions` 协议技能，允许 LLM 在回复中输出可点击动作建议（按钮语义）
+- Session：支持解析 `command-actions` 代码块，并在 Discord 渲染为可点击按钮（非 Discord 平台自动回退为文本指令建议）
+- UserState：新增可点击指令转录（最近 50 条）存储能力，记录用户点击触发的 `/` 指令与执行结果摘要
+
+### Changed
+
+- Session：构建 prompt context 时注入用户最近的可点击指令转录，确保后续多轮对话可感知“用户已执行过哪些按钮动作”
+- Discord：按钮/下拉触发 onboarding 动作后，自动回写一条指令转录（成功/失败）用于下轮上下文
+
 ## [0.1.1] - 2026-02-10
 
 ### Changed

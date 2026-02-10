@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-02-10
+
 ### Added
 
 - HTTP：Wiki 支持中/英双语（`/wiki/zh/`、`/wiki/en/`），并新增“指令 Commands”栏目展示 Discord 指令简介

@@ -1,6 +1,6 @@
 {
   "name": "opencode-bot-agent",
-  "version": "0.0.31",
+  "version": "0.1.0",
   "module": "src/index.ts",
   "type": "module",
   "scripts": {

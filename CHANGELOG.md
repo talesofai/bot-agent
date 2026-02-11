@@ -17,6 +17,7 @@
 
 - Session：构建 prompt context 时注入用户最近的可点击指令转录，确保后续多轮对话可感知“用户已执行过哪些按钮动作”
 - Discord：按钮/下拉触发 onboarding 动作后，自动回写一条指令转录（成功/失败）用于下轮上下文
+- Session：基础 system rules 新增 `command-actions` 协议说明与中英示例，明确可点击指令按钮的输出格式、action 白名单与 payload 约束
 
 ## [0.1.1] - 2026-02-10
 

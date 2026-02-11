@@ -121,6 +121,14 @@ describe("Discord help/onboarding texts", () => {
     expect(rules).not.toContain("check_url.sh");
   });
 
+  test("buildOpencodeBaseSystemRules includes command-actions protocol", () => {
+    const rules = buildOpencodeBaseSystemRules(null);
+    expect(rules).toContain("```command-actions");
+    expect(rules).toContain("character_create");
+    expect(rules).toContain("world_join");
+    expect(rules).toContain("你可以点击下一步");
+  });
+
   test("buildHotPushPrompt points to skill instead of hardcoded workflow", () => {
     const prompt = buildHotPushPrompt(null);
     expect(prompt).toContain("hot-push");

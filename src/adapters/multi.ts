@@ -20,6 +20,12 @@ interface MultiAdapterOptions {
   logger?: Logger;
 }
 
+interface SuggestedCommandActionsInput {
+  session: SessionEvent;
+  prompt?: string;
+  actions: Array<{ action: string; label?: string; payload?: string }>;
+}
+
 /**
  * Wrap multiple platform adapters and route send/receive by platform.
  */
@@ -117,6 +123,40 @@ export class MultiAdapter implements PlatformAdapter {
       ? { ...options, elements: redactSensitiveElements(options.elements) }
       : options;
     await entry.adapter.sendMessage(session, auditedContent, auditedOptions);
+  }
+
+  async sendSuggestedCommandActions(
+    input: SuggestedCommandActionsInput,
+  ): Promise<boolean> {
+    const platformKey = input.session.platform?.toLowerCase();
+    const entry = platformKey ? this.entries.get(platformKey) : null;
+    if (!entry) {
+      return false;
+    }
+
+    const adapter = entry.adapter as PlatformAdapter & {
+      sendSuggestedCommandActions?: (
+        input: SuggestedCommandActionsInput,
+      ) => Promise<boolean | void>;
+    };
+    if (typeof adapter.sendSuggestedCommandActions !== "function") {
+      return false;
+    }
+
+    try {
+      const sent = await adapter.sendSuggestedCommandActions(input);
+      return sent !== false;
+    } catch (err) {
+      this.logger.warn(
+        {
+          err,
+          platform: entry.adapter.platform,
+          messageId: input.session.messageId,
+        },
+        "Failed to send suggested command actions",
+      );
+      return false;
+    }
   }
 
   getBotUserId(): string | null {

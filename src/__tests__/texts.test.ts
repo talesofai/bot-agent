@@ -118,6 +118,7 @@ describe("Discord help/onboarding texts", () => {
     expect(rules).toContain("`nano`");
     expect(rules).toContain("`polish`");
     expect(rules).toContain("`quest`");
+    expect(rules).toContain("`capabilities`");
     expect(rules).not.toContain("check_url.sh");
   });
 

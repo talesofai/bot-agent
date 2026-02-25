@@ -10,6 +10,7 @@
 ### Added
 
 - Skills：新增 `command-actions` 协议技能，允许 LLM 在回复中输出可点击动作建议（按钮语义）
+- Skills：新增 `capabilities` 技能，用于回答“你有什么能力/有哪些指令”并约束为真实可执行能力清单
 - Session：支持解析 `command-actions` 代码块，并在 Discord 渲染为可点击按钮（非 Discord 平台自动回退为文本指令建议）
 - UserState：新增可点击指令转录（最近 50 条）存储能力，记录用户点击触发的 `/` 指令与执行结果摘要
 

@@ -4,6 +4,7 @@ import { buildWorldSubmissionMarkdown } from "../../texts";
 import type { UserLanguage } from "../../user/state-store";
 import { isSafePathSegment } from "../../utils/path";
 import { buildWorldBuildGroupId, parseWorldGroup } from "../../world/ids";
+import { listActiveWorldEntries } from "../../world/query";
 import { WorldStore } from "../../world/store";
 import {
   DEFAULT_DISCORD_IMAGE_ATTACHMENT_MAX_BYTES,
@@ -951,22 +952,12 @@ export function installDiscordAdapterWorldLifecycle(DiscordAdapterClass: {
       .catch(() => null);
     await safeDefer(interaction, { ephemeral: false });
     const limit = interaction.options.getInteger("limit") ?? 20;
-    const ids = await this["worldStore"].listWorldIds(limit);
-    if (ids.length === 0) {
-      await safeReply(
-        interaction,
-        pickByLanguage(language, "暂无世界。", "No worlds yet."),
-        { ephemeral: false },
-      );
-      return;
-    }
-    const metas = await Promise.all(
-      ids.map((id) => this["worldStore"].getWorld(id)),
-    );
-    const active = metas.filter((meta): meta is NonNullable<typeof meta> =>
-      Boolean(meta && meta.status === "active"),
-    );
-    if (active.length === 0) {
+    const entries = await listActiveWorldEntries({
+      worldStore: this["worldStore"],
+      worldFiles: this["worldFiles"],
+      limit,
+    });
+    if (entries.length === 0) {
       await safeReply(
         interaction,
         pickByLanguage(
@@ -978,11 +969,8 @@ export function installDiscordAdapterWorldLifecycle(DiscordAdapterClass: {
       );
       return;
     }
-    const cards = await Promise.all(
-      active.map((meta) => this["worldFiles"].readWorldCard(meta.id)),
-    );
-    const lines = active.map((meta, idx) => {
-      const summary = extractWorldOneLiner(cards[idx] ?? null);
+    const lines = entries.map(({ meta, card }) => {
+      const summary = extractWorldOneLiner(card);
       return pickByLanguage(
         language,
         summary

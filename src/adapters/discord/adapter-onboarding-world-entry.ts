@@ -8,7 +8,7 @@ import {
 import type { SessionEvent } from "../../types/platform";
 import type { UserLanguage } from "../../user/state-store";
 import { buildWorldBuildGroupId } from "../../world/ids";
-import type { WorldActiveMeta } from "../../world/store";
+import { listActiveWorldEntries } from "../../world/query";
 import {
   LocalizedError,
   pickByLanguage,
@@ -25,6 +25,10 @@ import {
   buildMarkdownCardEmbeds,
   chunkEmbedsForDiscord,
 } from "./markdown-cards";
+import {
+  buildOnboardingWorldListView,
+  ONBOARDING_WORLD_PAGE_SIZE,
+} from "./onboarding-world-list-view";
 import { buildOnboardingCustomId } from "./onboarding-custom-id";
 import {
   ActionRowBuilder,
@@ -328,35 +332,26 @@ export function installDiscordAdapterOnboardingWorldEntry(DiscordAdapterClass: {
       channelId: string;
       userId: string;
       language: UserLanguage | null;
+      page?: number;
     },
   ): Promise<void> {
-    const ids = await this["worldStore"].listWorldIds(50);
-    const metas = await Promise.all(
-      ids.map((id) => this["worldStore"].getWorld(id)),
-    );
-    const active = metas.filter((meta): meta is WorldActiveMeta =>
-      Boolean(meta && meta.status === "active"),
-    );
-
-    const withStats = await Promise.all(
-      active.map(async (meta) => ({
-        meta,
-        displayName:
-          extractWorldNameFromCard(
-            await this["worldFiles"].readWorldCard(meta.id).catch(() => null),
-          )?.trim() ||
-          meta.name?.trim() ||
-          `World-${meta.id}`,
-        stats: await this["worldFiles"].readStats(meta.id),
-      })),
-    );
-    withStats.sort((a, b) => {
-      const diff = b.stats.visitorCount - a.stats.visitorCount;
-      if (diff !== 0) return diff;
-      return b.meta.id - a.meta.id;
+    const entries = await listActiveWorldEntries({
+      worldStore: this["worldStore"],
+      worldFiles: this["worldFiles"],
+      limit: 200,
+      sortBy: "visitors_desc",
     });
-
-    const top = withStats.slice(0, 3);
+    const view = buildOnboardingWorldListView({
+      entries,
+      page: input.page,
+    });
+    const top = view.topEntries.map((entry) => ({
+      ...entry,
+      displayName:
+        extractWorldNameFromCard(entry.card)?.trim() ||
+        entry.meta.name?.trim() ||
+        `World-${entry.meta.id}`,
+    }));
     const lines =
       top.length > 0
         ? top.map(
@@ -371,13 +366,30 @@ export function installDiscordAdapterOnboardingWorldEntry(DiscordAdapterClass: {
           top.length > 0
             ? input.language === "en"
               ? [
-                  "Top worlds:",
+                  `Top worlds (${view.totalCount} published):`,
                   ...top.map(
                     ({ meta, displayName, stats }) =>
                       `- W${meta.id} ${displayName} (visitors ${stats.visitorCount}, chars ${stats.characterCount})`,
                   ),
+                  ...(view.totalCount > top.length
+                    ? [
+                        "",
+                        `All worlds page ${view.page}/${view.totalPages} (max ${ONBOARDING_WORLD_PAGE_SIZE} per page).`,
+                        "Need more? Use /world list limit:100",
+                      ]
+                    : []),
                 ].join("\n")
-              : ["热门世界：", ...lines].join("\n")
+              : [
+                  `热门世界（共${view.totalCount}个已发布）：`,
+                  ...lines,
+                  ...(view.totalCount > top.length
+                    ? [
+                        "",
+                        `全部世界第 ${view.page}/${view.totalPages} 页（每页最多 ${ONBOARDING_WORLD_PAGE_SIZE} 个）。`,
+                        "查看更多：/world list limit:100",
+                      ]
+                    : []),
+                ].join("\n")
             : input.language === "en"
               ? "No active worlds yet."
               : "暂无已发布世界。",
@@ -412,11 +424,14 @@ export function installDiscordAdapterOnboardingWorldEntry(DiscordAdapterClass: {
         : null;
 
     const selectRow =
-      withStats.length > 3
+      view.totalCount > 3
         ? (() => {
-            const options = withStats
-              .slice(0, 25)
-              .map(({ meta, displayName, stats }) => ({
+            const options = view.pageEntries.map(({ meta, card, stats }) => {
+              const displayName =
+                extractWorldNameFromCard(card)?.trim() ||
+                meta.name?.trim() ||
+                `World-${meta.id}`;
+              return {
                 label: truncateDiscordLabel(`W${meta.id} ${displayName}`, 100),
                 description: truncateDiscordLabel(
                   input.language === "en"
@@ -425,22 +440,54 @@ export function installDiscordAdapterOnboardingWorldEntry(DiscordAdapterClass: {
                   100,
                 ),
                 value: String(meta.id),
-              }));
+              };
+            });
             const menu = new StringSelectMenuBuilder()
               .setCustomId(
                 buildOnboardingCustomId({
                   userId: input.userId,
                   action: "world_select",
+                  payload: String(view.page),
                 }),
               )
               .setPlaceholder(
-                input.language === "en" ? "More worlds…" : "更多世界…",
+                input.language === "en"
+                  ? `More worlds (${view.page}/${view.totalPages})`
+                  : `更多世界（${view.page}/${view.totalPages}）`,
               )
               .addOptions(options);
             return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
               menu,
             );
           })()
+        : null;
+
+    const pagingRow =
+      view.totalPages > 1
+        ? new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(
+                buildOnboardingCustomId({
+                  userId: input.userId,
+                  action: "world_list",
+                  payload: String(view.page - 1),
+                }),
+              )
+              .setLabel(input.language === "en" ? "Prev Page" : "上一页")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(view.page <= 1),
+            new ButtonBuilder()
+              .setCustomId(
+                buildOnboardingCustomId({
+                  userId: input.userId,
+                  action: "world_list",
+                  payload: String(view.page + 1),
+                }),
+              )
+              .setLabel(input.language === "en" ? "Next Page" : "下一页")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(view.page >= view.totalPages),
+          )
         : null;
 
     const backRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -458,6 +505,7 @@ export function installDiscordAdapterOnboardingWorldEntry(DiscordAdapterClass: {
     const components: MessageCreateOptions["components"] = [
       ...(joinButtonsRow ? [joinButtonsRow] : []),
       ...(selectRow ? [selectRow] : []),
+      ...(pagingRow ? [pagingRow] : []),
       backRow,
     ];
 

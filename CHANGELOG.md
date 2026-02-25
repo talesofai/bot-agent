@@ -20,6 +20,9 @@
 - Discord：按钮/下拉触发 onboarding 动作后，自动回写一条指令转录（成功/失败）用于下轮上下文
 - Session：基础 system rules 新增 `command-actions` 协议说明与中英示例，明确可点击指令按钮的输出格式、action 白名单与 payload 约束
 - Adapter：`MultiAdapter` 新增可点击指令动作转发（`sendSuggestedCommandActions`），避免回退为纯文本指令列表
+- World：新增统一查询层 `listActiveWorldEntries`，收敛世界列表查询/过滤/卡片与统计读取逻辑，减少 Adapter 重复实现
+- Discord：onboarding“加入世界”改为热门 Top3 + 分页选择（每页 25）并展示已发布世界总数，支持上一页/下一页切换
+- Discord：onboarding `world_list` 组件动作支持页码 payload，世界选择菜单与分页状态保持一致
 
 ## [0.1.1] - 2026-02-10
 

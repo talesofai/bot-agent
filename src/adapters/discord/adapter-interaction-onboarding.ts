@@ -80,6 +80,11 @@ function resolveSuggestedActionStyle(
   return ButtonStyle.Secondary;
 }
 
+function parseOnboardingWorldListPage(payload: string): number {
+  const page = Number(payload.trim());
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
 function resolveSlashCommandFromOnboardingAction(input: {
   action: OnboardingComponentAction;
   payload: string;
@@ -1273,11 +1278,13 @@ export function installDiscordAdapterInteractionOnboarding(DiscordAdapterClass: 
     }
 
     if (parsed.action === "world_list") {
+      const page = parseOnboardingWorldListPage(parsed.payload);
       await this["sendOnboardingWorldList"]({
         guildId: interaction.guildId,
         channelId: interaction.channelId,
         userId: interaction.user.id,
         language,
+        page,
       });
       return;
     }

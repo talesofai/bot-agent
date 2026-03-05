@@ -60,6 +60,10 @@ export class OpencodeServerRunner implements OpencodeRunner {
         body: requestBody,
         signal: input.signal,
       });
+      const responseError = extractAssistantResponseError(response);
+      if (responseError) {
+        throw responseError;
+      }
 
       toolCalls.push(...extractToolCalls(response.parts ?? []));
       const assistantMessageId =
@@ -341,4 +345,52 @@ function extractUrls(value: unknown): string[] {
 
   walk(value, 4);
   return [...urls];
+}
+
+function extractAssistantResponseError(
+  response: OpencodeAssistantMessageWithParts,
+): Error | null {
+  const info = isRecord(response.info) ? response.info : null;
+  const rawError = info && isRecord(info.error) ? info.error : null;
+  if (!rawError) {
+    return null;
+  }
+
+  const data = isRecord(rawError.data) ? rawError.data : null;
+  const status = readErrorStatus(rawError, data);
+  const messageCandidates = [
+    data && typeof data.message === "string" ? data.message : "",
+    typeof rawError.message === "string" ? rawError.message : "",
+  ];
+  const message =
+    messageCandidates.map((item) => item.trim()).find(Boolean) ||
+    "opencode_assistant_error";
+  const name =
+    (typeof rawError.name === "string" && rawError.name.trim()) ||
+    "OpencodeAssistantError";
+
+  const err = new Error(message);
+  err.name = name;
+  if (status !== null) {
+    (err as Error & { status?: number }).status = status;
+  }
+  return err;
+}
+
+function readErrorStatus(
+  error: Record<string, unknown>,
+  data: Record<string, unknown> | null,
+): number | null {
+  const candidates: unknown[] = [
+    data?.statusCode,
+    data?.status,
+    error.statusCode,
+    error.status,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
 }

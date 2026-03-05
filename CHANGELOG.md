@@ -25,6 +25,7 @@
 - Discord：onboarding `world_list` 组件动作支持页码 payload，世界选择菜单与分页状态保持一致
 - Session：移除 `opencode_run` 失败时“没能推进整理进度”的固定降级文案；非 dev 环境改为简短错误提示 `opencode_run_failed`
 - Session：在 `NODE_ENV=development` 下，`opencode_run` 失败会直接向 Discord 回传结构化错误摘要（name/message/status/timeout）
+- Worker：`OpencodeServerRunner` 现在会识别 opencode assistant `info.error` 并抛出结构化错误，避免将模型/API失败误判为 `opencode_no_output`
 
 ## [0.1.1] - 2026-02-10
 

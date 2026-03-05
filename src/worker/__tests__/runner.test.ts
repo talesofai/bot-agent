@@ -7,6 +7,7 @@ import type {
 import { OpencodeServerRunner } from "../runner";
 
 type FakePromptResponse = {
+  info?: Record<string, unknown>;
   parts: OpencodeMessagePart[];
 };
 
@@ -44,6 +45,7 @@ function createFakeClient(responses: FakePromptResponse[]): {
           id: "msg_test",
           sessionID: input.sessionId,
           role: "assistant",
+          ...(response?.info ?? {}),
         },
         parts: response?.parts ?? [],
       };
@@ -152,6 +154,66 @@ describe("OpencodeServerRunner", () => {
 
     expect(result.output).toBeUndefined();
     expect(result.historyEntries).toBeUndefined();
+  });
+
+  test("throws when opencode assistant response includes error info", async () => {
+    const { client } = createFakeClient([
+      {
+        info: {
+          error: {
+            name: "APIError",
+            data: {
+              message: "Invalid model name passed in model=doubao-1.8",
+              statusCode: 400,
+            },
+          },
+        },
+        parts: [],
+      },
+    ]);
+    const runner = new OpencodeServerRunner(client);
+
+    await expect(
+      runner.run({
+        job: {
+          id: "job",
+          data: {
+            botId: "bot",
+            groupId: "group",
+            sessionId: "session",
+            userId: "user",
+            key: 0,
+            gateToken: "gate",
+          },
+        },
+        session: {
+          meta: {
+            sessionId: "session",
+            groupId: "group",
+            botId: "bot",
+            ownerId: "user",
+            key: 0,
+            status: "running",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          groupPath: "/tmp",
+          workspacePath: "/tmp",
+        },
+        history: [],
+        request: {
+          directory: "/tmp/workspace",
+          sessionId: "ses_test",
+          body: {
+            parts: [{ type: "text", text: "user" }],
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: "APIError",
+      message: "Invalid model name passed in model=doubao-1.8",
+      status: 400,
+    });
   });
 
   test("captures webfetch URL and error message from tool part", async () => {

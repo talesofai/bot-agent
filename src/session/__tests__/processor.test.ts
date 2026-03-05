@@ -24,6 +24,7 @@ import type { SessionActivityIndex } from "../activity-store";
 import type { SessionBuffer, SessionBufferKey } from "../buffer";
 import { buildBotAccountId } from "../../utils/bot-id";
 import type { OpencodeClient } from "../../opencode/server-client";
+import { resetConfig } from "../../config";
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "session-processor-test-"));
@@ -1522,9 +1523,100 @@ describe("SessionProcessor", () => {
 
     expect(runner.runs).toBe(3);
     expect(adapter.messages).toEqual([
+      "处理失败：opencode_run_failed（请稍后重试）。",
+    ]);
+  });
+
+  test("replies with detailed error in development mode", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    resetConfig();
+
+    const tempDir = makeTempDir();
+    const logger = pino({ level: "silent" });
+    const groupRepository = new GroupFileRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const sessionRepository = new SessionRepository({
+      dataDir: tempDir,
+      logger,
+    });
+    const historyStore = new InMemoryHistoryStore();
+    const adapter = new MemoryAdapter();
+    const activityIndex = new MemoryActivityIndex();
+    const bufferStore = new MemorySessionBuffer({ gateTtlSeconds: 3600 });
+    const opencodeClient = new FakeOpencodeClient();
+
+    const jobData: SessionJobData = {
+      botId: "qq-123",
+      groupId: "group-1",
+      sessionId: "user-1-0",
+      userId: "user-1",
+      key: 0,
+      gateToken: "gate-token",
+    };
+    const bufferKey: SessionBufferKey = {
+      botId: jobData.botId,
+      groupId: jobData.groupId,
+      sessionId: jobData.sessionId,
+    };
+
+    const message: SessionEvent = {
+      type: "message",
+      platform: "qq",
+      selfId: "123",
+      userId: jobData.userId,
+      guildId: jobData.groupId,
+      channelId: jobData.groupId,
+      messageId: "msg-1",
+      content: "hello",
+      elements: [{ type: "text", text: "hello" }],
+      timestamp: Date.now(),
+      extras: {},
+    };
+    const acquired = await bufferStore.appendAndRequestJob(
+      bufferKey,
+      message,
+      jobData.gateToken,
+    );
+    expect(acquired).toBe(jobData.gateToken);
+
+    class FailingRunner implements OpencodeRunner {
+      async run(): Promise<OpencodeRunResult> {
+        throw new Error("opencode_down");
+      }
+    }
+    const runner = new FailingRunner();
+
+    const processor = new SessionProcessor({
+      logger,
+      adapter,
+      groupRepository,
+      sessionRepository,
+      historyStore,
+      opencodeClient,
+      runner,
+      activityIndex,
+      bufferStore,
+    });
+
+    try {
+      await processor.process({ id: 0, data: jobData }, jobData);
+    } finally {
+      await processor.close();
+      rmSync(tempDir, { recursive: true, force: true });
+      process.env.NODE_ENV = previousNodeEnv;
+      resetConfig();
+    }
+
+    expect(adapter.messages).toEqual([
       [
-        "我这边刚才没能推进整理进度。",
-        "你可以继续补充设定，我会基于最新内容继续整理并更新结果。",
+        "[dev] 处理失败",
+        "name: Error",
+        "message: opencode_down",
+        "status: n/a",
+        "timeout: n/a",
       ].join("\n"),
     ]);
   });

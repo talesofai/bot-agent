@@ -7,7 +7,7 @@ export {
   buildInputAuditReminder,
   buildSessionPromptContextFailedReply,
   buildSessionProgressHeartbeatText,
-  buildSessionOpencodeRunFailedReply,
+  buildSessionOpencodeRunErrorReply,
   buildSessionOpencodeTimeoutReply,
   buildSessionOpencodeResumePrompt,
   buildOpencodeQuestionToolIntro,

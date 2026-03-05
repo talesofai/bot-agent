@@ -23,6 +23,8 @@
 - World：新增统一查询层 `listActiveWorldEntries`，收敛世界列表查询/过滤/卡片与统计读取逻辑，减少 Adapter 重复实现
 - Discord：onboarding“加入世界”改为热门 Top3 + 分页选择（每页 25）并展示已发布世界总数，支持上一页/下一页切换
 - Discord：onboarding `world_list` 组件动作支持页码 payload，世界选择菜单与分页状态保持一致
+- Session：移除 `opencode_run` 失败时“没能推进整理进度”的固定降级文案；非 dev 环境改为简短错误提示 `opencode_run_failed`
+- Session：在 `NODE_ENV=development` 下，`opencode_run` 失败会直接向 Discord 回传结构化错误摘要（name/message/status/timeout）
 
 ## [0.1.1] - 2026-02-10
 

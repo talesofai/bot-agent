@@ -38,7 +38,7 @@ import {
 } from "../user/state-store";
 import {
   buildLanguageDirective,
-  buildSessionOpencodeRunFailedReply,
+  buildSessionOpencodeRunErrorReply,
   buildSessionOpencodeResumePrompt,
   buildSessionPromptContextFailedReply,
   buildSystemPrompt,
@@ -120,6 +120,7 @@ export class SessionProcessor {
   private worldStore: WorldStore;
   private worldFiles: WorldFileStore;
   private userState: UserStateStore;
+  private isDevelopmentMode: boolean;
 
   constructor(options: SessionProcessorOptions) {
     this.logger = options.logger.child({ component: "session-processor" });
@@ -133,6 +134,8 @@ export class SessionProcessor {
     this.bufferStore = options.bufferStore;
 
     const config = getConfig();
+    this.isDevelopmentMode =
+      (config.NODE_ENV ?? "development") === "development";
     this.worldStore = new WorldStore({
       redisUrl: config.REDIS_URL,
       logger: this.logger,
@@ -722,7 +725,14 @@ export class SessionProcessor {
 
         const shouldReplyOnFailure = !lastError?.isAbort;
         const responseOutput = shouldReplyOnFailure
-          ? buildSessionOpencodeRunFailedReply(language)
+          ? buildSessionOpencodeRunErrorReply({
+              language,
+              isDev: this.isDevelopmentMode,
+              errName: lastError?.errName,
+              errMessage: lastError?.errMessage,
+              status: lastError?.status ?? null,
+              timeoutPoint,
+            })
           : undefined;
         const responseOutputBytes = responseOutput
           ? Buffer.byteLength(responseOutput, "utf8")

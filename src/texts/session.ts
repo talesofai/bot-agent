@@ -147,18 +147,44 @@ export function buildSessionProgressHeartbeatText(
   );
 }
 
-export function buildSessionOpencodeRunFailedReply(
-  language: UserLanguage | null | undefined,
-): string {
+export function buildSessionOpencodeRunErrorReply(input: {
+  language: UserLanguage | null | undefined;
+  isDev: boolean;
+  errName?: string;
+  errMessage?: string;
+  status?: number | null;
+  timeoutPoint?: string | null;
+}): string {
+  if (!input.isDev) {
+    return pick(
+      input.language,
+      "处理失败：opencode_run_failed（请稍后重试）。",
+      "Processing failed: opencode_run_failed (please retry later).",
+    );
+  }
+
+  const name = input.errName?.trim() || "Error";
+  const compact = (input.errMessage ?? "unknown").replace(/\s+/g, " ").trim();
+  const message =
+    compact.length > 500 ? `${compact.slice(0, 497)}...` : compact;
+  const status = input.status == null ? "n/a" : String(input.status);
+  const timeout = input.timeoutPoint?.trim() || "n/a";
+
   return pick(
-    language,
+    input.language,
     [
-      "我这边刚才没能推进整理进度。",
-      "你可以继续补充设定，我会基于最新内容继续整理并更新结果。",
+      "[dev] 处理失败",
+      `name: ${name}`,
+      `message: ${message}`,
+      `status: ${status}`,
+      `timeout: ${timeout}`,
     ].join("\n"),
     [
-      "I couldn't make progress in that attempt.",
-      "You can keep adding details; I'll continue processing based on the latest content and post the updated result here.",
+      "[dev] Processing failed",
+      `name: ${name}`,
+      `message: ${message}`,
+      `status: ${status}`,
+      `timeout: ${timeout}`,
     ].join("\n"),
   );
 }

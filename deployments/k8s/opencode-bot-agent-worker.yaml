@@ -22,6 +22,8 @@ spec:
             - run
             - start:worker
           env:
+            - name: NODE_ENV
+              value: "development"
             - name: REDIS_URL
               value: "redis://redis:6379"
             - name: OTEL_SERVICE_NAME
